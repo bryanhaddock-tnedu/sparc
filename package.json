@@ -1,0 +1,15 @@
+{
+  "name": "spark",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "dev:backend": "uvicorn app.main:app --app-dir backend --reload",
+    "compose:up": "docker compose up --build",
+    "compose:down": "docker compose down"
+  }
+}

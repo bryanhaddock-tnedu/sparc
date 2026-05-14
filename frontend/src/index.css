@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --spark-red: #D22730;
+    --spark-navy: #002D72;
+    --spark-gray: #76777A;
+    --spark-cyan: #2CCCD3;
+    --spark-lime: #D2D755;
+    --spark-orange: #E87722;
+    --spark-slate-teal: #5E7975;
+
+    --background: 220 14% 98%;
+    --foreground: 216 100% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 216 100% 13%;
+    --primary: 216 100% 22.4%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 225 8% 94%;
+    --secondary-foreground: 216 100% 22.4%;
+    --muted: 225 8% 92%;
+    --muted-foreground: 225 1.7% 47.1%;
+    --accent: 183 65.5% 50%;
+    --accent-foreground: 216 100% 13%;
+    --warning: 26 81.1% 52.2%;
+    --warning-foreground: 0 0% 100%;
+    --destructive: 357 68.7% 48.8%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 225 5% 82%;
+    --input: 225 5% 82%;
+    --ring: 183 65.5% 50%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
+  }
+}
+
+@layer components {
+  .numeric-cell {
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: spark
+      POSTGRES_USER: spark
+      POSTGRES_PASSWORD: spark
+    ports:
+      - "5433:5432"
+    volumes:
+      - spark-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spark -d spark"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://spark:spark@postgres:5432/spark
+      FRONTEND_ORIGIN: http://localhost:5173
+      ENVIRONMENT: local
+      AUTO_CREATE_SCHEMA: "true"
+      SEED_ON_STARTUP: "true"
+      DEFAULT_FISCAL_YEAR: "2026"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./backend/tests:/app/tests
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/tailwind.config.ts:/app/tailwind.config.ts
+    command: npm run dev
+    depends_on:
+      - backend
+
+volumes:
+  spark-postgres-data:
