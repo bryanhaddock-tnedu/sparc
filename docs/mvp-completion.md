@@ -1,4 +1,4 @@
-# SPARK MVP Completion Notes
+# SPARC MVP Completion Notes
 
 This document summarizes the MVP work completed after the initial scaffold.
 

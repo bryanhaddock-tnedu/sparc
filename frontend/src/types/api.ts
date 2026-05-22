@@ -16,6 +16,70 @@ export interface DashboardSummary {
   variance_cost: number;
 }
 
+export interface AdminDataExportOption {
+  key: string;
+  label: string;
+  description: string;
+  default_selected: boolean;
+}
+
+export interface AdminDataImportDatasetResult {
+  key: string;
+  label: string;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface AdminDataImportError {
+  sheet: string;
+  row: number;
+  message: string;
+}
+
+export interface AdminDataImportResult {
+  datasets: AdminDataImportDatasetResult[];
+  errors: AdminDataImportError[];
+  excluded_jira_refresh_data: string[];
+}
+
+export interface DashboardWorkTypeRow {
+  bucket_id: number;
+  bucket: string;
+  bucket_code: string;
+  forecast_hours: number;
+  actual_hours: number;
+  forecast_cost: number;
+  actual_cost: number;
+}
+
+export interface DashboardLaborMixRow {
+  employment_type?: string;
+  role?: string;
+  forecast_hours: number;
+  actual_hours: number;
+  forecast_cost: number;
+  actual_cost: number;
+}
+
+export interface DashboardLaborMix {
+  hire_types: Array<{
+    employment_type: string;
+    forecast_hours: number;
+    actual_hours: number;
+    forecast_cost: number;
+    actual_cost: number;
+  }>;
+  roles: Array<{
+    role: string;
+    forecast_hours: number;
+    actual_hours: number;
+    forecast_cost: number;
+    actual_cost: number;
+  }>;
+}
+
 export interface ProductSummaryRow {
   product_id: number;
   product: string;
@@ -45,6 +109,229 @@ export interface Product {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProductCreatePayload {
+  name: string;
+  jira_space_key?: string | null;
+  description?: string | null;
+  budget_amount?: number;
+  is_active?: boolean;
+}
+
+export interface ProductTeamMember {
+  id: number;
+  product_id: number;
+  team_member_id: number;
+  team_member: string;
+  role: string;
+  team: string;
+  bill_rate: number;
+  employment_type: string;
+  default_bucket_id: number | null;
+  default_bucket: string | null;
+  status: string;
+  has_forecast_entries: boolean;
+  has_actual_entries: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductTeamMemberPayload {
+  team_member_id: number;
+  default_bucket_id?: number | null;
+  status?: string;
+}
+
+export interface ProductTeamMemberUpdatePayload {
+  default_bucket_id?: number | null;
+  status?: string;
+}
+
+export interface JiraProjectCatalog {
+  id: number;
+  jira_project_id: string;
+  jira_project_key: string;
+  jira_project_name: string;
+  project_type_key: string | null;
+  is_visible: boolean;
+  is_archived: boolean;
+  last_seen_at: string;
+  last_checked_at: string;
+}
+
+export interface JiraProjectCatalogSyncResult {
+  imported: number;
+  projects: JiraProjectCatalog[];
+}
+
+export interface JiraIntegrationStatus {
+  configured: boolean;
+  site_url: string | null;
+  auth_email_configured: boolean;
+  api_token_configured: boolean;
+  missing: string[];
+}
+
+export interface ProductJiraSpace {
+  id: number;
+  product_id: number;
+  jira_project_catalog_id: number | null;
+  jira_project_id: string | null;
+  jira_project_key: string;
+  jira_project_name: string | null;
+  is_active: boolean;
+  scope_jql: string | null;
+  validation_status: string;
+  validation_message: string | null;
+  last_validated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductJiraSpacePayload {
+  jira_project_catalog_id?: number | null;
+  jira_project_key?: string | null;
+  is_active?: boolean;
+  scope_jql?: string | null;
+}
+
+export interface ProductJiraSpaceUpdatePayload {
+  is_active?: boolean;
+  scope_jql?: string | null;
+}
+
+export interface EstimationProfile {
+  id: number;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  method_version: string;
+  monthly_capacity_hours: number;
+  actual_completeness_threshold: number;
+  stale_ticket_window_days: number;
+  forecast_future_months: boolean;
+  future_month_average_window: number;
+  excluded_statuses: string | null;
+  low_activity_statuses: string | null;
+  excluded_jira_project_keys: string | null;
+  project_pause_dates: string | null;
+  work_type_field_priority: string | null;
+  story_point_weighting_enabled: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type EstimationProfileUpdatePayload = Partial<
+  Pick<
+    EstimationProfile,
+    | "name"
+    | "description"
+    | "is_active"
+    | "method_version"
+    | "monthly_capacity_hours"
+    | "actual_completeness_threshold"
+    | "stale_ticket_window_days"
+    | "forecast_future_months"
+    | "future_month_average_window"
+    | "excluded_statuses"
+    | "low_activity_statuses"
+    | "excluded_jira_project_keys"
+    | "project_pause_dates"
+    | "work_type_field_priority"
+    | "story_point_weighting_enabled"
+    | "notes"
+  >
+>;
+
+export interface EstimationRun {
+  id: number;
+  profile_id: number;
+  method_version: string;
+  fiscal_year: number;
+  source_jira_updated_from: string | null;
+  source_jira_updated_to: string | null;
+  started_at: string;
+  completed_at: string | null;
+  status: string;
+  imported_issue_count: number;
+  estimated_entry_count: number;
+  warning_count: number;
+  error_summary: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EstimationRunRequest {
+  fiscal_year: number;
+  profile_id?: number | null;
+}
+
+export interface EstimationPreview {
+  fiscal_year: number;
+  profile_id: number;
+  method_version: string;
+  imported_issue_count: number;
+  included_issue_count: number;
+  excluded_issue_count: number;
+  unmapped_issue_count: number;
+  estimated_entry_count: number;
+  estimated_hours: number;
+  warning_count: number;
+  warnings: string[];
+  run_id: number | null;
+  status: string;
+}
+
+export interface ReportedValueRow {
+  product_id: number;
+  product: string;
+  team_member_id: number;
+  team_member: string;
+  bucket_id: number;
+  bucket: string;
+  bucket_code: string;
+  fiscal_month_id: number;
+  month_label: string;
+  forecast_hours: number;
+  actual_hours: number;
+  estimated_hours: number;
+  reported_hours: number;
+  reported_source: string;
+  reported_reason: string;
+  estimation_run_id: number | null;
+}
+
+export interface EstimatedIssueAllocation {
+  id: number;
+  estimation_run_id: number;
+  team_member_id: number;
+  team_member: string;
+  issue_id: string;
+  issue_key: string;
+  issue_summary: string | null;
+  jira_project_key: string;
+  product_id: number | null;
+  product: string | null;
+  bucket_id: number | null;
+  bucket: string | null;
+  fiscal_month_id: number | null;
+  month_label: string | null;
+  allocated_hours: number;
+  issue_status: string | null;
+  status_category: string | null;
+  issue_type: string | null;
+  story_points: number | null;
+  issue_logged_hours: number;
+  created_at_from_jira: string | null;
+  updated_at_from_jira: string | null;
+  resolved_at_from_jira: string | null;
+  active_window_start: string | null;
+  active_window_end: string | null;
+  included: boolean;
+  inclusion_reason: string | null;
+  exclusion_reason: string | null;
 }
 
 export interface ProductSummary {
@@ -156,8 +443,11 @@ export interface TeamMemberProducts {
 export interface ForecastUpsertPayload {
   product_id: number;
   team_member_id: number;
-  bucket_id: number;
-  fiscal_month_id: number;
+  bucket_id?: number;
+  bucket_code?: string;
+  fiscal_month_id?: number;
+  fiscal_year?: number;
+  month_sequence?: number;
   hours: number;
 }
 

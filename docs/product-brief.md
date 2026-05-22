@@ -1,6 +1,6 @@
-# SPARK Product Brief
+# SPARC Product Brief
 
-SPARK means Staff Planning & Resource Knowledge.
+SPARC is the internal labor forecasting and cost intelligence app for this project.
 
 ## Project Purpose
 
@@ -11,13 +11,15 @@ This is not a project management tool. Do not add task boards, sprint planning, 
 ## Canonical Terms
 
 - Use Product, not Project, as the primary work entity.
-- Every Product maps to a Jira space.
+- Every Product can map to one or more Jira spaces/projects.
 - Use Team Member for people/labor resources.
 - Use Bucket for work type: Net New, Enhance, Maintenance.
 - Forecast hours are manually entered in this app.
 - Actual hours come from Jira/Rovo API.
+- Estimated hours are model-generated from Jira issue/activity evidence when actual time logging is incomplete.
+- Reported/Effective hours are derived by policy and must never overwrite Forecast, Actual, or Estimated source values.
 - Cost is calculated as hours multiplied by bill rate.
-- Product budget is stored on the Product record.
+- Product budget is fiscal-year specific and stored per Product + Fiscal Year.
 - Projected spend is the full-year forecasted cost.
 
 ## Architecture
@@ -61,11 +63,19 @@ Use a monorepo:
 - Fiscal year runs July through June.
 - Forecast hours are editable.
 - Actual hours are read-only from Jira/Rovo.
+- Estimated hours are read-only generated values tied to an Estimation Run.
+- Reported/Effective hours are derived for reporting using a visible rule:
+  - If the month is closed and Actual is at least 75% of Estimated, use Actual.
+  - Else if Estimated exists, use Estimated.
+  - Else if the month is future/planning and Forecast exists, use Forecast.
+  - Else use 0.
+- Forecast, Actual, Estimated, and Reported/Effective values must remain separate.
+- Every generated number should preserve enough context to explain where it came from.
 - Cost values are calculated, not manually entered.
 - Bill rate can be updated after spreadsheet import.
 - MVP uses current bill rate for calculations.
 - Future state may add bill rate versioning.
-- Budget tracker compares projected spend against budget using a compact horizontal consumed-vs-remaining bar.
+- Budget tracker compares Budgeted, Forecast, and Actuals using a compact horizontal bar.
 - Team Member ID is optional and system-generated if not provided.
 - Team Members default to active.
 - Created date and last updated date are required.
@@ -86,6 +96,7 @@ Build these primary routes:
 
 - `/` — Dashboard
 - `/products/:productId` — Product Detail
+- `/products/settings` — Product Settings
 - `/team-members/:teamMemberId` — Team Member Detail
 - `/team` — Team Management
 
@@ -129,7 +140,7 @@ Each Product Detail page should include:
 
 1. Product header
    - Product name
-   - Jira space key/reference
+   - Jira space key/reference badges
    - Product description, if available
    - Active/inactive status
 
@@ -150,9 +161,15 @@ Each Product Detail page should include:
    - Remaining Cost
 
 5. Budget Tracker
-   - Shows Product projected spend against Product budget
+   - Shows Product Budgeted, Forecast, and Actuals for the selected Fiscal Year
 
-6. Three Product-specific data sections:
+6. Product Team
+   - Shows manager-curated team members assigned to the Product
+   - Allows adding rostered Team Members to the Product before forecast/actual hours exist
+   - Allows editing default bucket and product assignment status
+   - Allows removing a Team Member from the Product assignment list without deleting historical forecast/actual rows
+
+7. Three Product-specific data sections:
    - Net New
    - Enhance
    - Maintenance
@@ -173,6 +190,33 @@ Rules:
 - Cost cells are read-only calculated values.
 - Variance cells are read-only calculated values.
 
+## Product Settings Page Requirements
+
+Product Settings should be an editable table for product-level configuration and Jira mapping.
+
+Columns:
+
+- Product name
+- Jira spaces/projects
+- Fiscal Year Budget
+- Status
+- Description
+- Last Updated
+
+Rules:
+
+- Product detail remains accessible from each row.
+- New Products can be added from this page.
+- Budget is editable per selected Fiscal Year and drives the dashboard/product budget tracker.
+- Jira mappings are one-to-many: one SPARC Product can contain multiple Jira spaces/projects.
+- A Jira space/project should only map to one SPARC Product to avoid double-counting actual hours.
+- Jira spaces can be selected from the server-side Jira project catalogue.
+- Users can refresh the Jira project catalogue through an app-owned backend API call.
+- Users can manually enter a Jira key when the catalogue has not been refreshed yet.
+- Saved Jira mappings can be validated through a backend check that confirms the Jira key exists and is visible to the integration account.
+- Product active/inactive status is editable.
+- Created date and updated date are maintained by the backend.
+
 ## Team Member Detail Page Requirements
 
 Each Team Member Detail page should include:
@@ -191,7 +235,7 @@ Each Team Member Detail page should include:
 2. Product associations table
 
 3. Budget Tracker
-   - Shows Team Member projected spend against the combined budgets of Products they support
+   - Shows Team Member forecast and actuals for the selected Fiscal Year
 
 Columns:
 
@@ -245,6 +289,8 @@ Use service modules for:
 - fiscal year logic
 - Jira/Rovo normalization
 - forecast upserts
+- estimation policy and Jira issue activity estimation
+- reported/effective value selection
 
 ## Database Entities
 
@@ -258,6 +304,12 @@ Implement:
 - ActualEntry
 - JiraUserMapping
 - JiraProductMapping
+- JiraProjectCatalog
+- ProductJiraSpace
+- EstimationProfile
+- EstimationRun
+- EstimatedEntry
+- EstimatedIssueAllocation
 
 Seed the three buckets:
 
@@ -283,6 +335,11 @@ Products:
 - `GET /api/products/{product_id}/summary?fiscal_year=2026`
 - `GET /api/products/{product_id}/bucket-distribution?fiscal_year=2026`
 - `GET /api/products/{product_id}/bucket-tables?fiscal_year=2026&metric=hours&data_type=forecast`
+- `GET /api/products/{product_id}/jira-spaces`
+- `POST /api/products/{product_id}/jira-spaces`
+- `PUT /api/products/{product_id}/jira-spaces/{space_id}`
+- `DELETE /api/products/{product_id}/jira-spaces/{space_id}`
+- `POST /api/products/{product_id}/jira-spaces/{space_id}/validate`
 
 Team Members:
 
@@ -299,26 +356,102 @@ Forecasts:
 
 Jira/Rovo:
 
+- `GET /api/integrations/jira-rovo/status`
 - `POST /api/integrations/jira-rovo/sync`
+- `POST /api/integrations/jira-rovo/sync-live`
 - `GET /api/integrations/jira-rovo/unmapped-users`
 - `GET /api/integrations/jira-rovo/unmapped-products`
+- `GET /api/integrations/jira-rovo/project-catalog`
+- `POST /api/integrations/jira-rovo/project-catalog/refresh`
+
+Estimations:
+
+- `GET /api/estimations/profiles`
+- `PUT /api/estimations/profiles/{profile_id}`
+- `GET /api/estimations/runs?fiscal_year=2026`
+- `POST /api/estimations/preview`
+- `POST /api/estimations/run`
+- `GET /api/estimations/runs/{run_id}/allocations`
+- `GET /api/estimations/reported-values?fiscal_year=2026&product_id=&team_member_id=`
 
 ## Jira/Rovo Integration
 
-Actual hours come from Jira through the Rovo API interface.
+Actual hours come from Jira through app-owned backend integration code.
 
-MVP should mock this integration.
+Local/demo environments may use the mock sync, but real environments should use the live Jira sync endpoint with credentials supplied only through server-side environment variables or Key Vault.
 
-The app should eventually:
+The app should:
 
-1. Query Jira ticket/worklog data through Rovo API.
-2. Extract hours worked from Jira fields.
+1. Query Jira ticket/worklog data from backend code only.
+2. Extract hours worked from Jira worklogs.
 3. Identify Jira user.
-4. Identify Jira space/Product.
+4. Identify Jira space/project and its mapped SPARC Product.
 5. Identify bucket if Jira has bucket/type data.
 6. Normalize worklog dates into fiscal months.
 7. Store actual hours.
 8. Surface unmapped users/products.
+
+Jira credentials must remain server-side. The app owns Jira access; AI tools should only call app codepaths.
+
+Jira project/product mapping policy:
+
+- CCTE maps to Product `CCTE`.
+- TISA maps to Product `TISA`.
+- RC maps to Product `RC`.
+- GOV and RPA map to Product `Core Infrastructure`.
+- ROADMAP, PRJ, UI, APPDEV, DYNINTAKE, HB, ATO, QA, and CIS are excluded.
+- Unknown Jira project keys become unmapped references requiring review.
+- Unknown Jira projects must not silently map to Core Infrastructure.
+
+Work bucket normalization should inspect configurable Jira fields such as:
+
+- Work Type
+- Type of Work
+- Work Category
+- Development Type
+- Request Type
+
+Normalize values:
+
+- Net New, New, New Feature, New Development -> NET_NEW
+- Enhance, Enhancement, Enhance Existing -> ENHANCE
+- Maintenance, Maintain, Support, Bug Fix -> MAINTENANCE
+- Defaulting to Maintenance must be auditable.
+
+## Estimation Model
+
+SPARC estimates labor only when Jira issue/activity evidence supports it.
+
+Rules migrated from the Annual Hourly Report estimator:
+
+- Monthly full-capacity target defaults to 120 hours per person.
+- Assignment alone is weak evidence.
+- A ticket contributes estimated hours only near observable Jira movement.
+- The current active window is 10 days ending on updated/resolved date.
+- If a person has multiple active tickets on the same day, split that day’s capacity across them.
+- Exclude no-activity statuses such as On Hold, Blocked, Cancelled, and Canceled.
+- Exclude Ready for Development / To Do when no actual logged time exists.
+- Project pause dates stop generating estimates after the pause date.
+- Story points are optional weighting, not direct hours.
+- Issue type defaults matter when story points are missing.
+- Logged hours can influence effort weight, but incomplete actuals should not automatically replace estimates.
+- Future months may be forecast from recent history when enabled by profile.
+
+Estimation must store:
+
+- Estimation profile settings.
+- Estimation run history and rules snapshot.
+- Monthly EstimatedEntry totals.
+- EstimatedIssueAllocation audit detail explaining included/excluded issue evidence.
+
+## Exports
+
+SPARC should eventually export:
+
+- Annual Hourly Report workbook.
+- TimeTracking-shaped workbook/CSV for compatibility.
+
+Exports should be generated from SPARC data, not used as the source of truth.
 
 Unknowns to leave configurable:
 
@@ -360,6 +493,16 @@ Backend tests:
 - Product detail aggregation
 - Bucket distribution calculation
 - Jira/Rovo mock normalization
+- Forecast, Actual, and Estimated coexistence at the same grain
+- Reported/Effective rule selection
+- Actual completeness threshold behavior
+- Excluded Jira statuses
+- Excluded Jira projects
+- Unknown Jira projects remain unmapped
+- Project pause date cutoffs
+- Overlapping Jira ticket capacity splitting
+- Estimation run audit snapshots
+- Repeated estimation runs preserve history
 
 Frontend tests:
 

@@ -13,7 +13,7 @@ def seed_db() -> None:
     create_database()
     with SessionLocal() as db:
         seed_database(db)
-    print("Seed data applied.")
+    print("Reference data applied.")
 
 
 def reset_db() -> None:
@@ -21,11 +21,11 @@ def reset_db() -> None:
     create_database()
     with SessionLocal() as db:
         seed_database(db)
-    print("Database reset and seeded.")
+    print("Database reset with reference data only.")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="SPARK backend maintenance commands")
+    parser = argparse.ArgumentParser(description="SPARC backend maintenance commands")
     parser.add_argument("command", choices=["init-db", "seed-db", "reset-db"])
     args = parser.parse_args()
 

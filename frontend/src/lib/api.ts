@@ -1,15 +1,36 @@
 import type {
+  AdminDataExportOption,
+  AdminDataImportResult,
   BucketDistributionRow,
+  DashboardLaborMix,
   DashboardSummary,
+  DashboardWorkTypeRow,
+  EstimatedIssueAllocation,
+  EstimationPreview,
+  EstimationProfile,
+  EstimationProfileUpdatePayload,
+  EstimationRun,
+  EstimationRunRequest,
   ForecastResponse,
   ForecastUpsertPayload,
+  JiraIntegrationStatus,
   JiraProductMapping,
+  JiraProjectCatalog,
+  JiraProjectCatalogSyncResult,
   JiraRovoSyncResult,
   JiraUserMapping,
   Product,
   ProductBucketTables,
+  ProductCreatePayload,
+  ProductJiraSpace,
+  ProductJiraSpacePayload,
+  ProductJiraSpaceUpdatePayload,
   ProductSummary,
   ProductSummaryRow,
+  ProductTeamMember,
+  ProductTeamMemberPayload,
+  ProductTeamMemberUpdatePayload,
+  ReportedValueRow,
   SyncRun,
   TeamImportResult,
   TeamMember,
@@ -20,7 +41,7 @@ import type {
 import { appConfig } from "./config";
 
 const API_BASE_URL = appConfig.apiBaseUrl;
-const FISCAL_YEAR = appConfig.fiscalYear;
+const DEFAULT_FISCAL_YEAR = appConfig.fiscalYear;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -32,7 +53,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await responseErrorMessage(response);
     throw new Error(message || `Request failed with ${response.status}`);
   }
   return response.json() as Promise<T>;
@@ -45,31 +66,122 @@ async function upload<T>(path: string, formData: FormData): Promise<T> {
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await responseErrorMessage(response);
     throw new Error(message || `Request failed with ${response.status}`);
   }
   return response.json() as Promise<T>;
 }
 
+async function download(path: string): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(`${API_BASE_URL}${path}`);
+  if (!response.ok) {
+    const message = await responseErrorMessage(response);
+    throw new Error(message || `Request failed with ${response.status}`);
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="?([^"]+)"?/i);
+  const filename = match?.[1] ?? "sparc-admin-data.zip";
+  return { blob: await response.blob(), filename };
+}
+
+async function responseErrorMessage(response: Response): Promise<string> {
+  const text = await response.text();
+  if (!text) return "";
+  try {
+    const payload = JSON.parse(text) as { detail?: { message?: string } | string };
+    if (typeof payload.detail === "string") return payload.detail;
+    return payload.detail?.message ?? text;
+  } catch {
+    return text;
+  }
+}
+
 export const api = {
-  fiscalYear: FISCAL_YEAR,
-  dashboardSummary: () => request<DashboardSummary>(`/api/dashboard/summary?fiscal_year=${FISCAL_YEAR}`),
-  dashboardProducts: () => request<ProductSummaryRow[]>(`/api/dashboard/products?fiscal_year=${FISCAL_YEAR}`),
-  productSummary: (productId: number) =>
-    request<ProductSummary>(`/api/products/${productId}/summary?fiscal_year=${FISCAL_YEAR}`),
-  bucketDistribution: (productId: number) =>
-    request<BucketDistributionRow[]>(`/api/products/${productId}/bucket-distribution?fiscal_year=${FISCAL_YEAR}`),
-  productBucketTables: (productId: number) =>
-    request<ProductBucketTables>(`/api/products/${productId}/bucket-tables?fiscal_year=${FISCAL_YEAR}`),
-  products: () => request<Product[]>("/api/products"),
+  fiscalYear: DEFAULT_FISCAL_YEAR,
+  adminDataExportOptions: () => request<AdminDataExportOption[]>("/api/admin-data/export-options"),
+  exportAdminData: (datasets: string[]) => {
+    const params = new URLSearchParams();
+    datasets.forEach((dataset) => params.append("datasets", dataset));
+    return download(`/api/admin-data/export${params.toString() ? `?${params.toString()}` : ""}`);
+  },
+  importAdminData: (file: File, datasets: string[]) => {
+    const params = new URLSearchParams();
+    datasets.forEach((dataset) => params.append("datasets", dataset));
+    const formData = new FormData();
+    formData.append("file", file);
+    return upload<AdminDataImportResult>(`/api/admin-data/import${params.toString() ? `?${params.toString()}` : ""}`, formData);
+  },
+  dashboardSummary: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<DashboardSummary>(`/api/dashboard/summary?fiscal_year=${fiscalYear}`),
+  dashboardProducts: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<ProductSummaryRow[]>(`/api/dashboard/products?fiscal_year=${fiscalYear}`),
+  dashboardWorkTypes: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<DashboardWorkTypeRow[]>(`/api/dashboard/work-types?fiscal_year=${fiscalYear}`),
+  dashboardLaborMix: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<DashboardLaborMix>(`/api/dashboard/labor-mix?fiscal_year=${fiscalYear}`),
+  productSummary: (productId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<ProductSummary>(`/api/products/${productId}/summary?fiscal_year=${fiscalYear}`),
+  bucketDistribution: (productId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<BucketDistributionRow[]>(`/api/products/${productId}/bucket-distribution?fiscal_year=${fiscalYear}`),
+  productBucketTables: (productId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<ProductBucketTables>(`/api/products/${productId}/bucket-tables?fiscal_year=${fiscalYear}`),
+  products: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<Product[]>(`/api/products?fiscal_year=${fiscalYear}`),
+  createProduct: (payload: ProductCreatePayload, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<Product>(`/api/products?fiscal_year=${fiscalYear}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateProduct: (
+    productId: number,
+    payload: Partial<Pick<Product, "name" | "jira_space_key" | "description" | "budget_amount" | "is_active">>,
+    fiscalYear = DEFAULT_FISCAL_YEAR,
+  ) =>
+    request<Product>(`/api/products/${productId}?fiscal_year=${fiscalYear}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteProduct: (productId: number) =>
+    request<{ message: string }>(`/api/products/${productId}`, {
+      method: "DELETE",
+    }),
+  productTeamMembers: (productId: number) => request<ProductTeamMember[]>(`/api/products/${productId}/team-members`),
+  addProductTeamMember: (productId: number, payload: ProductTeamMemberPayload) =>
+    request<ProductTeamMember>(`/api/products/${productId}/team-members`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateProductTeamMember: (productId: number, assignmentId: number, payload: ProductTeamMemberUpdatePayload) =>
+    request<ProductTeamMember>(`/api/products/${productId}/team-members/${assignmentId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  removeProductTeamMember: (productId: number, assignmentId: number) =>
+    request<{ message: string }>(`/api/products/${productId}/team-members/${assignmentId}`, {
+      method: "DELETE",
+    }),
+  productJiraSpaces: (productId: number) => request<ProductJiraSpace[]>(`/api/products/${productId}/jira-spaces`),
+  addProductJiraSpace: (productId: number, payload: ProductJiraSpacePayload) =>
+    request<ProductJiraSpace>(`/api/products/${productId}/jira-spaces`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateProductJiraSpace: (productId: number, spaceId: number, payload: ProductJiraSpaceUpdatePayload) =>
+    request<ProductJiraSpace>(`/api/products/${productId}/jira-spaces/${spaceId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  removeProductJiraSpace: (productId: number, spaceId: number) =>
+    request<{ message: string }>(`/api/products/${productId}/jira-spaces/${spaceId}`, {
+      method: "DELETE",
+    }),
+  validateProductJiraSpace: (productId: number, spaceId: number) =>
+    request<ProductJiraSpace>(`/api/products/${productId}/jira-spaces/${spaceId}/validate`, {
+      method: "POST",
+    }),
   teamMembers: () => request<TeamMember[]>("/api/team-members"),
   updateTeamMember: (teamMemberId: number, payload: Partial<TeamMember>) =>
     request<TeamMember>(`/api/team-members/${teamMemberId}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
-  teamMemberProducts: (teamMemberId: number) =>
-    request<TeamMemberProducts>(`/api/team-members/${teamMemberId}/products?fiscal_year=${FISCAL_YEAR}`),
+  teamMemberProducts: (teamMemberId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<TeamMemberProducts>(`/api/team-members/${teamMemberId}/products?fiscal_year=${fiscalYear}`),
   upsertForecast: (payload: ForecastUpsertPayload) =>
     request<ForecastResponse>("/api/forecasts", {
       method: "PUT",
@@ -89,10 +201,21 @@ export const api = {
     request<JiraRovoSyncResult>("/api/integrations/jira-rovo/sync", {
       method: "POST",
     }),
+  syncLiveJiraRovo: (fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<JiraRovoSyncResult>("/api/integrations/jira-rovo/sync-live", {
+      method: "POST",
+      body: JSON.stringify({ fiscal_year: fiscalYear }),
+    }),
+  jiraIntegrationStatus: () => request<JiraIntegrationStatus>("/api/integrations/jira-rovo/status"),
   unmappedUsers: () => request<UnmappedUser[]>("/api/integrations/jira-rovo/unmapped-users"),
   unmappedProducts: () => request<UnmappedProduct[]>("/api/integrations/jira-rovo/unmapped-products"),
   userMappings: () => request<JiraUserMapping[]>("/api/integrations/jira-rovo/user-mappings"),
   productMappings: () => request<JiraProductMapping[]>("/api/integrations/jira-rovo/product-mappings"),
+  jiraProjectCatalog: () => request<JiraProjectCatalog[]>("/api/integrations/jira-rovo/project-catalog"),
+  refreshJiraProjectCatalog: () =>
+    request<JiraProjectCatalogSyncResult>("/api/integrations/jira-rovo/project-catalog/refresh", {
+      method: "POST",
+    }),
   updateUserMapping: (mappingId: number, teamMemberId: number | null) =>
     request<JiraUserMapping>(`/api/integrations/jira-rovo/user-mappings/${mappingId}`, {
       method: "PUT",
@@ -104,4 +227,29 @@ export const api = {
       body: JSON.stringify({ product_id: productId }),
     }),
   syncRuns: () => request<SyncRun[]>("/api/integrations/jira-rovo/sync-runs"),
+  estimationProfiles: () => request<EstimationProfile[]>("/api/estimations/profiles"),
+  updateEstimationProfile: (profileId: number, payload: EstimationProfileUpdatePayload) =>
+    request<EstimationProfile>(`/api/estimations/profiles/${profileId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  estimationRuns: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<EstimationRun[]>(`/api/estimations/runs?fiscal_year=${fiscalYear}`),
+  previewEstimation: (payload: EstimationRunRequest) =>
+    request<EstimationPreview>("/api/estimations/preview", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  runEstimation: (payload: EstimationRunRequest) =>
+    request<EstimationPreview>("/api/estimations/run", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  reportedValues: (filters: { product_id?: number; team_member_id?: number } = {}, fiscalYear = DEFAULT_FISCAL_YEAR) => {
+    const params = new URLSearchParams({ fiscal_year: String(fiscalYear) });
+    if (filters.product_id !== undefined) params.set("product_id", String(filters.product_id));
+    if (filters.team_member_id !== undefined) params.set("team_member_id", String(filters.team_member_id));
+    return request<ReportedValueRow[]>(`/api/estimations/reported-values?${params.toString()}`);
+  },
+  estimationRunAllocations: (runId: number, limit = 100) =>
+    request<EstimatedIssueAllocation[]>(`/api/estimations/runs/${runId}/allocations?limit=${limit}`),
 };

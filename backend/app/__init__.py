@@ -1,1 +1,1 @@
-"""SPARK backend package."""
+"""SPARC backend package."""

@@ -1,14 +1,26 @@
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 import hashlib
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import ActualEntry, Bucket, FiscalMonth, JiraProductMapping, JiraUserMapping, Product, SyncRun, TeamMember
+from app.config import get_settings
+from app.models import ActualEntry, Bucket, FiscalMonth, JiraProductMapping, JiraUserMapping, Product, ProductJiraSpace, SyncRun, TeamMember
 from app.models.entities import utcnow
+from app.services.estimation_policy import WORK_TYPE_ALIASES, normalize_lookup_value
 from app.services.fiscal_year import ensure_fiscal_months, fiscal_sequence_for_date, fiscal_year_for_date
+from app.services.jira_projects import _raise_for_jira_response
+
+WORK_TYPE_FIELD_NAMES = {
+    "Work Type",
+    "Type of Work",
+    "Work Category",
+    "Development Type",
+    "Request Type",
+}
 
 
 @dataclass(frozen=True)
@@ -128,6 +140,135 @@ def run_mock_jira_rovo_sync(db: Session) -> dict[str, object]:
         "unmapped_users": list_unmapped_users(db),
         "unmapped_products": list_unmapped_products(db),
     }
+
+
+def jira_integration_status() -> dict[str, object]:
+    settings = get_settings()
+    missing = []
+    if not settings.jira_site_url:
+        missing.append("JIRA_SITE_URL")
+    if not settings.jira_api_email:
+        missing.append("JIRA_API_EMAIL")
+    if not settings.jira_api_token:
+        missing.append("JIRA_API_TOKEN")
+    return {
+        "configured": not missing,
+        "site_url": _masked_site_url(settings.jira_site_url),
+        "auth_email_configured": bool(settings.jira_api_email),
+        "api_token_configured": bool(settings.jira_api_token),
+        "missing": missing,
+    }
+
+
+def run_live_jira_rovo_sync(db: Session, fiscal_year: int) -> dict[str, object]:
+    sync_run = SyncRun(source="jira", mode="live", status="running")
+    db.add(sync_run)
+    db.flush()
+    imported = 0
+    skipped_unmapped = 0
+
+    try:
+        for worklog in fetch_live_jira_worklogs(db, fiscal_year):
+            fiscal_month = _ensure_month_for_worklog(db, fiscal_year_for_date(worklog.worked_on), worklog.worked_on)
+            bucket = db.scalar(select(Bucket).where(Bucket.code == worklog.bucket_code))
+            user_mapping = _ensure_user_mapping(db, worklog)
+            product_mapping = _ensure_product_mapping(db, worklog)
+
+            if bucket is None or user_mapping.team_member_id is None or product_mapping.product_id is None:
+                skipped_unmapped += 1
+                continue
+
+            existing = db.scalar(
+                select(ActualEntry).where(
+                    ActualEntry.source == "jira",
+                    ActualEntry.source_issue_id == worklog.issue_id,
+                    ActualEntry.source_worklog_id == worklog.worklog_id,
+                )
+            )
+            payload_hash = _payload_hash(worklog)
+            if existing is None:
+                db.add(
+                    ActualEntry(
+                        sync_run_id=sync_run.id,
+                        product_id=product_mapping.product_id,
+                        team_member_id=user_mapping.team_member_id,
+                        bucket_id=bucket.id,
+                        fiscal_month_id=fiscal_month.id,
+                        hours=worklog.hours,
+                        source="jira",
+                        source_issue_id=worklog.issue_id,
+                        source_ticket_key=worklog.ticket_key,
+                        source_worklog_id=worklog.worklog_id,
+                        source_account_id=worklog.jira_account_id,
+                        source_project_key=worklog.jira_project_key,
+                        source_payload_hash=payload_hash,
+                        is_team_member_time=True,
+                        worked_on=worklog.worked_on,
+                    )
+                )
+            else:
+                existing.sync_run_id = sync_run.id
+                existing.product_id = product_mapping.product_id
+                existing.team_member_id = user_mapping.team_member_id
+                existing.bucket_id = bucket.id
+                existing.fiscal_month_id = fiscal_month.id
+                existing.hours = worklog.hours
+                existing.source_ticket_key = worklog.ticket_key
+                existing.source_account_id = worklog.jira_account_id
+                existing.source_project_key = worklog.jira_project_key
+                existing.source_payload_hash = payload_hash
+                existing.is_team_member_time = True
+                existing.worked_on = worklog.worked_on
+            imported += 1
+
+        sync_run.status = "completed"
+        sync_run.imported_count = imported
+        sync_run.skipped_count = skipped_unmapped
+        sync_run.completed_at = utcnow()
+    except Exception as exc:
+        sync_run.status = "failed"
+        sync_run.imported_count = imported
+        sync_run.skipped_count = skipped_unmapped
+        sync_run.completed_at = utcnow()
+        sync_run.error_summary = str(exc)
+        raise
+
+    db.flush()
+    return {
+        "source": "jira",
+        "sync_run": serialize_sync_run(sync_run),
+        "imported_worklogs": imported,
+        "skipped_unmapped_worklogs": skipped_unmapped,
+        "unmapped_users": list_unmapped_users(db),
+        "unmapped_products": list_unmapped_products(db),
+    }
+
+
+def fetch_live_jira_worklogs(db: Session, fiscal_year: int) -> list[MockWorklog]:
+    settings = get_settings()
+    _require_jira_settings(settings.jira_site_url, settings.jira_api_email, settings.jira_api_token)
+    spaces = db.scalars(
+        select(ProductJiraSpace)
+        .where(ProductJiraSpace.is_active.is_(True))
+        .order_by(ProductJiraSpace.jira_project_key)
+    ).all()
+    if not spaces:
+        raise ValueError("No active Product/Jira space mappings are configured")
+
+    fiscal_start = date(fiscal_year - 1, 7, 1)
+    fiscal_end = date(fiscal_year, 6, 30)
+    jql = _worklog_jql(spaces, fiscal_start, fiscal_end)
+    worklogs: list[MockWorklog] = []
+    with httpx.Client(timeout=45, auth=(settings.jira_api_email, settings.jira_api_token)) as client:
+        field_ids = _fetch_work_type_field_ids(client, settings.jira_site_url)
+        fields = ["project", "summary", "status", "issuetype", "worklog", *field_ids]
+        for issue in _search_jira_issues(client, settings.jira_site_url, jql, fields):
+            issue_worklogs = _issue_worklogs(client, settings.jira_site_url, issue)
+            for worklog in issue_worklogs:
+                normalized = _normalize_jira_worklog(issue, worklog, field_ids, fiscal_start, fiscal_end)
+                if normalized is not None:
+                    worklogs.append(normalized)
+    return worklogs
 
 
 def list_unmapped_users(db: Session) -> list[dict[str, object]]:
@@ -276,12 +417,22 @@ def _ensure_user_mapping(db: Session, worklog: MockWorklog) -> JiraUserMapping:
 
 def _ensure_product_mapping(db: Session, worklog: MockWorklog) -> JiraProductMapping:
     mapping = db.scalar(select(JiraProductMapping).where(JiraProductMapping.jira_project_key == worklog.jira_project_key))
+    product_space = db.scalar(
+        select(ProductJiraSpace).where(
+            ProductJiraSpace.jira_project_key == worklog.jira_project_key,
+            ProductJiraSpace.is_active.is_(True),
+        )
+    )
     if mapping is None:
         mapping = JiraProductMapping(
             jira_project_key=worklog.jira_project_key,
             jira_project_name=worklog.jira_project_name,
+            product_id=product_space.product_id if product_space is not None else None,
         )
         db.add(mapping)
+        db.flush()
+    elif mapping.product_id is None and product_space is not None:
+        mapping.product_id = product_space.product_id
         db.flush()
     return mapping
 
@@ -298,3 +449,197 @@ def _payload_hash(worklog: MockWorklog) -> str:
         ]
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _require_jira_settings(site_url: str | None, email: str | None, token: str | None) -> None:
+    if not site_url or not email or not token:
+        raise ValueError("Jira credentials are not configured")
+
+
+def _masked_site_url(site_url: str | None) -> str | None:
+    if not site_url:
+        return None
+    return site_url.rstrip("/")
+
+
+def _worklog_jql(spaces: list[ProductJiraSpace], fiscal_start: date, fiscal_end: date) -> str:
+    clauses = []
+    for space in spaces:
+        if space.scope_jql and space.scope_jql.strip():
+            clauses.append(f"({space.scope_jql.strip()})")
+        else:
+            clauses.append(f'project = "{space.jira_project_key}"')
+    project_scope = " OR ".join(clauses)
+    return f"({project_scope}) AND worklogDate >= {fiscal_start.isoformat()} AND worklogDate <= {fiscal_end.isoformat()} ORDER BY updated ASC"
+
+
+def _fetch_work_type_field_ids(client: httpx.Client, site_url: str) -> list[str]:
+    response = client.get(f"{site_url.rstrip('/')}/rest/api/3/field", headers={"Accept": "application/json"})
+    _raise_for_jira_response(response)
+    fields = response.json()
+    if not isinstance(fields, list):
+        return []
+    return [
+        str(field["id"])
+        for field in fields
+        if isinstance(field, dict) and str(field.get("name") or "").strip() in WORK_TYPE_FIELD_NAMES and field.get("id")
+    ]
+
+
+def _search_jira_issues(client: httpx.Client, site_url: str, jql: str, fields: list[str]) -> list[dict[str, object]]:
+    try:
+        return _search_jira_issues_enhanced(client, site_url, jql, fields)
+    except ValueError as exc:
+        if "404" not in str(exc):
+            raise
+    return _search_jira_issues_legacy(client, site_url, jql, fields)
+
+
+def _search_jira_issues_enhanced(client: httpx.Client, site_url: str, jql: str, fields: list[str]) -> list[dict[str, object]]:
+    issues: list[dict[str, object]] = []
+    next_page_token: str | None = None
+    while True:
+        payload: dict[str, object] = {
+            "jql": jql,
+            "maxResults": 50,
+            "fields": fields,
+        }
+        if next_page_token:
+            payload["nextPageToken"] = next_page_token
+        response = client.post(
+            f"{site_url.rstrip('/')}/rest/api/3/search/jql",
+            json=payload,
+            headers={"Accept": "application/json"},
+        )
+        if response.status_code == 404:
+            raise ValueError("Jira enhanced search endpoint returned 404")
+        _raise_for_jira_response(response)
+        data = response.json()
+        issues.extend(data.get("issues", []))
+        next_page_token = data.get("nextPageToken")
+        if not next_page_token or data.get("isLast", False):
+            break
+    return issues
+
+
+def _search_jira_issues_legacy(client: httpx.Client, site_url: str, jql: str, fields: list[str]) -> list[dict[str, object]]:
+    issues: list[dict[str, object]] = []
+    start_at = 0
+    while True:
+        response = client.post(
+            f"{site_url.rstrip('/')}/rest/api/3/search",
+            json={"jql": jql, "startAt": start_at, "maxResults": 50, "fields": fields},
+            headers={"Accept": "application/json"},
+        )
+        _raise_for_jira_response(response)
+        data = response.json()
+        values = data.get("issues", [])
+        issues.extend(values)
+        start_at += len(values)
+        if len(values) == 0 or start_at >= data.get("total", 0):
+            break
+    return issues
+
+
+def _issue_worklogs(client: httpx.Client, site_url: str, issue: dict[str, object]) -> list[dict[str, object]]:
+    fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
+    embedded = fields.get("worklog") if isinstance(fields, dict) and isinstance(fields.get("worklog"), dict) else {}
+    worklogs = list(embedded.get("worklogs", [])) if isinstance(embedded, dict) else []
+    total = int(embedded.get("total", len(worklogs)) or 0) if isinstance(embedded, dict) else len(worklogs)
+    if len(worklogs) >= total:
+        return worklogs
+
+    all_worklogs: list[dict[str, object]] = []
+    start_at = 0
+    issue_key = str(issue.get("key") or issue.get("id") or "")
+    while True:
+        response = client.get(
+            f"{site_url.rstrip('/')}/rest/api/3/issue/{issue_key}/worklog",
+            params={"startAt": start_at, "maxResults": 100},
+            headers={"Accept": "application/json"},
+        )
+        _raise_for_jira_response(response)
+        data = response.json()
+        values = data.get("worklogs", [])
+        all_worklogs.extend(values)
+        start_at += len(values)
+        if len(values) == 0 or start_at >= data.get("total", 0):
+            break
+    return all_worklogs
+
+
+def _normalize_jira_worklog(
+    issue: dict[str, object],
+    worklog: dict[str, object],
+    work_type_field_ids: list[str],
+    fiscal_start: date,
+    fiscal_end: date,
+) -> MockWorklog | None:
+    worked_on = _jira_worklog_date(worklog.get("started"))
+    if worked_on is None or worked_on < fiscal_start or worked_on > fiscal_end:
+        return None
+
+    fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
+    project = fields.get("project") if isinstance(fields, dict) and isinstance(fields.get("project"), dict) else {}
+    status = fields.get("status") if isinstance(fields, dict) and isinstance(fields.get("status"), dict) else {}
+    author = worklog.get("author") if isinstance(worklog.get("author"), dict) else {}
+    seconds = Decimal(str(worklog.get("timeSpentSeconds") or 0))
+    hours = (seconds / Decimal("3600")).quantize(Decimal("0.01"))
+    if hours <= 0:
+        return None
+
+    project_key = str(project.get("key") or "").strip().upper()
+    if not project_key:
+        return None
+
+    return MockWorklog(
+        worklog_id=str(worklog.get("id") or ""),
+        issue_id=str(issue.get("id") or issue.get("key") or ""),
+        ticket_key=str(issue.get("key") or ""),
+        ticket_summary=str(fields.get("summary") or ""),
+        ticket_status=str(status.get("name") or ""),
+        jira_project_key=project_key,
+        jira_project_name=str(project.get("name") or project_key),
+        jira_account_id=str(author.get("accountId") or ""),
+        jira_display_name=str(author.get("displayName") or "Unknown Jira user"),
+        jira_email=str(author.get("emailAddress") or "") or None,
+        bucket_code=_bucket_code_from_issue_fields(fields, work_type_field_ids),
+        worked_on=worked_on,
+        hours=hours,
+    )
+
+
+def _bucket_code_from_issue_fields(fields: dict[str, object], work_type_field_ids: list[str]) -> str:
+    for field_id in work_type_field_ids:
+        value = _jira_field_text(fields.get(field_id))
+        if not value:
+            continue
+        bucket_code = WORK_TYPE_ALIASES.get(normalize_lookup_value(value))
+        if bucket_code:
+            return bucket_code
+    return "MAINTENANCE"
+
+
+def _jira_field_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return str(value.get("value") or value.get("name") or "").strip()
+    if isinstance(value, list):
+        return " ".join(_jira_field_text(item) for item in value)
+    return str(value).strip()
+
+
+def _jira_worklog_date(value: object) -> date | None:
+    if not value:
+        return None
+    raw = str(value)
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None

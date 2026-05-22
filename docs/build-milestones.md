@@ -1,13 +1,13 @@
-# SPARK Build Milestones
+# SPARC Build Milestones
 
-SPARK means Staff Planning & Resource Knowledge. This plan starts from the current scaffold: Docker Compose, FastAPI, PostgreSQL, React/Vite, seeded data, core routes, editable forecast cells, editable bill rates, and mock Jira/Rovo sync.
+SPARC is the internal labor forecasting and cost intelligence app for this project. This plan starts from the current scaffold: Docker Compose, FastAPI, PostgreSQL, React/Vite, reference data, core routes, editable forecast cells, editable bill rates, and app-owned Jira/Rovo sync.
 
 ## Build Principles
 
-- SPARK is a labor forecasting and cost intelligence app, not a project management app.
+- SPARC is a labor forecasting and cost intelligence app, not a project management app.
 - Product is the primary planning entity.
 - Manager-curated Team Member records are truth. Jira/Rovo contributors are evidence.
-- Forecast hours are manually managed in SPARK.
+- Forecast hours are manually managed in SPARC.
 - Actual hours are imported from app-owned Jira/Rovo codepaths.
 - Cost is calculated from hours and bill rate.
 - Jira/Rovo access must stay server-side and app-owned.
@@ -27,7 +27,7 @@ The remainder of the build should be delivered in three practical releases:
 
 **Outcome**
 
-SPARK runs locally and demonstrates the main navigation and data model.
+SPARC runs locally and demonstrates the main navigation and data model.
 
 **Completed Deliverables**
 
@@ -333,7 +333,7 @@ The app proves the actual-hours model with realistic mock ticket/worklog evidenc
 
 **Outcome**
 
-SPARK can fetch actual hours from Jira/Rovo through controlled server-side integration.
+SPARC can fetch actual hours from Jira/Rovo through controlled server-side integration.
 
 **Security Pattern**
 
@@ -341,7 +341,7 @@ SPARK can fetch actual hours from Jira/Rovo through controlled server-side integ
 - Jira/Rovo credentials live only in server environment variables.
 - Jira/Rovo scope is stored in app data.
 - Server code makes all external calls.
-- The AI only works through SPARK codepaths like `run sync`.
+- The AI only works through SPARC codepaths like `run sync`.
 - No arbitrary direct Jira API calls from prompts, tools, or client code.
 
 **Backend Deliverables**
@@ -400,7 +400,7 @@ SPARK can fetch actual hours from Jira/Rovo through controlled server-side integ
 
 **Outcome**
 
-The UI is driven by SPARK-owned analytics, not raw Jira/Rovo payloads.
+The UI is driven by SPARC-owned analytics, not raw Jira/Rovo payloads.
 
 **Backend Deliverables**
 
@@ -492,7 +492,7 @@ Managers can maintain the operational reference data needed for forecasting.
 
 **Outcome**
 
-SPARK feels like a real internal tool: dense, clear, fast, and hard to misuse.
+SPARC feels like a real internal tool: dense, clear, fast, and hard to misuse.
 
 **Frontend Deliverables**
 
@@ -526,7 +526,7 @@ SPARK feels like a real internal tool: dense, clear, fast, and hard to misuse.
 
 **Outcome**
 
-The team can change SPARK without guessing whether core planning math still works.
+The team can change SPARC without guessing whether core planning math still works.
 
 **Backend Tests**
 
@@ -554,7 +554,7 @@ The team can change SPARK without guessing whether core planning math still work
 
 **End-To-End Tests**
 
-- Clean database seed.
+- Clean reference-only database seed.
 - Dashboard smoke test.
 - Forecast edit and totals update.
 - Team import and bill rate edit.
@@ -589,7 +589,7 @@ The team can change SPARK without guessing whether core planning math still work
 
 **Outcome**
 
-SPARK is ready for a controlled pilot with real users and real data.
+SPARC is ready for a controlled pilot with real users and real data.
 
 **Operational Deliverables**
 

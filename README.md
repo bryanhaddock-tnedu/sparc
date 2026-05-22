@@ -1,6 +1,6 @@
-# SPARK
+# SPARC
 
-SPARK is Staff Planning & Resource Knowledge: an internal labor forecasting and cost intelligence app.
+SPARC is an internal labor forecasting and cost intelligence app.
 
 ## Local Docker
 
@@ -20,6 +20,22 @@ docker compose exec backend python -m app.cli reset-db
 docker compose exec backend python -m app.cli seed-db
 docker compose exec backend pytest
 docker compose exec frontend npm run build
+```
+
+## Stage-Style Container
+
+Stage uses one SPARC app container: FastAPI serves `/api/*`, health checks, and the built React frontend.
+
+```bash
+docker compose -f docker-compose.stage.yml --profile migrate run --rm migrate
+docker compose -f docker-compose.stage.yml up --build app
+```
+
+For stage, provide `DATABASE_URL` from Azure PostgreSQL/Key Vault and keep:
+
+```bash
+AUTO_CREATE_SCHEMA=false
+SEED_ON_STARTUP=false
 ```
 
 ## Local Without Docker
@@ -43,8 +59,9 @@ npm --prefix frontend run dev
 - Product scope and constraints live in `docs/product-brief.md`.
 - MVP milestones live in `docs/build-milestones.md`.
 - MVP completion notes live in `docs/mvp-completion.md`.
+- Deployment notes live in `docs/deployment.md`.
 - STAGE deployment direction lives in `docs/stage-environment-plan.md`.
-- The MVP seeds FY2026 months from July 2025 through June 2026.
-- Jira/Rovo sync is mocked and app-owned; credentials and live external calls are intentionally not implemented yet.
+- Seeding is reference-only: buckets, FY2026 months from July 2025 through June 2026, and baseline app settings. It does not create demo products, people, forecasts, actuals, or Jira mappings.
+- Jira sync is app-owned and server-side. Configure `JIRA_SITE_URL`, `JIRA_API_EMAIL`, and `JIRA_API_TOKEN` in `.env`, restart Compose, then use Product Settings to map SPARC products to Jira projects before running live sync.
 - STAGE is expected to run containerized on Kubernetes with Azure PostgreSQL and Key Vault-backed secrets.
 - For STAGE, set `AUTO_CREATE_SCHEMA=false` and run `alembic upgrade head` against Azure PostgreSQL before the app starts.

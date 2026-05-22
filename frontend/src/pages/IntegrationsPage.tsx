@@ -1,39 +1,44 @@
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { DatabaseZap } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 
+import { PageNav } from "../components/PageNav";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
-import type { JiraProductMapping, JiraUserMapping, Product, SyncRun, TeamMember } from "../types/api";
+import { useFiscalYear } from "../lib/fiscalYear";
+import type { JiraIntegrationStatus, JiraProductMapping, JiraUserMapping, Product, SyncRun, TeamMember } from "../types/api";
 
 export function IntegrationsPage() {
+  const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [userMappings, setUserMappings] = useState<JiraUserMapping[]>([]);
   const [productMappings, setProductMappings] = useState<JiraProductMapping[]>([]);
   const [syncRuns, setSyncRuns] = useState<SyncRun[]>([]);
+  const [jiraStatus, setJiraStatus] = useState<JiraIntegrationStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
+  const [liveSyncing, setLiveSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function loadData() {
-    const [members, productRows, users, jiraProducts, runs] = await Promise.all([
+    const [members, productRows, users, jiraProducts, runs, status] = await Promise.all([
       api.teamMembers(),
       api.products(),
       api.userMappings(),
       api.productMappings(),
       api.syncRuns(),
+      api.jiraIntegrationStatus(),
     ]);
     setTeamMembers(members);
     setProducts(productRows);
     setUserMappings(users);
     setProductMappings(jiraProducts);
     setSyncRuns(runs);
+    setJiraStatus(status);
   }
 
   useEffect(() => {
@@ -42,16 +47,16 @@ export function IntegrationsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function runSync() {
-    setSyncing(true);
+  async function runLiveSync() {
+    setLiveSyncing(true);
     setError(null);
     try {
-      await api.syncMockJiraRovo();
+      await api.syncLiveJiraRovo(fiscalYear);
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to run mock sync");
+      setError(err instanceof Error ? err.message : "Unable to run live Jira sync");
     } finally {
-      setSyncing(false);
+      setLiveSyncing(false);
     }
   }
 
@@ -73,29 +78,39 @@ export function IntegrationsPage() {
 
   return (
     <div className="space-y-5">
-      <Button asChild variant="ghost" size="sm" className="-ml-2">
-        <Link to="/">
-          <ArrowLeft className="h-4 w-4" />
-          Dashboard
-        </Link>
-      </Button>
-
       <section className="flex flex-col justify-between gap-4 border-b pb-5 sm:flex-row sm:items-end">
         <div>
-          <h1 className="text-2xl font-semibold">Jira/Rovo Integration</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Mock actual-hours sync, mappings, and sync history.</p>
+          <h1 className="text-2xl font-semibold">Jira Sync</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Live Jira actual-hours sync, mappings, and sync history for {fiscalYearLabel} ({fiscalYearRangeLabel}).
+          </p>
         </div>
-        <Button onClick={runSync} disabled={syncing}>
-          <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-          Mock Sync
-        </Button>
+        <div className="flex flex-col gap-2 sm:items-end">
+          <PageNav current="jira" />
+          <Button onClick={runLiveSync} disabled={liveSyncing || !jiraStatus?.configured}>
+            <DatabaseZap className={`h-4 w-4 ${liveSyncing ? "animate-pulse" : ""}`} />
+            {liveSyncing ? "Syncing Jira" : "Sync Jira Actuals"}
+          </Button>
+        </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-3">
+      {error ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div> : null}
+
+      <section className="grid gap-3 sm:grid-cols-4">
+        <StatusCard label="Jira config" value={jiraStatus?.configured ? "Ready" : "Missing"} tone={jiraStatus?.configured ? "good" : "warn"} />
         <StatusCard label="User mappings" value={`${userMappings.length - unmappedUserCount}/${userMappings.length}`} />
         <StatusCard label="Product mappings" value={`${productMappings.length - unmappedProductCount}/${productMappings.length}`} />
         <StatusCard label="Latest sync" value={syncRuns[0]?.status ?? "No runs"} />
       </section>
+
+      {!jiraStatus?.configured ? (
+        <div className="rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm">
+          <div className="font-medium text-foreground">Live Jira sync is waiting on server configuration.</div>
+          <div className="mt-1 text-muted-foreground">
+            Missing: {jiraStatus?.missing.join(", ") || "Jira environment variables"}. These stay server-side and should come from local env or Key Vault.
+          </div>
+        </div>
+      ) : null}
 
       <MappingTable title="Jira Users" unmapped={unmappedUserCount}>
         <Table>
@@ -202,14 +217,15 @@ export function IntegrationsPage() {
   );
 }
 
-function StatusCard({ label, value }: { label: string; value: string }) {
+function StatusCard({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "good" | "warn" }) {
+  const valueClass = tone === "good" ? "text-primary" : tone === "warn" ? "text-warning" : "text-foreground";
   return (
     <Card className="min-h-[118px]">
       <CardHeader className="p-4 pb-0">
         <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">{label}</CardTitle>
       </CardHeader>
       <CardContent className="flex min-h-[72px] items-center justify-center p-4 pt-2">
-        <div className="numeric-cell text-center text-2xl font-semibold leading-none sm:text-3xl">{value}</div>
+        <div className={`numeric-cell text-center text-2xl font-semibold leading-none sm:text-3xl ${valueClass}`}>{value}</div>
       </CardContent>
     </Card>
   );

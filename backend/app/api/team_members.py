@@ -73,7 +73,7 @@ def update_team_member(
 @router.get("/{team_member_id}/products", response_model=TeamMemberProductsResponse)
 def get_team_member_product_rows(
     team_member_id: int,
-    fiscal_year: int = 2026,
+    fiscal_year: int = 2027,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     try:

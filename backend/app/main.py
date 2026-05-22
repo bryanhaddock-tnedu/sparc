@@ -1,8 +1,11 @@
 from contextlib import asynccontextmanager
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -12,7 +15,8 @@ from app.db.seed import seed_database
 from app.db.session import SessionLocal, create_database
 
 settings = get_settings()
-logger = logging.getLogger("spark")
+logger = logging.getLogger("sparc")
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 @asynccontextmanager
@@ -24,7 +28,7 @@ async def lifespan(app: FastAPI):
         with SessionLocal() as db:
             seed_database(db)
     logger.info(
-        "SPARK startup complete environment=%s auto_create_schema=%s seed_on_startup=%s",
+        "SPARC startup complete environment=%s auto_create_schema=%s seed_on_startup=%s",
         settings.environment,
         settings.auto_create_schema,
         settings.seed_on_startup,
@@ -64,3 +68,17 @@ def readiness() -> dict[str, str]:
 
 
 app.include_router(api_router)
+
+if STATIC_DIR.exists():
+    assets_dir = STATIC_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_frontend(full_path: str) -> FileResponse:
+        if full_path.startswith(("api/", "health")):
+            raise HTTPException(status_code=404, detail="Not found")
+        requested_path = STATIC_DIR / full_path
+        if requested_path.is_file():
+            return FileResponse(requested_path)
+        return FileResponse(STATIC_DIR / "index.html")

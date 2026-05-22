@@ -3,7 +3,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Bucket, FiscalMonth, ForecastEntry
+from app.models import Bucket, FiscalMonth, ForecastEntry, ProductTeamMember
 from app.services.fiscal_year import get_fiscal_month
 
 
@@ -48,6 +48,7 @@ def upsert_forecast_entry(
     fiscal_year: int | None = None,
     month_sequence: int | None = None,
 ) -> ForecastEntry:
+    ensure_product_team_member(db, product_id=product_id, team_member_id=team_member_id)
     month = resolve_fiscal_month(
         db,
         fiscal_month_id=fiscal_month_id,
@@ -76,3 +77,17 @@ def upsert_forecast_entry(
         entry.hours = Decimal(str(hours))
     db.flush()
     return entry
+
+
+def ensure_product_team_member(db: Session, *, product_id: int, team_member_id: int) -> ProductTeamMember:
+    assignment = db.scalar(
+        select(ProductTeamMember).where(
+            ProductTeamMember.product_id == product_id,
+            ProductTeamMember.team_member_id == team_member_id,
+        )
+    )
+    if assignment is None:
+        assignment = ProductTeamMember(product_id=product_id, team_member_id=team_member_id, status="active")
+        db.add(assignment)
+        db.flush()
+    return assignment

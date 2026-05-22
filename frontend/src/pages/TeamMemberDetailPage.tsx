@@ -1,9 +1,11 @@
-import { ArrowLeft, Pencil, Save, X } from "lucide-react";
+import { Pencil, Save, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { BudgetTracker } from "../components/BudgetTracker";
 import { MetricCard } from "../components/MetricCard";
+import { PageNav } from "../components/PageNav";
+import { ReportedValuesTable } from "../components/ReportedValuesTable";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -11,9 +13,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
+import { useFiscalYear } from "../lib/fiscalYear";
 import { formatBillRate } from "../lib/teamMembers";
 import { formatCurrency, formatHours } from "../lib/utils";
-import type { TeamMember, TeamMemberProducts } from "../types/api";
+import type { ReportedValueRow, TeamMember, TeamMemberProducts } from "../types/api";
 
 type ProfileFormState = {
   name: string;
@@ -28,7 +31,9 @@ type ProfileFormState = {
 export function TeamMemberDetailPage() {
   const params = useParams();
   const teamMemberId = Number(params.teamMemberId);
+  const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [data, setData] = useState<TeamMemberProducts | null>(null);
+  const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -36,13 +41,21 @@ export function TeamMemberDetailPage() {
   const [form, setForm] = useState<ProfileFormState | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
+  async function loadData() {
+    const [productsResult, reportedRowsResult] = await Promise.all([
+      api.teamMemberProducts(teamMemberId, fiscalYear),
+      api.reportedValues({ team_member_id: teamMemberId }, fiscalYear),
+    ]);
+    setData(productsResult);
+    setReportedRows(reportedRowsResult);
+  }
+
   useEffect(() => {
-    api
-      .teamMemberProducts(teamMemberId)
-      .then(setData)
+    setLoading(true);
+    loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load team member"))
       .finally(() => setLoading(false));
-  }, [teamMemberId]);
+  }, [teamMemberId, fiscalYear]);
 
   if (loading) return <LoadingBlock />;
   if (error) return <ErrorBlock message={error} />;
@@ -90,7 +103,7 @@ export function TeamMemberDetailPage() {
         contracting_company: form.contractingCompany.trim() || null,
         status: form.status,
       });
-      setData(await api.teamMemberProducts(teamMemberId));
+      await loadData();
       setEditing(false);
       setForm(null);
     } catch (err) {
@@ -102,13 +115,6 @@ export function TeamMemberDetailPage() {
 
   return (
     <div className="space-y-5">
-      <Button asChild variant="ghost" size="sm" className="-ml-2">
-        <Link to="/">
-          <ArrowLeft className="h-4 w-4" />
-          Dashboard
-        </Link>
-      </Button>
-
       <section className="flex flex-col justify-between gap-4 border-b pb-5 lg:flex-row lg:items-end">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -118,9 +124,10 @@ export function TeamMemberDetailPage() {
             </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {member.role} / {member.team}
+            {member.role} / {member.team} / {fiscalYearLabel} ({fiscalYearRangeLabel})
           </p>
         </div>
+        <PageNav />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[360px_1fr]">
@@ -198,11 +205,10 @@ export function TeamMemberDetailPage() {
         <div className="grid gap-3 sm:grid-cols-2">
           <BudgetTracker
             className="sm:col-span-2"
-            budget={data.budget_amount}
-            projectedSpend={data.projected_spend}
-            remaining={data.budget_remaining}
-            utilizationPercent={data.budget_utilization_percent}
-            contextLabel="Member projected spend across supported products"
+            budget={0}
+            forecastSpend={forecastCost}
+            actualSpend={actualCost}
+            contextLabel="Member forecast and actuals across supported products"
           />
           <MetricCard label="Forecast Hours" value={formatHours(forecastHours)} />
           <MetricCard label="Actual Hours" value={formatHours(actualHours)} />
@@ -210,6 +216,8 @@ export function TeamMemberDetailPage() {
           <MetricCard label="Actual Cost" value={formatCurrency(actualCost)} />
         </div>
       </section>
+
+      <ReportedValuesTable rows={reportedRows} showProduct />
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Product Associations</h2>

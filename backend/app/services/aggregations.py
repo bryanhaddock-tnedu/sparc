@@ -4,21 +4,41 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import ActualEntry, Bucket, FiscalMonth, ForecastEntry, Product, TeamMember
+from app.models import ActualEntry, Bucket, FiscalMonth, ForecastEntry, Product, ProductBudget, ProductTeamMember, TeamMember
 from app.services.costs import calculate_cost, round_hours
 from app.services.fiscal_year import ensure_fiscal_months
 
 
-def serialize_product(product: Product) -> dict[str, object]:
+def serialize_product(product: Product, budget_amount: Decimal | float | None = None) -> dict[str, object]:
+    budget = product.budget_amount if budget_amount is None else budget_amount
     return {
         "id": product.id,
         "name": product.name,
         "jira_space_key": product.jira_space_key,
         "description": product.description,
-        "budget_amount": round(float(product.budget_amount or 0), 2),
+        "budget_amount": round(float(budget or 0), 2),
         "is_active": product.is_active,
         "created_at": product.created_at,
         "updated_at": product.updated_at,
+    }
+
+
+def product_budget_amount(db: Session, product_id: int, fiscal_year: int) -> Decimal:
+    budget = db.scalar(
+        select(ProductBudget.budget_amount).where(
+            ProductBudget.product_id == product_id,
+            ProductBudget.fiscal_year == fiscal_year,
+        )
+    )
+    return budget or Decimal("0")
+
+
+def product_budget_map(db: Session, fiscal_year: int) -> dict[int, Decimal]:
+    return {
+        product_id: budget_amount
+        for product_id, budget_amount in db.execute(
+            select(ProductBudget.product_id, ProductBudget.budget_amount).where(ProductBudget.fiscal_year == fiscal_year)
+        ).all()
     }
 
 
@@ -116,14 +136,18 @@ def dashboard_products(db: Session, fiscal_year: int) -> list[dict[str, object]]
     products = db.scalars(select(Product).order_by(Product.name)).all()
     forecasts = _forecast_entries(db, fiscal_year)
     actuals = _actual_entries(db, fiscal_year)
+    budgets = product_budget_map(db, fiscal_year)
 
     forecasts_by_product: dict[int, list[ForecastEntry]] = defaultdict(list)
     actuals_by_product: dict[int, list[ActualEntry]] = defaultdict(list)
+    assignments_by_product: dict[int, set[int]] = defaultdict(set)
 
     for entry in forecasts:
         forecasts_by_product[entry.product_id].append(entry)
     for entry in actuals:
         actuals_by_product[entry.product_id].append(entry)
+    for assignment in db.scalars(select(ProductTeamMember).where(ProductTeamMember.status == "active")).all():
+        assignments_by_product[assignment.product_id].add(assignment.team_member_id)
 
     rows: list[dict[str, object]] = []
     for product in products:
@@ -131,8 +155,9 @@ def dashboard_products(db: Session, fiscal_year: int) -> list[dict[str, object]]
         product_actuals = actuals_by_product[product.id]
         team_member_ids = {entry.team_member_id for entry in product_forecasts}
         team_member_ids.update(entry.team_member_id for entry in product_actuals)
+        team_member_ids.update(assignments_by_product[product.id])
         metrics = _metric_totals(product_forecasts, product_actuals)
-        budget_metrics = _budget_metrics(product.budget_amount, metrics["forecasted_cost"])
+        budget_metrics = _budget_metrics(budgets.get(product.id, Decimal("0")), metrics["forecasted_cost"])
         rows.append(
             {
                 "product_id": product.id,
@@ -180,6 +205,68 @@ def dashboard_summary(db: Session, fiscal_year: int) -> dict[str, float | int]:
     return summary
 
 
+def dashboard_work_type_breakdown(db: Session, fiscal_year: int) -> list[dict[str, object]]:
+    buckets = db.scalars(select(Bucket).order_by(Bucket.id)).all()
+    forecasts = _forecast_entries(db, fiscal_year)
+    actuals = _actual_entries(db, fiscal_year)
+    by_bucket: dict[int, dict[str, Decimal | float]] = defaultdict(
+        lambda: {"forecast_hours": Decimal("0"), "actual_hours": Decimal("0"), "forecast_cost": 0.0, "actual_cost": 0.0}
+    )
+
+    for entry in forecasts:
+        by_bucket[entry.bucket_id]["forecast_hours"] += entry.hours
+        by_bucket[entry.bucket_id]["forecast_cost"] += calculate_cost(entry.hours, entry.team_member.bill_rate)
+    for entry in actuals:
+        by_bucket[entry.bucket_id]["actual_hours"] += entry.hours
+        by_bucket[entry.bucket_id]["actual_cost"] += calculate_cost(entry.hours, entry.team_member.bill_rate)
+
+    return [
+        {
+            "bucket_id": bucket.id,
+            "bucket": bucket.name,
+            "bucket_code": bucket.code,
+            "forecast_hours": round_hours(by_bucket[bucket.id]["forecast_hours"]),
+            "actual_hours": round_hours(by_bucket[bucket.id]["actual_hours"]),
+            "forecast_cost": round(float(by_bucket[bucket.id]["forecast_cost"]), 2),
+            "actual_cost": round(float(by_bucket[bucket.id]["actual_cost"]), 2),
+        }
+        for bucket in buckets
+    ]
+
+
+def dashboard_labor_mix(db: Session, fiscal_year: int) -> dict[str, list[dict[str, object]]]:
+    forecasts = _forecast_entries(db, fiscal_year)
+    actuals = _actual_entries(db, fiscal_year)
+    hire_types: dict[str, dict[str, Decimal | float]] = defaultdict(
+        lambda: {"forecast_hours": Decimal("0"), "actual_hours": Decimal("0"), "forecast_cost": 0.0, "actual_cost": 0.0}
+    )
+    roles: dict[str, dict[str, Decimal | float]] = defaultdict(
+        lambda: {"forecast_hours": Decimal("0"), "actual_hours": Decimal("0"), "forecast_cost": 0.0, "actual_cost": 0.0}
+    )
+
+    for entry in forecasts:
+        employment_type = entry.team_member.employment_type or "Unspecified"
+        role = entry.team_member.role or "Unspecified"
+        cost = calculate_cost(entry.hours, entry.team_member.bill_rate)
+        hire_types[employment_type]["forecast_hours"] += entry.hours
+        hire_types[employment_type]["forecast_cost"] += cost
+        roles[role]["forecast_hours"] += entry.hours
+        roles[role]["forecast_cost"] += cost
+    for entry in actuals:
+        employment_type = entry.team_member.employment_type or "Unspecified"
+        role = entry.team_member.role or "Unspecified"
+        cost = calculate_cost(entry.hours, entry.team_member.bill_rate)
+        hire_types[employment_type]["actual_hours"] += entry.hours
+        hire_types[employment_type]["actual_cost"] += cost
+        roles[role]["actual_hours"] += entry.hours
+        roles[role]["actual_cost"] += cost
+
+    return {
+        "hire_types": _labor_mix_rows(hire_types, "employment_type"),
+        "roles": _labor_mix_rows(roles, "role")[:5],
+    }
+
+
 def product_summary(db: Session, product_id: int, fiscal_year: int) -> dict[str, object]:
     product = db.get(Product, product_id)
     if product is None:
@@ -187,10 +274,11 @@ def product_summary(db: Session, product_id: int, fiscal_year: int) -> dict[str,
     forecasts = _forecast_entries(db, fiscal_year, product_id)
     actuals = _actual_entries(db, fiscal_year, product_id)
     metrics = _metric_totals(forecasts, actuals)
+    budget = product_budget_amount(db, product_id, fiscal_year)
     return {
-        "product": serialize_product(product),
+        "product": serialize_product(product, budget),
         "fiscal_year": fiscal_year,
-        **_budget_metrics(product.budget_amount, metrics["forecasted_cost"]),
+        **_budget_metrics(budget, metrics["forecasted_cost"]),
         **metrics,
     }
 
@@ -232,7 +320,6 @@ def product_bucket_tables(db: Session, product_id: int, fiscal_year: int) -> dic
         key = (entry.bucket_id, entry.team_member_id, entry.fiscal_month_id)
         actual_by_key[key] += entry.hours
         member_ids_by_bucket[entry.bucket_id].add(entry.team_member_id)
-
     members_by_id = {member.id: member for member in db.scalars(select(TeamMember).order_by(TeamMember.name)).all()}
     bucket_payloads = []
 
@@ -270,7 +357,7 @@ def product_bucket_tables(db: Session, product_id: int, fiscal_year: int) -> dic
         )
 
     return {
-        "product": serialize_product(product),
+        "product": serialize_product(product, product_budget_amount(db, product_id, fiscal_year)),
         "fiscal_year": fiscal_year,
         "months": [serialize_month(month) for month in months],
         "buckets": bucket_payloads,
@@ -299,13 +386,13 @@ def team_member_products(db: Session, team_member_id: int, fiscal_year: int) -> 
             {"product": entry.product, "bucket": entry.bucket, "forecast_hours": Decimal("0"), "actual_hours": Decimal("0")},
         )
         grouped[key]["actual_hours"] += entry.hours
-
     rows = []
-    product_budgets: dict[int, Decimal] = {}
+    budgets = product_budget_map(db, fiscal_year)
+    product_ids: set[int] = set()
     for values in grouped.values():
         product = values["product"]
         bucket = values["bucket"]
-        product_budgets[product.id] = product.budget_amount or Decimal("0")
+        product_ids.add(product.id)
         forecast_hours = values["forecast_hours"]
         actual_hours = values["actual_hours"]
         forecast_cost = calculate_cost(forecast_hours, member.bill_rate)
@@ -327,7 +414,7 @@ def team_member_products(db: Session, team_member_id: int, fiscal_year: int) -> 
     return {
         "team_member": serialize_team_member(member),
         "fiscal_year": fiscal_year,
-        **_budget_metrics(sum(product_budgets.values(), Decimal("0")), projected_spend),
+        **_budget_metrics(sum((budgets.get(product_id, Decimal("0")) for product_id in product_ids), Decimal("0")), projected_spend),
         "products": rows,
     }
 
@@ -367,3 +454,17 @@ def _add_totals(target: dict[str, float], values: dict[str, float]) -> None:
 
 def _rounded_totals(values: dict[str, float]) -> dict[str, float]:
     return {key: round(value, 2) for key, value in values.items()}
+
+
+def _labor_mix_rows(source: dict[str, dict[str, Decimal | float]], key_name: str) -> list[dict[str, object]]:
+    rows = [
+        {
+            key_name: label,
+            "forecast_hours": round_hours(values["forecast_hours"]),
+            "actual_hours": round_hours(values["actual_hours"]),
+            "forecast_cost": round(float(values["forecast_cost"]), 2),
+            "actual_cost": round(float(values["actual_cost"]), 2),
+        }
+        for label, values in source.items()
+    ]
+    return sorted(rows, key=lambda row: (row["forecast_hours"], row["actual_hours"]), reverse=True)

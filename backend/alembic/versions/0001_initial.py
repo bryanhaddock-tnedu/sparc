@@ -1,4 +1,4 @@
-"""Initial SPARK schema.
+"""Initial SPARC schema.
 
 Revision ID: 0001_initial
 Revises:

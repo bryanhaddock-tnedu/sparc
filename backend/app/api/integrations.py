@@ -6,12 +6,18 @@ from app.db.session import get_db
 from app.schemas import (
     JiraProductMapRequest,
     JiraProductMappingResponse,
+    JiraIntegrationStatusResponse,
+    JiraLiveSyncRequest,
+    JiraProjectCatalogResponse,
+    JiraProjectCatalogSyncResponse,
     JiraRovoSyncResponse,
     JiraUserMapRequest,
     JiraUserMappingResponse,
     SyncRunResponse,
 )
+from app.services.jira_projects import list_jira_project_catalog, refresh_jira_project_catalog
 from app.services.jira_rovo import (
+    jira_integration_status,
     list_product_mappings,
     list_sync_runs,
     list_unmapped_products,
@@ -19,10 +25,32 @@ from app.services.jira_rovo import (
     list_user_mappings,
     map_jira_product,
     map_jira_user,
+    run_live_jira_rovo_sync,
     run_mock_jira_rovo_sync,
 )
 
 router = APIRouter(prefix="/integrations/jira-rovo", tags=["jira-rovo"])
+
+
+@router.get("/status", response_model=JiraIntegrationStatusResponse)
+def get_jira_integration_status() -> dict[str, object]:
+    return jira_integration_status()
+
+
+@router.get("/project-catalog", response_model=list[JiraProjectCatalogResponse])
+def get_jira_project_catalog(db: Session = Depends(get_db)) -> list[dict[str, object]]:
+    return list_jira_project_catalog(db)
+
+
+@router.post("/project-catalog/refresh", response_model=JiraProjectCatalogSyncResponse)
+def refresh_jira_project_catalog_endpoint(db: Session = Depends(get_db)) -> dict[str, object]:
+    try:
+        result = refresh_jira_project_catalog(db)
+        db.commit()
+        return result
+    except ValueError as exc:
+        db.rollback()
+        raise bad_request(str(exc)) from exc
 
 
 @router.post("/sync", response_model=JiraRovoSyncResponse)
@@ -30,6 +58,17 @@ def sync_mock_jira_rovo(db: Session = Depends(get_db)) -> dict[str, object]:
     result = run_mock_jira_rovo_sync(db)
     db.commit()
     return result
+
+
+@router.post("/sync-live", response_model=JiraRovoSyncResponse)
+def sync_live_jira_rovo(payload: JiraLiveSyncRequest, db: Session = Depends(get_db)) -> dict[str, object]:
+    try:
+        result = run_live_jira_rovo_sync(db, payload.fiscal_year)
+        db.commit()
+        return result
+    except ValueError as exc:
+        db.rollback()
+        raise bad_request(str(exc)) from exc
 
 
 @router.get("/unmapped-users", response_model=list[JiraUserMappingResponse])

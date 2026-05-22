@@ -37,6 +37,27 @@ def ensure_database_compatibility() -> None:
             }
             connection.execute(text(product_budget_sql[dialect]))
 
+    inspector = inspect(engine)
+    table_names = inspector.get_table_names()
+    if "product_budgets" in table_names:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO product_budgets (product_id, fiscal_year, budget_amount, created_at, updated_at)
+                    SELECT p.id, 2026, p.budget_amount, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    FROM products p
+                    WHERE p.budget_amount IS NOT NULL
+                      AND p.budget_amount > 0
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM product_budgets pb
+                        WHERE pb.product_id = p.id AND pb.fiscal_year = 2026
+                      )
+                    """
+                )
+            )
+
     if "actual_entries" not in table_names:
         return
 

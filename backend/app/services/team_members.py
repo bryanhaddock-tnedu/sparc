@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import TeamMember
 
-STAFF_ID_PREFIX = "SPARK"
+STAFF_ID_PREFIX = "SPARC"
 
 
 def normalize_name(value: str) -> str:

@@ -1,11 +1,39 @@
 from decimal import Decimal
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ApiMessage(BaseModel):
     message: str
+
+
+class AdminDataExportOptionResponse(BaseModel):
+    key: str
+    label: str
+    description: str
+    default_selected: bool
+
+
+class AdminDataImportDatasetResult(BaseModel):
+    key: str
+    label: str
+    created: int
+    updated: int
+    skipped: int
+    failed: int
+
+
+class AdminDataImportError(BaseModel):
+    sheet: str
+    row: int
+    message: str
+
+
+class AdminDataImportResult(BaseModel):
+    datasets: list[AdminDataImportDatasetResult]
+    errors: list[AdminDataImportError]
+    excluded_jira_refresh_data: list[str]
 
 
 class ProductResponse(BaseModel):
@@ -47,6 +75,228 @@ class ProductUpdate(BaseModel):
     description: str | None = None
     budget_amount: Decimal | None = Field(default=None, ge=0)
     is_active: bool | None = None
+
+
+class ProductTeamMemberCreate(BaseModel):
+    team_member_id: int
+    default_bucket_id: int | None = None
+    status: str = "active"
+
+
+class ProductTeamMemberUpdate(BaseModel):
+    default_bucket_id: int | None = None
+    status: str | None = None
+
+
+class ProductTeamMemberResponse(BaseModel):
+    id: int
+    product_id: int
+    team_member_id: int
+    team_member: str
+    role: str
+    team: str
+    bill_rate: float
+    employment_type: str
+    default_bucket_id: int | None
+    default_bucket: str | None
+    status: str
+    has_forecast_entries: bool
+    has_actual_entries: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class JiraProjectCatalogResponse(BaseModel):
+    id: int
+    jira_project_id: str
+    jira_project_key: str
+    jira_project_name: str
+    project_type_key: str | None
+    is_visible: bool
+    is_archived: bool
+    last_seen_at: datetime
+    last_checked_at: datetime
+
+
+class JiraProjectCatalogSyncResponse(BaseModel):
+    imported: int
+    projects: list[JiraProjectCatalogResponse]
+
+
+class JiraIntegrationStatusResponse(BaseModel):
+    configured: bool
+    site_url: str | None
+    auth_email_configured: bool
+    api_token_configured: bool
+    missing: list[str]
+
+
+class JiraLiveSyncRequest(BaseModel):
+    fiscal_year: int = 2027
+
+
+class ProductJiraSpaceCreate(BaseModel):
+    jira_project_catalog_id: int | None = None
+    jira_project_key: str | None = None
+    is_active: bool = True
+    scope_jql: str | None = None
+
+    @model_validator(mode="after")
+    def require_catalog_or_key(self) -> "ProductJiraSpaceCreate":
+        if self.jira_project_catalog_id is None and not self.jira_project_key:
+            raise ValueError("Either jira_project_catalog_id or jira_project_key is required")
+        return self
+
+
+class ProductJiraSpaceUpdate(BaseModel):
+    is_active: bool | None = None
+    scope_jql: str | None = None
+
+
+class ProductJiraSpaceResponse(BaseModel):
+    id: int
+    product_id: int
+    jira_project_catalog_id: int | None
+    jira_project_id: str | None
+    jira_project_key: str
+    jira_project_name: str | None
+    is_active: bool
+    scope_jql: str | None
+    validation_status: str
+    validation_message: str | None
+    last_validated_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimationProfileResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    is_active: bool
+    method_version: str
+    monthly_capacity_hours: float
+    actual_completeness_threshold: float
+    stale_ticket_window_days: int
+    forecast_future_months: bool
+    future_month_average_window: int
+    excluded_statuses: str | None
+    low_activity_statuses: str | None
+    excluded_jira_project_keys: str | None
+    project_pause_dates: str | None
+    work_type_field_priority: str | None
+    story_point_weighting_enabled: bool
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimationProfileUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    is_active: bool | None = None
+    method_version: str | None = None
+    monthly_capacity_hours: Decimal | None = Field(default=None, ge=0)
+    actual_completeness_threshold: Decimal | None = Field(default=None, ge=0, le=1)
+    stale_ticket_window_days: int | None = Field(default=None, ge=1)
+    forecast_future_months: bool | None = None
+    future_month_average_window: int | None = Field(default=None, ge=1)
+    excluded_statuses: str | None = None
+    low_activity_statuses: str | None = None
+    excluded_jira_project_keys: str | None = None
+    project_pause_dates: str | None = None
+    work_type_field_priority: str | None = None
+    story_point_weighting_enabled: bool | None = None
+    notes: str | None = None
+
+
+class EstimationRunResponse(BaseModel):
+    id: int
+    profile_id: int
+    method_version: str
+    fiscal_year: int
+    source_jira_updated_from: datetime | None
+    source_jira_updated_to: datetime | None
+    started_at: datetime
+    completed_at: datetime | None
+    status: str
+    imported_issue_count: int
+    estimated_entry_count: int
+    warning_count: int
+    error_summary: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimationRunRequest(BaseModel):
+    fiscal_year: int = 2027
+    profile_id: int | None = None
+
+
+class EstimationPreviewResponse(BaseModel):
+    fiscal_year: int
+    profile_id: int
+    method_version: str
+    imported_issue_count: int
+    included_issue_count: int
+    excluded_issue_count: int
+    unmapped_issue_count: int
+    estimated_entry_count: int
+    estimated_hours: float
+    warning_count: int
+    warnings: list[str]
+    run_id: int | None
+    status: str
+
+
+class EstimatedIssueAllocationResponse(BaseModel):
+    id: int
+    estimation_run_id: int
+    team_member_id: int
+    team_member: str
+    issue_id: str
+    issue_key: str
+    issue_summary: str | None
+    jira_project_key: str
+    product_id: int | None
+    product: str | None
+    bucket_id: int | None
+    bucket: str | None
+    fiscal_month_id: int | None
+    month_label: str | None
+    allocated_hours: float
+    issue_status: str | None
+    status_category: str | None
+    issue_type: str | None
+    story_points: float | None
+    issue_logged_hours: float
+    created_at_from_jira: datetime | None
+    updated_at_from_jira: datetime | None
+    resolved_at_from_jira: datetime | None
+    active_window_start: date | None
+    active_window_end: date | None
+    included: bool
+    inclusion_reason: str | None
+    exclusion_reason: str | None
+
+
+class ReportedValueRowResponse(BaseModel):
+    product_id: int
+    product: str
+    team_member_id: int
+    team_member: str
+    bucket_id: int
+    bucket: str
+    bucket_code: str
+    fiscal_month_id: int
+    month_label: str
+    forecast_hours: float
+    actual_hours: float
+    estimated_hours: float
+    reported_hours: float
+    reported_source: str
+    reported_reason: str
+    estimation_run_id: int | None
 
 
 class TeamMemberCreate(BaseModel):
@@ -121,6 +371,37 @@ class DashboardSummaryResponse(BaseModel):
     remaining_cost: float
     variance_hours: float
     variance_cost: float
+
+
+class DashboardWorkTypeRowResponse(BaseModel):
+    bucket_id: int
+    bucket: str
+    bucket_code: str
+    forecast_hours: float
+    actual_hours: float
+    forecast_cost: float
+    actual_cost: float
+
+
+class DashboardLaborMixHireTypeRowResponse(BaseModel):
+    employment_type: str
+    forecast_hours: float
+    actual_hours: float
+    forecast_cost: float
+    actual_cost: float
+
+
+class DashboardLaborMixRoleRowResponse(BaseModel):
+    role: str
+    forecast_hours: float
+    actual_hours: float
+    forecast_cost: float
+    actual_cost: float
+
+
+class DashboardLaborMixResponse(BaseModel):
+    hire_types: list[DashboardLaborMixHireTypeRowResponse]
+    roles: list[DashboardLaborMixRoleRowResponse]
 
 
 class ProductSummaryRowResponse(BaseModel):

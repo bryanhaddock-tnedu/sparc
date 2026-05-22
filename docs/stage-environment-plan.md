@@ -1,11 +1,11 @@
-# SPARK STAGE Environment Plan
+# SPARC STAGE Environment Plan
 
-This document captures the DevOps direction for the SPARK STAGE environment.
+This document captures the DevOps direction for the SPARC STAGE environment.
 
 ## DevOps Direction Received
 
 - Keep the application fully containerized.
-- Run SPARK on the Kubernetes cluster like the other apps.
+- Run SPARC on the Kubernetes cluster like the other apps.
 - Use Azure PostgreSQL for the database.
 - Pull secrets from Key Vault.
 - Key Vault access can happen in the app itself, or secrets can be injected as environment variables at startup.
@@ -21,15 +21,15 @@ flowchart LR
     Tests --> Image["Build Container Images"]
     Image --> Registry["Container Registry"]
     Registry --> K8s["Kubernetes STAGE Namespace"]
-    K8s --> Web["SPARK Frontend Container"]
-    K8s --> API["SPARK Backend Container"]
+    K8s --> Web["SPARC Frontend Container"]
+    K8s --> API["SPARC Backend Container"]
     API --> DB["Azure PostgreSQL"]
     API --> KV["Azure Key Vault"]
 ```
 
 ## Container Strategy
 
-SPARK currently has separate frontend and backend containers for local development.
+SPARC currently has separate frontend and backend containers for local development.
 
 For STAGE, decide between two deployment shapes:
 
@@ -76,7 +76,7 @@ Kubernetes or the platform pulls Key Vault secrets and injects them as environme
 
 ### Option B: App Retrieves Secrets From Key Vault
 
-SPARK backend retrieves required secrets from Key Vault at startup or through a secret provider abstraction.
+SPARC backend retrieves required secrets from Key Vault at startup or through a secret provider abstraction.
 
 **Pros**
 
@@ -179,7 +179,7 @@ Expected Kubernetes resources:
 
 ## Open Questions For DevOps
 
-- Which container registry should SPARK publish to?
+- Which container registry should SPARC publish to?
 - Should Kubernetes manifests live in this repo or a separate deployment repo?
 - What is the STAGE namespace name?
 - What host name or ingress path should STAGE use?
@@ -187,7 +187,7 @@ Expected Kubernetes resources:
 - Is managed identity available to the pod, or should secrets be injected at startup?
 - Should migrations run as a CI/CD job, init container, or manual release step?
 - Are frontend and backend expected to be separate deployments or one combined app deployment?
-- What resource request/limit defaults should SPARK use?
+- What resource request/limit defaults should SPARC use?
 - What log aggregation system should structured logs target?
 
 ## Recommended Next Engineering Step

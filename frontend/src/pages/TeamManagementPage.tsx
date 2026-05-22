@@ -1,4 +1,4 @@
-import { ArrowLeft, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -8,6 +8,7 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 
+import { PageNav } from "../components/PageNav";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -103,16 +104,12 @@ export function TeamManagementPage() {
 
   return (
     <div className="space-y-5">
-      <Button asChild variant="ghost" size="sm" className="-ml-2">
-        <Link to="/">
-          <ArrowLeft className="h-4 w-4" />
-          Dashboard
-        </Link>
-      </Button>
-
-      <div>
-        <h1 className="text-2xl font-semibold">Team Management</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{members.length} rostered team members</p>
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <h1 className="text-2xl font-semibold">Team Management</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{members.length} rostered team members</p>
+        </div>
+        <PageNav current="team" />
       </div>
 
       <section className="rounded-lg border bg-card p-4">

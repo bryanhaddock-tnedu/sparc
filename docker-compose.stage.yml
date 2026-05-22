@@ -1,0 +1,40 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ""
+        VITE_DEFAULT_FISCAL_YEAR: ${SPARC_DEFAULT_FISCAL_YEAR:-2027}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      FRONTEND_ORIGIN: ${SPARC_FRONTEND_ORIGIN:-http://localhost:8000}
+      ENVIRONMENT: stage
+      AUTO_CREATE_SCHEMA: "false"
+      SEED_ON_STARTUP: "false"
+      DEFAULT_FISCAL_YEAR: ${SPARC_DEFAULT_FISCAL_YEAR:-2027}
+      JIRA_SITE_URL: ${JIRA_SITE_URL:-}
+      JIRA_API_EMAIL: ${JIRA_API_EMAIL:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+    ports:
+      - "${SPARC_PORT:-8000}:8000"
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ""
+        VITE_DEFAULT_FISCAL_YEAR: ${SPARC_DEFAULT_FISCAL_YEAR:-2027}
+    profiles:
+      - migrate
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      ENVIRONMENT: stage
+      AUTO_CREATE_SCHEMA: "false"
+      SEED_ON_STARTUP: "false"
+      DEFAULT_FISCAL_YEAR: ${SPARC_DEFAULT_FISCAL_YEAR:-2027}
+      JIRA_SITE_URL: ${JIRA_SITE_URL:-}
+      JIRA_API_EMAIL: ${JIRA_API_EMAIL:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+    command: alembic upgrade head

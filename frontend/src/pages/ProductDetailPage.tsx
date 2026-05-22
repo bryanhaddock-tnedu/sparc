@@ -1,50 +1,87 @@
-import { ArrowLeft, RotateCcw, Save } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Plus, RotateCcw, Save, Trash2, UserPlus } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Link, useParams } from "react-router-dom";
 
 import { BudgetTracker } from "../components/BudgetTracker";
 import { MetricCard } from "../components/MetricCard";
+import { PageNav } from "../components/PageNav";
+import { ReportedValuesTable } from "../components/ReportedValuesTable";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
+import { useFiscalYear } from "../lib/fiscalYear";
 import { formatCurrency, formatHours } from "../lib/utils";
-import type { BucketTable, BucketTableRow, MonthCell, ProductBucketTables, ProductSummary } from "../types/api";
+import type {
+  BucketTable,
+  BucketTableRow,
+  MonthCell,
+  ProductBucketTables,
+  ProductJiraSpace,
+  ProductSummary,
+  ProductTeamMember,
+  ReportedValueRow,
+  TeamMember,
+} from "../types/api";
 
 const PIE_COLORS = ["#2CCCD3", "#D2D755", "#E87722", "#5E7975"];
 
 export function ProductDetailPage() {
   const params = useParams();
   const productId = Number(params.productId);
+  const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [summary, setSummary] = useState<ProductSummary | null>(null);
   const [tables, setTables] = useState<ProductBucketTables | null>(null);
+  const [productSpaces, setProductSpaces] = useState<ProductJiraSpace[]>([]);
+  const [productTeam, setProductTeam] = useState<ProductTeamMember[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [distribution, setDistribution] = useState<{ bucket: string; hours: number }[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [forecastLineMemberId, setForecastLineMemberId] = useState("");
+  const [forecastLineBucketId, setForecastLineBucketId] = useState("");
+  const [forecastLineSaving, setForecastLineSaving] = useState(false);
+  const [forecastLineMessage, setForecastLineMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   async function loadData() {
-    const [summaryResult, distributionResult, tablesResult] = await Promise.all([
-      api.productSummary(productId),
-      api.bucketDistribution(productId),
-      api.productBucketTables(productId),
+    const [summaryResult, distributionResult, tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = await Promise.all([
+      api.productSummary(productId, fiscalYear),
+      api.bucketDistribution(productId, fiscalYear),
+      api.productBucketTables(productId, fiscalYear),
+      api.productJiraSpaces(productId),
+      api.productTeamMembers(productId),
+      api.teamMembers(),
+      api.reportedValues({ product_id: productId }, fiscalYear),
     ]);
     setSummary(summaryResult);
     setDistribution(distributionResult.map((row) => ({ bucket: row.bucket, hours: row.hours })));
     setTables(tablesResult);
+    setProductSpaces(productSpacesResult);
+    setProductTeam(productTeamResult);
+    setTeamMembers(teamMembersResult);
+    setReportedRows(reportedRowsResult);
     setDrafts({});
   }
 
   useEffect(() => {
     if (!Number.isFinite(productId)) return;
+    setLoading(true);
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load product"))
       .finally(() => setLoading(false));
-  }, [productId]);
+  }, [productId, fiscalYear]);
+
+  useEffect(() => {
+    if (!forecastLineBucketId && tables?.buckets[0]) {
+      setForecastLineBucketId(String(tables.buckets[0].bucket_id));
+    }
+  }, [forecastLineBucketId, tables]);
 
   function updateDraft(bucket: BucketTable, row: BucketTableRow, cell: MonthCell, value: string) {
     const key = draftKey(bucket, row, cell);
@@ -92,57 +129,144 @@ export function ProductDetailPage() {
     setSaveMessage(null);
   }
 
+  async function addProductTeamMember(teamMemberId: number) {
+    await api.addProductTeamMember(productId, {
+      team_member_id: teamMemberId,
+      status: "active",
+    });
+    await loadData();
+  }
+
+  const existingForecastLineKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const bucket of tables?.buckets ?? []) {
+      for (const row of bucket.rows) {
+        keys.add(forecastLineKey(row.team_member_id, bucket.bucket_id));
+      }
+    }
+    return keys;
+  }, [tables]);
+
+  async function addForecastLine(teamMemberId: number, bucketId: number) {
+    if (!tables) return;
+    if (existingForecastLineKeys.has(forecastLineKey(teamMemberId, bucketId))) {
+      setForecastLineMessage("That forecast line already exists.");
+      return;
+    }
+
+    const member = teamMembers.find((item) => item.id === teamMemberId);
+    const bucket = tables.buckets.find((item) => item.bucket_id === bucketId);
+
+    setForecastLineSaving(true);
+    setForecastLineMessage(null);
+    setError(null);
+    try {
+      const assignment = productTeam.find((item) => item.team_member_id === teamMemberId);
+      if (!assignment) {
+        await api.addProductTeamMember(productId, { team_member_id: teamMemberId, status: "active" });
+      } else if (assignment.status !== "active") {
+        await api.updateProductTeamMember(productId, assignment.id, { status: "active" });
+      }
+      await api.upsertForecast({
+        product_id: productId,
+        team_member_id: teamMemberId,
+        bucket_id: bucketId,
+        fiscal_year: fiscalYear,
+        month_sequence: 1,
+        hours: 0,
+      });
+      setForecastLineMemberId("");
+      setForecastLineMessage(`${member?.name ?? "Team member"} added to ${bucket?.name ?? "the selected bucket"} for ${fiscalYearLabel}.`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to add forecast line");
+    } finally {
+      setForecastLineSaving(false);
+    }
+  }
+
+  async function updateProductTeamMember(assignmentId: number, payload: { status?: string }) {
+    await api.updateProductTeamMember(productId, assignmentId, payload);
+    await loadData();
+  }
+
+  async function removeProductTeamMember(assignmentId: number) {
+    await api.removeProductTeamMember(productId, assignmentId);
+    await loadData();
+  }
+
   if (loading) return <LoadingBlock />;
   if (error) return <ErrorBlock message={error} />;
   if (!summary || !tables) return null;
 
+  const visibleBuckets = tables.buckets.filter((bucket) => bucket.rows.length > 0);
+  const hasActualDistribution = distribution.some((row) => row.hours > 0);
+  const chartDistribution = hasActualDistribution ? distribution : [{ bucket: "No actuals yet", hours: 1 }];
+
   return (
     <div className="space-y-6">
-      <Button asChild variant="ghost" size="sm" className="-ml-2">
-        <Link to="/">
-          <ArrowLeft className="h-4 w-4" />
-          Dashboard
-        </Link>
-      </Button>
-
       <section className="flex flex-col justify-between gap-4 border-b pb-5 lg:flex-row lg:items-end">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold">{summary.product.name}</h1>
-            <Badge>{summary.product.jira_space_key ?? "No Jira Space"}</Badge>
+            {productSpaces.length ? (
+              productSpaces.map((space) => (
+                <Badge key={space.id} className={space.is_active ? "" : "border-muted text-muted-foreground"}>
+                  {space.jira_project_key}
+                </Badge>
+              ))
+            ) : (
+              <Badge>No Jira Spaces</Badge>
+            )}
             <Badge className={summary.product.is_active ? "border-primary/40 text-primary" : "border-muted text-muted-foreground"}>
               {summary.product.is_active ? "Active" : "Inactive"}
+            </Badge>
+            <Badge>
+              {fiscalYearLabel} / {fiscalYearRangeLabel}
             </Badge>
           </div>
           {summary.product.description ? (
             <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{summary.product.description}</p>
           ) : null}
         </div>
+        <PageNav />
       </section>
 
       <section className="space-y-3">
         <BudgetTracker
           budget={summary.budget_amount}
-          projectedSpend={summary.projected_spend}
-          remaining={summary.budget_remaining}
-          utilizationPercent={summary.budget_utilization_percent}
-          contextLabel={`${summary.product.name} projected spend`}
+          forecastSpend={summary.forecasted_cost}
+          actualSpend={summary.fytd_cost}
+          contextLabel={`${summary.product.name} budget, forecast, and actuals`}
         />
         <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
           <div className="rounded-lg border bg-card p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase text-muted-foreground">FYTD Actualized Hours</h2>
-            <div className="h-64">
+            <div className="relative h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={distribution} dataKey="hours" nameKey="bucket" innerRadius={56} outerRadius={88} paddingAngle={2}>
-                    {distribution.map((entry, index) => (
-                      <Cell key={entry.bucket} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  <Pie
+                    data={chartDistribution}
+                    dataKey="hours"
+                    nameKey="bucket"
+                    innerRadius={56}
+                    outerRadius={88}
+                    paddingAngle={hasActualDistribution ? 2 : 0}
+                  >
+                    {chartDistribution.map((entry, index) => (
+                      <Cell key={entry.bucket} fill={hasActualDistribution ? PIE_COLORS[index % PIE_COLORS.length] : "hsl(var(--muted))"} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => `${formatHours(value)} hrs`} />
-                  <Legend />
+                  {hasActualDistribution ? <Tooltip formatter={(value: number) => `${formatHours(value)} hrs`} /> : null}
+                  {hasActualDistribution ? <Legend /> : null}
                 </PieChart>
               </ResponsiveContainer>
+              {!hasActualDistribution ? (
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <div className="text-sm font-semibold text-muted-foreground">No FYTD actuals yet</div>
+                  <div className="mt-1 max-w-44 text-xs text-muted-foreground">Actualized hours will appear here after Jira syncs worklogs for this fiscal year.</div>
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -155,6 +279,30 @@ export function ProductDetailPage() {
           </div>
         </div>
       </section>
+
+      <ReportedValuesTable rows={reportedRows} showTeamMember />
+
+      <ProductTeamSection
+        assignments={productTeam}
+        members={teamMembers}
+        onAdd={addProductTeamMember}
+        onRemove={removeProductTeamMember}
+        onUpdate={updateProductTeamMember}
+      />
+
+      <ForecastLineSection
+        assignments={productTeam}
+        buckets={tables.buckets}
+        existingLineKeys={existingForecastLineKeys}
+        members={teamMembers}
+        message={forecastLineMessage}
+        onAdd={addForecastLine}
+        saving={forecastLineSaving}
+        selectedBucketId={forecastLineBucketId}
+        selectedMemberId={forecastLineMemberId}
+        setSelectedBucketId={setForecastLineBucketId}
+        setSelectedMemberId={setForecastLineMemberId}
+      />
 
       <section className="space-y-5">
         <div className="flex flex-col justify-between gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center">
@@ -177,11 +325,252 @@ export function ProductDetailPage() {
             </Button>
           </div>
         </div>
-        {tables.buckets.map((bucket) => (
-          <BucketSection key={bucket.bucket_id} bucket={bucket} drafts={drafts} onDraftChange={updateDraft} />
-        ))}
+        {visibleBuckets.length ? (
+          visibleBuckets.map((bucket) => <BucketSection key={bucket.bucket_id} bucket={bucket} drafts={drafts} onDraftChange={updateDraft} />)
+        ) : (
+          <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
+            No forecast lines exist for this product yet. Add a Product Team member, then create a forecast line for the bucket they will support.
+          </div>
+        )}
       </section>
     </div>
+  );
+}
+
+function ProductTeamSection({
+  assignments,
+  members,
+  onAdd,
+  onRemove,
+  onUpdate,
+}: {
+  assignments: ProductTeamMember[];
+  members: TeamMember[];
+  onAdd: (teamMemberId: number) => Promise<void>;
+  onRemove: (assignmentId: number) => Promise<void>;
+  onUpdate: (assignmentId: number, payload: { status?: string }) => Promise<void>;
+}) {
+  const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const assignedMemberIds = new Set(assignments.map((assignment) => assignment.team_member_id));
+  const availableMembers = members.filter((member) => !assignedMemberIds.has(member.id));
+
+  async function addAssignment() {
+    const teamMemberId = Number(selectedMemberId);
+    if (!Number.isFinite(teamMemberId) || teamMemberId <= 0) return;
+    setSaving(true);
+    try {
+      await onAdd(teamMemberId);
+      setSelectedMemberId("");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+        <div>
+          <h2 className="text-lg font-semibold">Product Team</h2>
+          <p className="text-sm text-muted-foreground">
+            Assign rostered team members to this product. Forecast bucket rows are managed in Forecast Lines; Jira actuals use ticket work type.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <select
+            aria-label="Team member to add"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            disabled={saving || availableMembers.length === 0}
+            value={selectedMemberId}
+            onChange={(event) => setSelectedMemberId(event.target.value)}
+          >
+            <option value="">{availableMembers.length ? "Select team member" : "All members assigned"}</option>
+            {availableMembers.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name}
+              </option>
+            ))}
+          </select>
+          <Button onClick={addAssignment} disabled={saving || !selectedMemberId}>
+            <UserPlus className="h-4 w-4" />
+            Add
+          </Button>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[780px] text-sm">
+            <thead>
+              <tr className="border-b bg-secondary/60">
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Team Member</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Role</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Team</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bill Rate</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Status</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">History</th>
+                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {assignments.length ? (
+                assignments.map((assignment) => (
+                  <tr key={assignment.id} className="border-b last:border-0">
+                    <td className="px-3 py-3">
+                      <Link className="font-medium text-primary hover:underline" to={`/team-members/${assignment.team_member_id}`}>
+                        {assignment.team_member}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-3">{assignment.role}</td>
+                    <td className="px-3 py-3">{assignment.team}</td>
+                    <td className="numeric-cell px-3 py-3">{formatCurrency(assignment.bill_rate)}/hr</td>
+                    <td className="px-3 py-3">
+                      <select
+                        aria-label={`${assignment.team_member} product status`}
+                        className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                        value={assignment.status}
+                        onChange={(event) => void onUpdate(assignment.id, { status: event.target.value })}
+                      >
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                    </td>
+                    <td className="px-3 py-3 text-muted-foreground">
+                      {assignment.has_forecast_entries
+                        ? "Forecast lines clear on remove"
+                        : assignment.has_actual_entries
+                          ? "Actuals retained"
+                          : "No hours yet"}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const confirmed = window.confirm(
+                            `Remove ${assignment.team_member} from this product? Forecast lines for this product will be deleted. Jira actuals will stay for historical reporting.`,
+                          );
+                          if (confirmed) void onRemove(assignment.id);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Remove
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={7}>
+                    No team members assigned to this product yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ForecastLineSection({
+  assignments,
+  buckets,
+  existingLineKeys,
+  members,
+  message,
+  onAdd,
+  saving,
+  selectedBucketId,
+  selectedMemberId,
+  setSelectedBucketId,
+  setSelectedMemberId,
+}: {
+  assignments: ProductTeamMember[];
+  buckets: BucketTable[];
+  existingLineKeys: Set<string>;
+  members: TeamMember[];
+  message: string | null;
+  onAdd: (teamMemberId: number, bucketId: number) => Promise<void>;
+  saving: boolean;
+  selectedBucketId: string;
+  selectedMemberId: string;
+  setSelectedBucketId: (value: string) => void;
+  setSelectedMemberId: (value: string) => void;
+}) {
+  const selectedMember = Number(selectedMemberId);
+  const selectedBucket = Number(selectedBucketId);
+  const duplicateLine =
+    Number.isFinite(selectedMember) &&
+    selectedMember > 0 &&
+    Number.isFinite(selectedBucket) &&
+    selectedBucket > 0 &&
+    existingLineKeys.has(forecastLineKey(selectedMember, selectedBucket));
+  const activeProductTeamMemberIds = new Set(
+    assignments.filter((assignment) => assignment.status === "active").map((assignment) => assignment.team_member_id),
+  );
+  const activeMembers = [...members]
+    .filter((member) => member.status === "active" && activeProductTeamMemberIds.has(member.id))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const selectedMemberIsInProductTeam = selectedMemberId === "" || activeProductTeamMemberIds.has(selectedMember);
+
+  useEffect(() => {
+    if (!selectedMemberIsInProductTeam) {
+      setSelectedMemberId("");
+    }
+  }, [selectedMemberIsInProductTeam, setSelectedMemberId]);
+
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
+        <div>
+          <h2 className="text-lg font-semibold">Forecast Lines</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Add one planning row per Product Team member and bucket. The same person can have Net New, Enhance, and Maintenance rows.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <select
+            aria-label="Forecast line team member"
+            className="h-9 min-w-52 rounded-md border border-input bg-background px-2 text-sm"
+            disabled={saving || activeMembers.length === 0}
+            value={selectedMemberId}
+            onChange={(event) => setSelectedMemberId(event.target.value)}
+          >
+            <option value="">{activeMembers.length ? "Select product team member" : "Add Product Team first"}</option>
+            {activeMembers.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Forecast line bucket"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            disabled={saving || buckets.length === 0}
+            value={selectedBucketId}
+            onChange={(event) => setSelectedBucketId(event.target.value)}
+          >
+            {buckets.map((bucket) => (
+              <option key={bucket.bucket_id} value={bucket.bucket_id}>
+                {bucket.name}
+              </option>
+            ))}
+          </select>
+          <Button
+            onClick={() => void onAdd(selectedMember, selectedBucket)}
+            disabled={saving || !selectedMemberId || !selectedBucketId || duplicateLine || !selectedMemberIsInProductTeam}
+          >
+            <Plus className="h-4 w-4" />
+            {saving ? "Adding" : "Add Forecast Line"}
+          </Button>
+        </div>
+      </div>
+      {!activeMembers.length ? <div className="mt-3 text-sm text-muted-foreground">Add active members to Product Team before creating forecast lines.</div> : null}
+      {duplicateLine ? <div className="mt-3 text-sm text-muted-foreground">That line already exists. Edit its monthly forecast cells below.</div> : null}
+      {message ? <div className="mt-3 text-sm text-primary">{message}</div> : null}
+    </section>
   );
 }
 
@@ -219,36 +608,42 @@ function BucketSection({
       </div>
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="overflow-x-auto">
-          <table className="min-w-[1560px] border-collapse text-sm">
+          <table className="w-full table-fixed border-collapse text-xs">
+            <colgroup>
+              <col className="w-32" />
+              <col className="w-20" />
+              {bucket.rows[0]?.months.map((month) => <col key={month.fiscal_month_id} className="w-16" />)}
+              <col className="w-24" />
+            </colgroup>
             <thead>
               <tr className="border-b bg-secondary/60">
-                <th className="sticky left-0 z-10 w-48 bg-secondary px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">
+                <th className="sticky left-0 z-10 bg-secondary px-2 py-2 text-left text-[11px] font-semibold uppercase text-muted-foreground">
                   Team Member
                 </th>
-                <th className="sticky left-48 z-10 w-32 bg-secondary px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">
+                <th className="sticky left-32 z-10 bg-secondary px-2 py-2 text-left text-[11px] font-semibold uppercase text-muted-foreground">
                   Metric
                 </th>
                 {bucket.rows[0]?.months.map((month) => (
-                  <th key={month.fiscal_month_id} className="w-24 px-2 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">
+                  <th key={month.fiscal_month_id} className="px-1 py-2 text-right text-[11px] font-semibold uppercase text-muted-foreground">
                     {month.label}
                   </th>
                 ))}
-                <th className="w-28 px-2 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">FY Total</th>
+                <th className="px-1 py-2 text-right text-[11px] font-semibold uppercase text-muted-foreground">FY Total</th>
               </tr>
             </thead>
             <tbody>
               {bucket.rows.map((row) => (
                 <Fragment key={row.team_member_id}>
                   <tr className="border-t align-middle">
-                    <td rowSpan={4} className="sticky left-0 z-10 bg-card px-3 py-3 align-top">
-                      <Link className="font-medium text-primary hover:underline" to={`/team-members/${row.team_member_id}`}>
+                    <td rowSpan={4} className="sticky left-0 z-10 bg-card px-2 py-2 align-top">
+                      <Link className="block truncate font-medium text-primary hover:underline" to={`/team-members/${row.team_member_id}`}>
                         {row.team_member}
                       </Link>
-                      <div className="numeric-cell mt-1 text-xs text-muted-foreground">{formatCurrency(row.bill_rate)}/hr</div>
+                      <div className="numeric-cell mt-1 truncate text-[11px] text-muted-foreground">{formatCurrency(row.bill_rate)}/hr</div>
                     </td>
                     <MetricLabel label="Forecast" />
                     {row.months.map((cell) => (
-                      <td key={cell.fiscal_month_id} className="px-2 py-1.5">
+                      <td key={cell.fiscal_month_id} className="px-1 py-1">
                         <ForecastInput
                           bucket={bucket}
                           row={row}
@@ -269,14 +664,14 @@ function BucketSection({
                     <ValueCell value={formatHours(row.totals.actual_hours)} muted strong />
                   </tr>
                   <tr>
-                    <MetricLabel label="Forecast cost" />
+                    <MetricLabel label="Fcst $" />
                     {row.months.map((cell) => (
                       <ValueCell key={cell.fiscal_month_id} value={formatCurrency(cell.forecast_cost)} />
                     ))}
                     <ValueCell value={formatCurrency(row.totals.forecast_cost)} strong />
                   </tr>
                   <tr className="border-b">
-                    <MetricLabel label="Variance" />
+                    <MetricLabel label="Var $" />
                     {row.months.map((cell) => (
                       <ValueCell
                         key={cell.fiscal_month_id}
@@ -293,7 +688,7 @@ function BucketSection({
                 </Fragment>
               ))}
               <tr className="border-t bg-secondary/50 font-semibold">
-                <td rowSpan={4} className="sticky left-0 z-10 bg-secondary px-3 py-3 align-top">
+                <td rowSpan={4} className="sticky left-0 z-10 bg-secondary px-2 py-2 align-top">
                   Bucket Total
                 </td>
                 <MetricLabel label="Forecast" total />
@@ -310,14 +705,14 @@ function BucketSection({
                 <ValueCell value={formatHours(bucket.totals.actual_hours)} muted total strong />
               </tr>
               <tr className="bg-secondary/50 font-semibold">
-                <MetricLabel label="Forecast cost" total />
+                <MetricLabel label="Fcst $" total />
                 {monthlyTotals.map((totals) => (
                   <ValueCell key={totals.fiscalMonthId} value={formatCurrency(totals.cost)} total strong />
                 ))}
                 <ValueCell value={formatCurrency(bucket.totals.forecast_cost)} total strong />
               </tr>
               <tr className="bg-secondary/50 font-semibold">
-                <MetricLabel label="Variance" total />
+                <MetricLabel label="Var $" total />
                 {monthlyTotals.map((totals) => (
                   <ValueCell
                     key={totals.fiscalMonthId}
@@ -362,7 +757,9 @@ function ForecastInput({
   return (
     <Input
       aria-label={`${bucket.name} ${row.team_member} ${cell.label} forecast hours`}
-      className={`numeric-cell h-8 px-2 text-right ${dirty ? "border-primary bg-primary/5" : ""} ${invalid ? "border-destructive" : ""}`}
+      className={`numeric-cell h-7 min-w-0 px-1 text-right text-xs ${dirty ? "border-primary bg-primary/5" : ""} ${
+        invalid ? "border-destructive" : ""
+      }`}
       inputMode="decimal"
       pattern="[0-9]*"
       type="text"
@@ -375,7 +772,7 @@ function ForecastInput({
 function MetricLabel({ label, muted, total }: { label: string; muted?: boolean; total?: boolean }) {
   return (
     <td
-      className={`sticky left-48 z-10 px-3 py-2 text-xs font-semibold uppercase ${
+      className={`sticky left-32 z-10 px-2 py-1.5 text-[11px] font-semibold uppercase ${
         total ? "bg-secondary" : "bg-card"
       } ${muted ? "text-muted-foreground" : "text-foreground"}`}
     >
@@ -398,14 +795,18 @@ function ValueCell({
   className?: string;
 }) {
   return (
-    <td className={`numeric-cell px-2 py-2 text-right text-sm ${total ? "bg-secondary/50" : ""} ${muted ? "text-muted-foreground" : ""}`}>
-      <span className={`${strong ? "font-semibold" : "font-medium"} ${className ?? ""}`}>{value}</span>
+    <td className={`numeric-cell px-1 py-1.5 text-right text-xs ${total ? "bg-secondary/50" : ""} ${muted ? "text-muted-foreground" : ""}`}>
+      <span className={`block truncate ${strong ? "font-semibold" : "font-medium"} ${className ?? ""}`}>{value}</span>
     </td>
   );
 }
 
 function draftKey(bucket: BucketTable, row: BucketTableRow, cell: MonthCell) {
   return `${bucket.bucket_id}:${row.team_member_id}:${cell.fiscal_month_id}`;
+}
+
+function forecastLineKey(teamMemberId: number, bucketId: number) {
+  return `${teamMemberId}:${bucketId}`;
 }
 
 function collectDirtyEntries(tables: ProductBucketTables, drafts: Record<string, string>) {
