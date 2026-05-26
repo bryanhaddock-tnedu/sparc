@@ -47,6 +47,25 @@ The stage compose file builds the frontend for same-origin API calls, so `VITE_A
 
 Stage data lives in Azure PostgreSQL. Do not reset or seed stage with local/demo data.
 
+## Database Build
+
+DevOps should provision the Azure PostgreSQL server and database before the SPARC container starts. SPARC does not require a hand-written `schema.sql` file; the application schema is created and upgraded through Alembic migrations checked into `backend/alembic/versions`.
+
+Required database setup:
+
+1. Create an Azure PostgreSQL database for SPARC.
+2. Create/provide a database user with permission to create and alter tables, indexes, constraints, and the Alembic version table.
+3. Store the SQLAlchemy connection string in Key Vault or the deployment secret store as `DATABASE_URL`.
+4. Run the SPARC migration command against that database before starting the app:
+
+```bash
+alembic upgrade head
+```
+
+The app image already contains `alembic.ini` and the migration files. In Kubernetes, run the migration command as a one-off job using the same image and the same `DATABASE_URL` secret used by the app container.
+
+The database should not be initialized with local/demo data. After first deployment, load SPARC-owned setup/planning data through the app's Admin Data import workflow, then run Jira Sync from the app to populate Jira-sourced actuals.
+
 Deploy flow:
 
 1. Build the app image.
