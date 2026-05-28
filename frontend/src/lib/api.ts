@@ -1,6 +1,7 @@
 import type {
   AdminDataExportOption,
   AdminDataImportResult,
+  AuthStatus,
   BucketDistributionRow,
   DashboardLaborMix,
   DashboardSummary,
@@ -45,6 +46,7 @@ const DEFAULT_FISCAL_YEAR = appConfig.fiscalYear;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...init?.headers,
@@ -61,6 +63,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 async function upload<T>(path: string, formData: FormData): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: "include",
     method: "POST",
     body: formData,
   });
@@ -73,7 +76,7 @@ async function upload<T>(path: string, formData: FormData): Promise<T> {
 }
 
 async function download(path: string): Promise<{ blob: Blob; filename: string }> {
-  const response = await fetch(`${API_BASE_URL}${path}`);
+  const response = await fetch(`${API_BASE_URL}${path}`, { credentials: "include" });
   if (!response.ok) {
     const message = await responseErrorMessage(response);
     throw new Error(message || `Request failed with ${response.status}`);
@@ -98,6 +101,16 @@ async function responseErrorMessage(response: Response): Promise<string> {
 
 export const api = {
   fiscalYear: DEFAULT_FISCAL_YEAR,
+  authStatus: () => request<AuthStatus>("/api/auth/status"),
+  login: (username: string, password: string) =>
+    request<AuthStatus>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () =>
+    request<AuthStatus>("/api/auth/logout", {
+      method: "POST",
+    }),
   adminDataExportOptions: () => request<AdminDataExportOption[]>("/api/admin-data/export-options"),
   exportAdminData: (datasets: string[]) => {
     const params = new URLSearchParams();

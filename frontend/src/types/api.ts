@@ -16,6 +16,12 @@ export interface DashboardSummary {
   variance_cost: number;
 }
 
+export interface AuthStatus {
+  auth_enabled: boolean;
+  authenticated: boolean;
+  username: string | null;
+}
+
 export interface AdminDataExportOption {
   key: string;
   label: string;

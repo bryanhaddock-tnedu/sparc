@@ -2,10 +2,13 @@ import type { PropsWithChildren } from "react";
 import { Link } from "react-router-dom";
 
 import tdoeLogo from "../assets/tdoe-logo.png";
+import { useAuth } from "../lib/auth";
 import { fiscalYearRangeLabel, useFiscalYear } from "../lib/fiscalYear";
+import { Button } from "./ui/button";
 
 export function Layout({ children }: PropsWithChildren) {
   const { fiscalYear, fiscalYearOptions, setFiscalYear } = useFiscalYear();
+  const { status, logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-background">
@@ -42,6 +45,11 @@ export function Layout({ children }: PropsWithChildren) {
                 </option>
               ))}
             </select>
+            {status?.auth_enabled ? (
+              <Button type="button" variant="outline" onClick={() => void logout()}>
+                Sign out
+              </Button>
+            ) : null}
           </div>
         </div>
       </header>

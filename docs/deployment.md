@@ -16,6 +16,11 @@ Key Vault / container environment values:
 - `DATABASE_URL`
 - `SPARC_FRONTEND_ORIGIN=https://<stage-sparc-url>`
 - `SPARC_DEFAULT_FISCAL_YEAR=2027`
+- `AUTH_ENABLED=true`
+- `AUTH_USERNAME`
+- `AUTH_PASSWORD`
+- `AUTH_SESSION_SECRET`
+- `AUTH_SESSION_MINUTES=720`
 - `JIRA_SITE_URL`
 - `JIRA_API_EMAIL`
 - `JIRA_API_TOKEN`
@@ -25,6 +30,8 @@ Container constants for stage:
 - `ENVIRONMENT=stage`
 - `AUTO_CREATE_SCHEMA=false`
 - `SEED_ON_STARTUP=false`
+
+Authentication is intentionally basic for the first stage release. The app reads one username/password pair from environment variables and gives every authenticated user the same permissions. The password and session secret should come from Key Vault. Generate `AUTH_SESSION_SECRET` as a long random value; it is used only to sign the HTTP-only session cookie.
 
 For local testing of the stage container, copy `stage.env.example` to `stage.env` and fill in local/test values:
 
