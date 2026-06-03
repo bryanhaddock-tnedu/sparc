@@ -1,21 +1,28 @@
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { formatHours } from "../lib/utils";
 import type { ReportedValueRow } from "../types/api";
 import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 
 export function ReportedValuesTable({
   rows,
-  title = "Reported Labor View",
+  title = "Reported Hours Audit",
   showProduct = false,
   showTeamMember = false,
+  defaultExpanded = false,
 }: {
   rows: ReportedValueRow[];
   title?: string;
   showProduct?: boolean;
   showTeamMember?: boolean;
+  defaultExpanded?: boolean;
 }) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const tableId = useId();
   const totals = rows.reduce(
     (acc, row) => {
       acc.forecast += row.forecast_hours;
@@ -34,71 +41,87 @@ export function ReportedValuesTable({
           <h2 className="text-lg font-semibold">{title}</h2>
           <p className="text-sm text-muted-foreground">Forecast, actual, estimated, and reported hours stay separate for auditability.</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-          <TotalPill label="Forecast" value={totals.forecast} />
-          <TotalPill label="Actual" value={totals.actual} />
-          <TotalPill label="Estimated" value={totals.estimated} />
-          <TotalPill label="Reported" value={totals.reported} />
+        <div className="flex flex-col gap-2 sm:items-end">
+          <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+            <TotalPill label="Forecast" value={totals.forecast} />
+            <TotalPill label="Actual" value={totals.actual} />
+            <TotalPill label="Estimated" value={totals.estimated} />
+            <TotalPill label="Reported" value={totals.reported} />
+          </div>
+          <Button
+            aria-controls={tableId}
+            aria-expanded={isExpanded}
+            className="w-full sm:w-auto"
+            onClick={() => setIsExpanded((current) => !current)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            {isExpanded ? "Hide rows" : `Show ${rows.length} ${rows.length === 1 ? "row" : "rows"}`}
+          </Button>
         </div>
       </div>
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {showProduct ? <TableHead>Product</TableHead> : null}
-                {showTeamMember ? <TableHead>Team Member</TableHead> : null}
-                <TableHead>Bucket</TableHead>
-                <TableHead>Month</TableHead>
-                <TableHead>Forecast</TableHead>
-                <TableHead>Actual</TableHead>
-                <TableHead>Estimated</TableHead>
-                <TableHead>Reported</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Reason</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.length ? (
-                rows.map((row) => (
-                  <TableRow key={`${row.product_id}-${row.team_member_id}-${row.bucket_id}-${row.fiscal_month_id}`}>
-                    {showProduct ? (
-                      <TableCell>
-                        <Link className="font-medium text-primary hover:underline" to={`/products/${row.product_id}`}>
-                          {row.product}
-                        </Link>
-                      </TableCell>
-                    ) : null}
-                    {showTeamMember ? (
-                      <TableCell>
-                        <Link className="font-medium text-primary hover:underline" to={`/team-members/${row.team_member_id}`}>
-                          {row.team_member}
-                        </Link>
-                      </TableCell>
-                    ) : null}
-                    <TableCell>{row.bucket}</TableCell>
-                    <TableCell>{row.month_label}</TableCell>
-                    <TableCell className="numeric-cell">{formatHours(row.forecast_hours)}</TableCell>
-                    <TableCell className="numeric-cell">{formatHours(row.actual_hours)}</TableCell>
-                    <TableCell className="numeric-cell">{formatHours(row.estimated_hours)}</TableCell>
-                    <TableCell className="numeric-cell font-semibold text-primary">{formatHours(row.reported_hours)}</TableCell>
-                    <TableCell>
-                      <SourceBadge source={row.reported_source} />
-                    </TableCell>
-                    <TableCell className="min-w-56 text-muted-foreground">{row.reported_reason}</TableCell>
-                  </TableRow>
-                ))
-              ) : (
+      {isExpanded ? (
+        <div className="overflow-hidden rounded-lg border bg-card" id={tableId}>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell className="py-5 text-muted-foreground" colSpan={8 + Number(showProduct) + Number(showTeamMember)}>
-                    No forecast, actual, or estimated values exist for this view yet.
-                  </TableCell>
+                  {showProduct ? <TableHead>Product</TableHead> : null}
+                  {showTeamMember ? <TableHead>Team Member</TableHead> : null}
+                  <TableHead>Bucket</TableHead>
+                  <TableHead>Month</TableHead>
+                  <TableHead>Forecast</TableHead>
+                  <TableHead>Actual</TableHead>
+                  <TableHead>Estimated</TableHead>
+                  <TableHead>Reported</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Reason</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {rows.length ? (
+                  rows.map((row) => (
+                    <TableRow key={`${row.product_id}-${row.team_member_id}-${row.bucket_id}-${row.fiscal_month_id}`}>
+                      {showProduct ? (
+                        <TableCell>
+                          <Link className="font-medium text-primary hover:underline" to={`/products/${row.product_id}`}>
+                            {row.product}
+                          </Link>
+                        </TableCell>
+                      ) : null}
+                      {showTeamMember ? (
+                        <TableCell>
+                          <Link className="font-medium text-primary hover:underline" to={`/team-members/${row.team_member_id}`}>
+                            {row.team_member}
+                          </Link>
+                        </TableCell>
+                      ) : null}
+                      <TableCell>{row.bucket}</TableCell>
+                      <TableCell>{row.month_label}</TableCell>
+                      <TableCell className="numeric-cell">{formatHours(row.forecast_hours)}</TableCell>
+                      <TableCell className="numeric-cell">{formatHours(row.actual_hours)}</TableCell>
+                      <TableCell className="numeric-cell">{formatHours(row.estimated_hours)}</TableCell>
+                      <TableCell className="numeric-cell font-semibold text-primary">{formatHours(row.reported_hours)}</TableCell>
+                      <TableCell>
+                        <SourceBadge source={row.reported_source} />
+                      </TableCell>
+                      <TableCell className="min-w-56 text-muted-foreground">{row.reported_reason}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell className="py-5 text-muted-foreground" colSpan={8 + Number(showProduct) + Number(showTeamMember)}>
+                      No forecast, actual, or estimated values exist for this view yet.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </div>
-      </div>
+      ) : null}
     </section>
   );
 }

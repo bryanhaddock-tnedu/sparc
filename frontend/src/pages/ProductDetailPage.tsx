@@ -1,5 +1,5 @@
-import { Plus, RotateCcw, Save, Trash2, UserPlus } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, Plus, RotateCcw, Save, Trash2, UserPlus } from "lucide-react";
+import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Link, useParams } from "react-router-dom";
 
@@ -350,10 +350,14 @@ function ProductTeamSection({
   onRemove: (assignmentId: number) => Promise<void>;
   onUpdate: (assignmentId: number, payload: { status?: string }) => Promise<void>;
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [saving, setSaving] = useState(false);
+  const rosterId = useId();
   const assignedMemberIds = new Set(assignments.map((assignment) => assignment.team_member_id));
   const availableMembers = members.filter((member) => !assignedMemberIds.has(member.id));
+  const activeCount = assignments.filter((assignment) => assignment.status === "active").length;
+  const inactiveCount = assignments.length - activeCount;
 
   async function addAssignment() {
     const teamMemberId = Number(selectedMemberId);
@@ -376,100 +380,124 @@ function ProductTeamSection({
             Assign rostered team members to this product. Forecast bucket rows are managed in Forecast Lines; Jira actuals use ticket work type.
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <select
-            aria-label="Team member to add"
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            disabled={saving || availableMembers.length === 0}
-            value={selectedMemberId}
-            onChange={(event) => setSelectedMemberId(event.target.value)}
+        <div className="flex flex-col gap-2 sm:items-end">
+          <div className="flex flex-wrap gap-2 text-sm">
+            <Badge>{assignments.length} assigned</Badge>
+            <Badge>{activeCount} active</Badge>
+            {inactiveCount ? <Badge>{inactiveCount} inactive</Badge> : null}
+          </div>
+          <Button
+            aria-controls={rosterId}
+            aria-expanded={isExpanded}
+            className="w-full sm:w-auto"
+            onClick={() => setIsExpanded((current) => !current)}
+            size="sm"
+            type="button"
+            variant="outline"
           >
-            <option value="">{availableMembers.length ? "Select team member" : "All members assigned"}</option>
-            {availableMembers.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
-          </select>
-          <Button onClick={addAssignment} disabled={saving || !selectedMemberId}>
-            <UserPlus className="h-4 w-4" />
-            Add
+            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            {isExpanded ? "Hide roster" : "Show roster"}
           </Button>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px] text-sm">
-            <thead>
-              <tr className="border-b bg-secondary/60">
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Team Member</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Role</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Team</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bill Rate</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Status</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">History</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assignments.length ? (
-                assignments.map((assignment) => (
-                  <tr key={assignment.id} className="border-b last:border-0">
-                    <td className="px-3 py-3">
-                      <Link className="font-medium text-primary hover:underline" to={`/team-members/${assignment.team_member_id}`}>
-                        {assignment.team_member}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-3">{assignment.role}</td>
-                    <td className="px-3 py-3">{assignment.team}</td>
-                    <td className="numeric-cell px-3 py-3">{formatCurrency(assignment.bill_rate)}/hr</td>
-                    <td className="px-3 py-3">
-                      <select
-                        aria-label={`${assignment.team_member} product status`}
-                        className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                        value={assignment.status}
-                        onChange={(event) => void onUpdate(assignment.id, { status: event.target.value })}
-                      >
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                      </select>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {assignment.has_forecast_entries
-                        ? "Forecast lines clear on remove"
-                        : assignment.has_actual_entries
-                          ? "Actuals retained"
-                          : "No hours yet"}
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const confirmed = window.confirm(
-                            `Remove ${assignment.team_member} from this product? Forecast lines for this product will be deleted. Jira actuals will stay for historical reporting.`,
-                          );
-                          if (confirmed) void onRemove(assignment.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Remove
-                      </Button>
-                    </td>
+      {isExpanded ? (
+        <div className="space-y-3" id={rosterId}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <select
+              aria-label="Team member to add"
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              disabled={saving || availableMembers.length === 0}
+              value={selectedMemberId}
+              onChange={(event) => setSelectedMemberId(event.target.value)}
+            >
+              <option value="">{availableMembers.length ? "Select team member" : "All members assigned"}</option>
+              {availableMembers.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </select>
+            <Button onClick={addAssignment} disabled={saving || !selectedMemberId}>
+              <UserPlus className="h-4 w-4" />
+              Add
+            </Button>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border bg-card">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[780px] text-sm">
+                <thead>
+                  <tr className="border-b bg-secondary/60">
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Team Member</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Role</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Team</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bill Rate</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Status</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">History</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actions</th>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={7}>
-                    No team members assigned to this product yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {assignments.length ? (
+                    assignments.map((assignment) => (
+                      <tr key={assignment.id} className="border-b last:border-0">
+                        <td className="px-3 py-3">
+                          <Link className="font-medium text-primary hover:underline" to={`/team-members/${assignment.team_member_id}`}>
+                            {assignment.team_member}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-3">{assignment.role}</td>
+                        <td className="px-3 py-3">{assignment.team}</td>
+                        <td className="numeric-cell px-3 py-3">{formatCurrency(assignment.bill_rate)}/hr</td>
+                        <td className="px-3 py-3">
+                          <select
+                            aria-label={`${assignment.team_member} product status`}
+                            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                            value={assignment.status}
+                            onChange={(event) => void onUpdate(assignment.id, { status: event.target.value })}
+                          >
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-3 text-muted-foreground">
+                          {assignment.has_forecast_entries
+                            ? "Forecast lines clear on remove"
+                            : assignment.has_actual_entries
+                              ? "Actuals retained"
+                              : "No hours yet"}
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const confirmed = window.confirm(
+                                `Remove ${assignment.team_member} from this product? Forecast lines for this product will be deleted. Jira actuals will stay for historical reporting.`,
+                              );
+                              if (confirmed) void onRemove(assignment.id);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Remove
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={7}>
+                        No team members assigned to this product yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : null}
     </section>
   );
 }
