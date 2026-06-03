@@ -22,6 +22,8 @@ jobs:
         with:
           target: app
           push: true
+          build-args: |
+            VITE_BUILD_VERSION=${{ github.sha }}
           tags: |
             ${{ secrets.REGISTRY_URL }}/sparc:${{ github.sha }}
             ${{ secrets.REGISTRY_URL }}/sparc:latest
