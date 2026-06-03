@@ -9,9 +9,10 @@ import { Button } from "./ui/button";
 export function Layout({ children }: PropsWithChildren) {
   const { fiscalYear, fiscalYearOptions, setFiscalYear } = useFiscalYear();
   const { status, logout } = useAuth();
+  const currentYear = new Date().getFullYear();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       <header className="border-b bg-card">
         <div
           aria-hidden="true"
@@ -53,7 +54,10 @@ export function Layout({ children }: PropsWithChildren) {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      <footer className="mx-auto w-full max-w-7xl px-4 pb-8 pt-10 text-xs text-muted-foreground sm:px-6 lg:px-8">
+        <div className="border-t pt-4">Copyright {currentYear} Tennessee Department of Education. All rights reserved.</div>
+      </footer>
     </div>
   );
 }
