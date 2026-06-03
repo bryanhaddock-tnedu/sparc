@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     auto_create_schema: bool = True
     seed_on_startup: bool = True
     default_fiscal_year: int = 2027
+    build_version: str = Field(default="local", validation_alias=AliasChoices("VITE_BUILD_VERSION", "SPARC_BUILD_VERSION", "BUILD_VERSION"))
     jira_site_url: str | None = None
     jira_api_email: str | None = None
     jira_api_token: str | None = None

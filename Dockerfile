@@ -20,8 +20,11 @@ FROM python:3.12-slim AS app
 
 WORKDIR /app
 
+ARG VITE_BUILD_VERSION=local
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV VITE_BUILD_VERSION=${VITE_BUILD_VERSION}
 
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

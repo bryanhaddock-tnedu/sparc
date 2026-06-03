@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -17,6 +17,7 @@ from app.db.session import SessionLocal, create_database
 settings = get_settings()
 logger = logging.getLogger("sparc")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+NO_STORE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
 
 
 @asynccontextmanager
@@ -67,10 +68,18 @@ def readiness() -> dict[str, str]:
     return {"status": "ready"}
 
 
+@app.get("/api/app-version", include_in_schema=False)
+def app_version() -> JSONResponse:
+    return JSONResponse(
+        {"version": settings.build_version, "environment": settings.environment},
+        headers=NO_STORE_HEADERS,
+    )
+
+
 app.include_router(api_router)
 
 if STATIC_DIR.exists():
-    FRONTEND_SHELL_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+    FRONTEND_SHELL_HEADERS = NO_STORE_HEADERS
 
     assets_dir = STATIC_DIR / "assets"
     if assets_dir.exists():
