@@ -1,21 +1,23 @@
-import { DatabaseZap, FileSpreadsheet, type LucideIcon } from "lucide-react";
+import { DatabaseZap, FileSpreadsheet, Users, type LucideIcon } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { PageNav } from "../components/PageNav";
 import { Button } from "../components/ui/button";
 import { AdminDataPage } from "./AdminDataPage";
+import { AdminTeamRosterPage } from "./AdminTeamRosterPage";
 import { IntegrationsPage } from "./IntegrationsPage";
 
-type AdminTab = "jira" | "data";
+type AdminTab = "jira" | "roster" | "data";
 
 const tabs: Array<{ key: AdminTab; label: string; href: string; icon: LucideIcon }> = [
   { key: "jira", label: "Jira", href: "/admin?tab=jira", icon: DatabaseZap },
+  { key: "roster", label: "Team Roster", href: "/admin?tab=roster", icon: Users },
   { key: "data", label: "Admin Data", href: "/admin?tab=data", icon: FileSpreadsheet },
 ];
 
 export function AdminPage() {
   const [searchParams] = useSearchParams();
-  const activeTab: AdminTab = searchParams.get("tab") === "data" ? "data" : "jira";
+  const activeTab = adminTabFromParam(searchParams.get("tab"));
 
   return (
     <div className="space-y-5">
@@ -42,7 +44,14 @@ export function AdminPage() {
         })}
       </div>
 
-      <div role="tabpanel">{activeTab === "jira" ? <IntegrationsPage embedded /> : <AdminDataPage embedded />}</div>
+      <div role="tabpanel">
+        {activeTab === "jira" ? <IntegrationsPage embedded /> : activeTab === "roster" ? <AdminTeamRosterPage embedded /> : <AdminDataPage embedded />}
+      </div>
     </div>
   );
+}
+
+function adminTabFromParam(value: string | null): AdminTab {
+  if (value === "data" || value === "roster") return value;
+  return "jira";
 }
