@@ -70,6 +70,8 @@ def readiness() -> dict[str, str]:
 app.include_router(api_router)
 
 if STATIC_DIR.exists():
+    FRONTEND_SHELL_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+
     assets_dir = STATIC_DIR / "assets"
     if assets_dir.exists():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
@@ -81,4 +83,4 @@ if STATIC_DIR.exists():
         requested_path = STATIC_DIR / full_path
         if requested_path.is_file():
             return FileResponse(requested_path)
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(STATIC_DIR / "index.html", headers=FRONTEND_SHELL_HEADERS)
