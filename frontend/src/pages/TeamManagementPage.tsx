@@ -165,16 +165,17 @@ function TeamReportedPieCard({ title, data, total }: { title: string; data: Team
         </div>
         <div className="text-right text-xs text-muted-foreground">{hasData ? `${data.length} reporting` : "No reported hours"}</div>
       </div>
-      <div className="relative mt-2 h-64">
+      <div className="relative mx-auto mt-1 aspect-square w-full max-w-96">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
+              cx="50%"
+              cy="50%"
               data={hasData ? data : [{ teamMember: "No reported hours", hours: 1 }]}
               dataKey="hours"
-              innerRadius={52}
               nameKey="teamMember"
-              outerRadius={108}
-              paddingAngle={hasData ? 2 : 0}
+              outerRadius="94%"
+              paddingAngle={hasData ? 0.75 : 0}
             >
               {(hasData ? data : [{ teamMember: "No reported hours", hours: 1 }]).map((entry, index) => (
                 <Cell key={entry.teamMember} fill={hasData ? PIE_COLORS[index % PIE_COLORS.length] : "hsl(var(--muted))"} />
