@@ -55,7 +55,7 @@ export function TeamManagementPage() {
     setMembers((current) => current.map((row) => (row.id === member.id ? updated : row)));
   }, []);
 
-  const analytics = useMemo(() => buildTeamReportedAnalytics(reportedRows, fiscalYear), [reportedRows, fiscalYear]);
+  const analytics = useMemo(() => buildTeamActualAnalytics(reportedRows, fiscalYear), [reportedRows, fiscalYear]);
 
   const columns = useMemo<ColumnDef<TeamMember>[]>(
     () => [
@@ -118,9 +118,9 @@ export function TeamManagementPage() {
 
       <section className="overflow-x-auto pb-1">
         <div className="grid min-w-[1080px] grid-cols-3 gap-4">
-          <TeamReportedPieCard title={`Previous Month (${analytics.previous.label})`} data={analytics.previous.data} total={analytics.previous.total} />
-          <TeamReportedPieCard title={`Current Month (${analytics.current.label})`} data={analytics.current.data} total={analytics.current.total} />
-          <TeamReportedPieCard title={`${fiscalYearLabel} FYTD`} data={analytics.fytd.data} total={analytics.fytd.total} />
+          <TeamActualPieCard title={`Previous Month (${analytics.previous.label})`} data={analytics.previous.data} total={analytics.previous.total} />
+          <TeamActualPieCard title={`Current Month (${analytics.current.label})`} data={analytics.current.data} total={analytics.current.total} />
+          <TeamActualPieCard title={`${fiscalYearLabel} FYTD`} data={analytics.fytd.data} total={analytics.fytd.total} />
         </div>
       </section>
 
@@ -154,7 +154,7 @@ export function TeamManagementPage() {
   );
 }
 
-function TeamReportedPieCard({ title, data, total }: { title: string; data: TeamReportedSlice[]; total: number }) {
+function TeamActualPieCard({ title, data, total }: { title: string; data: TeamActualSlice[]; total: number }) {
   const hasData = data.some((row) => row.hours > 0);
   return (
     <div className="rounded-lg border bg-card p-4">
@@ -163,7 +163,7 @@ function TeamReportedPieCard({ title, data, total }: { title: string; data: Team
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">{title}</h2>
           <div className="numeric-cell mt-1 text-2xl font-semibold text-primary">{formatHours(total)}</div>
         </div>
-        <div className="text-right text-xs text-muted-foreground">{hasData ? `${data.length} reporting` : "No reported hours"}</div>
+        <div className="text-right text-xs text-muted-foreground">{hasData ? `${data.length} logging` : "No logged hours"}</div>
       </div>
       <div className="relative mx-auto mt-1 aspect-square w-full max-w-96">
         <ResponsiveContainer width="100%" height="100%">
@@ -171,13 +171,13 @@ function TeamReportedPieCard({ title, data, total }: { title: string; data: Team
             <Pie
               cx="50%"
               cy="50%"
-              data={hasData ? data : [{ teamMember: "No reported hours", hours: 1 }]}
+              data={hasData ? data : [{ teamMember: "No logged hours", hours: 1 }]}
               dataKey="hours"
               nameKey="teamMember"
               outerRadius="94%"
               paddingAngle={hasData ? 0.75 : 0}
             >
-              {(hasData ? data : [{ teamMember: "No reported hours", hours: 1 }]).map((entry, index) => (
+              {(hasData ? data : [{ teamMember: "No logged hours", hours: 1 }]).map((entry, index) => (
                 <Cell key={entry.teamMember} fill={hasData ? PIE_COLORS[index % PIE_COLORS.length] : "hsl(var(--muted))"} />
               ))}
             </Pie>
@@ -186,7 +186,7 @@ function TeamReportedPieCard({ title, data, total }: { title: string; data: Team
         </ResponsiveContainer>
         {!hasData ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center text-sm font-medium text-muted-foreground">
-            No reported hours
+            No logged hours
           </div>
         ) : null}
       </div>
@@ -237,18 +237,18 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
 }
 
-type TeamReportedSlice = {
+type TeamActualSlice = {
   teamMember: string;
   hours: number;
 };
 
-type TeamReportedPeriod = {
+type TeamActualPeriod = {
   label: string;
-  data: TeamReportedSlice[];
+  data: TeamActualSlice[];
   total: number;
 };
 
-function buildTeamReportedAnalytics(rows: ReportedValueRow[], fiscalYear: number) {
+function buildTeamActualAnalytics(rows: ReportedValueRow[], fiscalYear: number) {
   const today = new Date();
   const current = { year: today.getFullYear(), month: today.getMonth() + 1 };
   const previousDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
@@ -262,22 +262,22 @@ function buildTeamReportedAnalytics(rows: ReportedValueRow[], fiscalYear: number
         : rows.filter((row) => row.month_sequence <= fiscalSequenceForCalendarMonth(current.month));
 
   return {
-    current: aggregateReportedPeriod(
+    current: aggregateActualPeriod(
       rows.filter((row) => row.calendar_year === current.year && row.calendar_month === current.month),
       monthLabel(current.month),
     ),
-    previous: aggregateReportedPeriod(
+    previous: aggregateActualPeriod(
       rows.filter((row) => row.calendar_year === previous.year && row.calendar_month === previous.month),
       monthLabel(previous.month),
     ),
-    fytd: aggregateReportedPeriod(fytdRows, "FYTD"),
+    fytd: aggregateActualPeriod(fytdRows, "FYTD"),
   };
 }
 
-function aggregateReportedPeriod(rows: ReportedValueRow[], label: string): TeamReportedPeriod {
+function aggregateActualPeriod(rows: ReportedValueRow[], label: string): TeamActualPeriod {
   const hoursByMember = new Map<string, number>();
   for (const row of rows) {
-    hoursByMember.set(row.team_member, (hoursByMember.get(row.team_member) ?? 0) + row.reported_hours);
+    hoursByMember.set(row.team_member, (hoursByMember.get(row.team_member) ?? 0) + row.actual_hours);
   }
   const data = Array.from(hoursByMember, ([teamMember, hours]) => ({ teamMember, hours: roundHours(hours) }))
     .filter((row) => row.hours > 0)
