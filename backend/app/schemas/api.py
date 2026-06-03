@@ -527,6 +527,25 @@ class TeamMemberProductsResponse(BaseModel):
     products: list[TeamMemberProductRowResponse]
 
 
+class TeamMemberActualWorklogResponse(BaseModel):
+    id: int
+    product_id: int
+    product: str
+    bucket_id: int
+    bucket: str
+    fiscal_month_id: int
+    month_label: str
+    worked_on: date | None
+    hours: float
+    source: str
+    source_issue_id: str | None
+    source_ticket_key: str | None
+    source_worklog_id: str | None
+    source_project_key: str | None
+    sync_run_id: int | None
+    sync_completed_at: datetime | None
+
+
 class TeamImportError(BaseModel):
     row: int
     message: str

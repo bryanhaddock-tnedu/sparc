@@ -446,6 +446,25 @@ export interface TeamMemberProducts {
   products: TeamMemberProductRow[];
 }
 
+export interface TeamMemberActualWorklog {
+  id: number;
+  product_id: number;
+  product: string;
+  bucket_id: number;
+  bucket: string;
+  fiscal_month_id: number;
+  month_label: string;
+  worked_on: string | null;
+  hours: number;
+  source: string;
+  source_issue_id: string | null;
+  source_ticket_key: string | null;
+  source_worklog_id: string | null;
+  source_project_key: string | null;
+  sync_run_id: number | null;
+  sync_completed_at: string | null;
+}
+
 export interface ForecastUpsertPayload {
   product_id: number;
   team_member_id: number;

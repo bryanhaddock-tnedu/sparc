@@ -35,6 +35,7 @@ import type {
   SyncRun,
   TeamImportResult,
   TeamMember,
+  TeamMemberActualWorklog,
   TeamMemberProducts,
   UnmappedProduct,
   UnmappedUser,
@@ -195,6 +196,8 @@ export const api = {
     }),
   teamMemberProducts: (teamMemberId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<TeamMemberProducts>(`/api/team-members/${teamMemberId}/products?fiscal_year=${fiscalYear}`),
+  teamMemberActualWorklogs: (teamMemberId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<TeamMemberActualWorklog[]>(`/api/team-members/${teamMemberId}/actual-worklogs?fiscal_year=${fiscalYear}`),
   upsertForecast: (payload: ForecastUpsertPayload) =>
     request<ForecastResponse>("/api/forecasts", {
       method: "PUT",

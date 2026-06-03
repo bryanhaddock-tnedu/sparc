@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, UploadFile
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.errors import bad_request, not_found
 from app.db.session import get_db
-from app.models import TeamMember
-from app.schemas import TeamImportResult, TeamMemberCreate, TeamMemberProductsResponse, TeamMemberResponse, TeamMemberUpdate
+from app.models import ActualEntry, FiscalMonth, TeamMember
+from app.schemas import TeamImportResult, TeamMemberActualWorklogResponse, TeamMemberCreate, TeamMemberProductsResponse, TeamMemberResponse, TeamMemberUpdate
 from app.services.aggregations import serialize_team_member, team_member_products
 from app.services.team_import import import_team_members
 from app.services.team_members import create_team_member as create_member_service
@@ -80,3 +80,48 @@ def get_team_member_product_rows(
         return team_member_products(db, team_member_id, fiscal_year)
     except ValueError as exc:
         raise not_found(str(exc).replace(" not found", "")) from exc
+
+
+@router.get("/{team_member_id}/actual-worklogs", response_model=list[TeamMemberActualWorklogResponse])
+def get_team_member_actual_worklogs(
+    team_member_id: int,
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    if db.get(TeamMember, team_member_id) is None:
+        raise not_found("Team member")
+
+    entries = db.scalars(
+        select(ActualEntry)
+        .join(ActualEntry.fiscal_month)
+        .options(
+            joinedload(ActualEntry.product),
+            joinedload(ActualEntry.bucket),
+            joinedload(ActualEntry.fiscal_month),
+            joinedload(ActualEntry.sync_run),
+        )
+        .where(ActualEntry.team_member_id == team_member_id, FiscalMonth.fiscal_year == fiscal_year)
+        .order_by(FiscalMonth.sequence, ActualEntry.worked_on, ActualEntry.source_ticket_key, ActualEntry.id)
+    ).all()
+
+    return [
+        {
+            "id": entry.id,
+            "product_id": entry.product_id,
+            "product": entry.product.name,
+            "bucket_id": entry.bucket_id,
+            "bucket": entry.bucket.name,
+            "fiscal_month_id": entry.fiscal_month_id,
+            "month_label": entry.fiscal_month.label,
+            "worked_on": entry.worked_on,
+            "hours": float(entry.hours),
+            "source": entry.source,
+            "source_issue_id": entry.source_issue_id,
+            "source_ticket_key": entry.source_ticket_key,
+            "source_worklog_id": entry.source_worklog_id,
+            "source_project_key": entry.source_project_key,
+            "sync_run_id": entry.sync_run_id,
+            "sync_completed_at": entry.sync_run.completed_at if entry.sync_run else None,
+        }
+        for entry in entries
+    ]

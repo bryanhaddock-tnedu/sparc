@@ -1,5 +1,5 @@
 import { Pencil, Save, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { BudgetTracker } from "../components/BudgetTracker";
@@ -16,7 +16,7 @@ import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { formatBillRate } from "../lib/teamMembers";
 import { formatCurrency, formatHours } from "../lib/utils";
-import type { ReportedValueRow, TeamMember, TeamMemberProducts } from "../types/api";
+import type { ReportedValueRow, TeamMember, TeamMemberActualWorklog, TeamMemberProducts } from "../types/api";
 
 type ProfileFormState = {
   name: string;
@@ -34,6 +34,8 @@ export function TeamMemberDetailPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [data, setData] = useState<TeamMemberProducts | null>(null);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
+  const [actualWorklogs, setActualWorklogs] = useState<TeamMemberActualWorklog[]>([]);
+  const [worklogMonthId, setWorklogMonthId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -42,20 +44,42 @@ export function TeamMemberDetailPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   async function loadData() {
-    const [productsResult, reportedRowsResult] = await Promise.all([
+    const [productsResult, reportedRowsResult, actualWorklogsResult] = await Promise.all([
       api.teamMemberProducts(teamMemberId, fiscalYear),
       api.reportedValues({ team_member_id: teamMemberId }, fiscalYear),
+      api.teamMemberActualWorklogs(teamMemberId, fiscalYear),
     ]);
     setData(productsResult);
     setReportedRows(reportedRowsResult);
+    setActualWorklogs(actualWorklogsResult);
+    setWorklogMonthId((current) => {
+      if (!current) {
+        return defaultWorklogMonthId(actualWorklogsResult);
+      }
+      if (current === "all" || actualWorklogsResult.some((row) => String(row.fiscal_month_id) === current)) {
+        return current;
+      }
+      return defaultWorklogMonthId(actualWorklogsResult);
+    });
   }
 
   useEffect(() => {
     setLoading(true);
+    setWorklogMonthId("");
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load team member"))
       .finally(() => setLoading(false));
   }, [teamMemberId, fiscalYear]);
+
+  const monthOptions = useMemo(() => worklogMonthOptions(actualWorklogs), [actualWorklogs]);
+  const selectedWorklogs = useMemo(
+    () => {
+      const selectedMonthId = worklogMonthId || "all";
+      return selectedMonthId === "all" ? actualWorklogs : actualWorklogs.filter((row) => String(row.fiscal_month_id) === selectedMonthId);
+    },
+    [actualWorklogs, worklogMonthId],
+  );
+  const worklogSummary = useMemo(() => summarizeWorklogs(selectedWorklogs), [selectedWorklogs]);
 
   if (loading) return <LoadingBlock />;
   if (error) return <ErrorBlock message={error} />;
@@ -220,6 +244,77 @@ export function TeamMemberDetailPage() {
       <ReportedValuesTable rows={reportedRows} showProduct />
 
       <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Actual Worklog Audit</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Jira worklogs imported into SPARC for {member.name}.</p>
+          </div>
+          <label className="text-sm">
+            <span className="sr-only">Actual worklog month</span>
+            <select
+              className="h-9 min-w-44 rounded-md border border-input bg-background px-3 py-1 text-sm"
+              value={worklogMonthId || "all"}
+              onChange={(event) => setWorklogMonthId(event.target.value)}
+            >
+              <option value="all">All FY</option>
+              {monthOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-4">
+          <MetricCard label="Selected Hours" value={formatHours(worklogSummary.hours)} />
+          <MetricCard label="Worklogs" value={`${worklogSummary.worklogCount}`} />
+          <MetricCard label="Tickets" value={`${worklogSummary.ticketCount}`} />
+          <MetricCard label="Largest Entry" value={formatHours(worklogSummary.largestEntry)} />
+        </div>
+        <div className="overflow-hidden rounded-lg border bg-card">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Ticket</TableHead>
+                  <TableHead>Product</TableHead>
+                  <TableHead>Bucket</TableHead>
+                  <TableHead>Jira Project</TableHead>
+                  <TableHead>Sync</TableHead>
+                  <TableHead className="text-right">Hours</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {selectedWorklogs.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>{row.worked_on ? formatDateOnly(row.worked_on) : "-"}</TableCell>
+                    <TableCell className="font-medium text-primary">{row.source_ticket_key ?? row.source_issue_id ?? "-"}</TableCell>
+                    <TableCell>
+                      <Link className="font-medium text-primary hover:underline" to={`/products/${row.product_id}`}>
+                        {row.product}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{row.bucket}</TableCell>
+                    <TableCell>{row.source_project_key ?? "-"}</TableCell>
+                    <TableCell>{row.sync_completed_at ? formatDateTime(row.sync_completed_at) : "-"}</TableCell>
+                    <TableCell className="numeric-cell text-right font-semibold">{formatHours(row.hours)}</TableCell>
+                  </TableRow>
+                ))}
+                {selectedWorklogs.length === 0 ? (
+                  <TableRow>
+                    <TableCell className="py-6 text-center text-sm text-muted-foreground" colSpan={7}>
+                      No actual Jira worklogs were imported for this selection.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-3">
         <h2 className="text-lg font-semibold">Product Associations</h2>
         <div className="overflow-hidden rounded-lg border bg-card">
           <div className="overflow-x-auto">
@@ -342,6 +437,60 @@ function formFromMember(member: TeamMember): ProfileFormState {
   };
 }
 
+function worklogMonthOptions(rows: TeamMemberActualWorklog[]) {
+  const options = new Map<string, string>();
+  for (const row of rows) {
+    options.set(String(row.fiscal_month_id), row.month_label);
+  }
+  return Array.from(options, ([id, label]) => ({ id, label }));
+}
+
+function summarizeWorklogs(rows: TeamMemberActualWorklog[]) {
+  const ticketKeys = new Set(rows.map((row) => row.source_ticket_key ?? row.source_issue_id ?? `entry-${row.id}`));
+  const hours = rows.reduce((total, row) => total + row.hours, 0);
+  const largestEntry = rows.reduce((largest, row) => Math.max(largest, row.hours), 0);
+  return {
+    hours,
+    largestEntry,
+    ticketCount: ticketKeys.size,
+    worklogCount: rows.length,
+  };
+}
+
+function defaultWorklogMonthId(rows: TeamMemberActualWorklog[]) {
+  const previousMonthKey = previousCalendarMonthKey();
+  const previousMonthRow = rows.find((row) => rowCalendarMonthKey(row) === previousMonthKey);
+  if (previousMonthRow) return String(previousMonthRow.fiscal_month_id);
+
+  const latestRow = rows.reduce<TeamMemberActualWorklog | null>((latest, row) => {
+    if (!row.worked_on) return latest;
+    if (!latest?.worked_on) return row;
+    return row.worked_on > latest.worked_on ? row : latest;
+  }, null);
+  return latestRow ? String(latestRow.fiscal_month_id) : "all";
+}
+
+function previousCalendarMonthKey() {
+  const now = new Date();
+  const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${previous.getFullYear()}-${previous.getMonth() + 1}`;
+}
+
+function rowCalendarMonthKey(row: TeamMemberActualWorklog) {
+  if (!row.worked_on) return "";
+  const [year, month] = row.worked_on.split("-");
+  return `${year}-${Number(month)}`;
+}
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+}
+
+function formatDateOnly(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(year, month - 1, day));
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
