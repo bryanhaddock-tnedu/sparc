@@ -1,4 +1,4 @@
-import { CheckCircle2, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { CheckCircle2, ExternalLink, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -29,7 +29,6 @@ export function ProductSettingsPage() {
   const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
   const [spaceActionIds, setSpaceActionIds] = useState<Set<string>>(new Set());
-  const [catalogRefreshing, setCatalogRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -146,21 +145,6 @@ export function ProductSettingsPage() {
     [productSpaces],
   );
 
-  const refreshCatalog = useCallback(async () => {
-    setCatalogRefreshing(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const result = await api.refreshJiraProjectCatalog();
-      setJiraCatalog(result.projects);
-      setNotice(`Jira project catalog refreshed: ${result.imported} projects available.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to refresh Jira project catalog");
-    } finally {
-      setCatalogRefreshing(false);
-    }
-  }, []);
-
   const addJiraSpace = useCallback(async (product: Product, payload: ProductJiraSpacePayload) => {
     const actionId = `add-${product.id}`;
     setSpaceActionIds((current) => new Set(current).add(actionId));
@@ -269,13 +253,7 @@ export function ProductSettingsPage() {
             Maintain {fiscalYearLabel} budgets ({fiscalYearRangeLabel}) and map each SPARC product to one or more Jira projects.
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:items-end">
-          <PageNav current="products" />
-          <Button variant="outline" onClick={refreshCatalog} disabled={catalogRefreshing}>
-            <RefreshCw className={`h-4 w-4 ${catalogRefreshing ? "animate-spin" : ""}`} />
-            {catalogRefreshing ? "Refreshing" : "Refresh Jira Catalog"}
-          </Button>
-        </div>
+        <PageNav current="products" />
       </div>
 
       {notice ? <div className="rounded-md border border-[color:var(--spark-cyan)] bg-accent/10 px-3 py-2 text-sm text-primary">{notice}</div> : null}

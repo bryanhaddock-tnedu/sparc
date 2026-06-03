@@ -1,4 +1,4 @@
-import { DatabaseZap } from "lucide-react";
+import { DatabaseZap, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
-import type { JiraIntegrationStatus, JiraProductMapping, JiraUserMapping, Product, SyncRun, TeamMember } from "../types/api";
+import type { JiraIntegrationStatus, JiraProductMapping, JiraProjectCatalog, JiraUserMapping, Product, SyncRun, TeamMember } from "../types/api";
 
 export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
@@ -18,18 +18,22 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [products, setProducts] = useState<Product[]>([]);
   const [userMappings, setUserMappings] = useState<JiraUserMapping[]>([]);
   const [productMappings, setProductMappings] = useState<JiraProductMapping[]>([]);
+  const [jiraCatalog, setJiraCatalog] = useState<JiraProjectCatalog[]>([]);
   const [syncRuns, setSyncRuns] = useState<SyncRun[]>([]);
   const [jiraStatus, setJiraStatus] = useState<JiraIntegrationStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [liveSyncing, setLiveSyncing] = useState(false);
+  const [catalogRefreshing, setCatalogRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function loadData() {
-    const [members, productRows, users, jiraProducts, runs, status] = await Promise.all([
+    const [members, productRows, users, jiraProducts, catalogRows, runs, status] = await Promise.all([
       api.teamMembers(),
       api.products(),
       api.userMappings(),
       api.productMappings(),
+      api.jiraProjectCatalog(),
       api.syncRuns(),
       api.jiraIntegrationStatus(),
     ]);
@@ -37,6 +41,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     setProducts(productRows);
     setUserMappings(users);
     setProductMappings(jiraProducts);
+    setJiraCatalog(catalogRows);
     setSyncRuns(runs);
     setJiraStatus(status);
   }
@@ -50,6 +55,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   async function runLiveSync() {
     setLiveSyncing(true);
     setError(null);
+    setNotice(null);
     try {
       await api.syncLiveJiraRovo(fiscalYear);
       await loadData();
@@ -57,6 +63,21 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       setError(err instanceof Error ? err.message : "Unable to run live Jira sync");
     } finally {
       setLiveSyncing(false);
+    }
+  }
+
+  async function refreshCatalog() {
+    setCatalogRefreshing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.refreshJiraProjectCatalog();
+      setJiraCatalog(result.projects);
+      setNotice(`Jira project list refreshed: ${result.imported} projects available.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to refresh Jira project list");
+    } finally {
+      setCatalogRefreshing(false);
     }
   }
 
@@ -71,7 +92,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   }
 
   if (loading) return <LoadingBlock />;
-  if (error) return <ErrorBlock message={error} />;
+  if (error && !jiraStatus) return <ErrorBlock message={error} />;
 
   const unmappedUserCount = userMappings.filter((mapping) => mapping.team_member_id === null).length;
   const unmappedProductCount = productMappings.filter((mapping) => mapping.product_id === null).length;
@@ -87,17 +108,25 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
           {embedded ? null : <PageNav current="admin" />}
-          <Button onClick={runLiveSync} disabled={liveSyncing || !jiraStatus?.configured}>
-            <DatabaseZap className={`h-4 w-4 ${liveSyncing ? "animate-pulse" : ""}`} />
-            {liveSyncing ? "Syncing Jira" : "Sync Jira Actuals"}
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={refreshCatalog} disabled={catalogRefreshing || !jiraStatus?.configured}>
+              <RefreshCw className={`h-4 w-4 ${catalogRefreshing ? "animate-spin" : ""}`} />
+              {catalogRefreshing ? "Refreshing" : "Refresh Project List"}
+            </Button>
+            <Button onClick={runLiveSync} disabled={liveSyncing || !jiraStatus?.configured}>
+              <DatabaseZap className={`h-4 w-4 ${liveSyncing ? "animate-pulse" : ""}`} />
+              {liveSyncing ? "Syncing Jira" : "Sync Jira Actuals"}
+            </Button>
+          </div>
         </div>
       </section>
 
+      {notice ? <div className="rounded-md border border-[color:var(--spark-cyan)] bg-accent/10 px-3 py-2 text-sm text-primary">{notice}</div> : null}
       {error ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div> : null}
 
-      <section className="grid gap-3 sm:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatusCard label="Jira config" value={jiraStatus?.configured ? "Ready" : "Missing"} tone={jiraStatus?.configured ? "good" : "warn"} />
+        <StatusCard label="Project list" value={`${jiraCatalog.length}`} />
         <StatusCard label="User mappings" value={`${userMappings.length - unmappedUserCount}/${userMappings.length}`} />
         <StatusCard label="Product mappings" value={`${productMappings.length - unmappedProductCount}/${productMappings.length}`} />
         <StatusCard label="Latest sync" value={syncRuns[0]?.status ?? "No runs"} />
