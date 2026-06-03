@@ -31,7 +31,7 @@ const PIE_COLORS = ["#2CCCD3", "#D2D755", "#E87722", "#5E7975"];
 export function ProductDetailPage() {
   const params = useParams();
   const productId = Number(params.productId);
-  const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
+  const { fiscalYear, fiscalYearLabel } = useFiscalYear();
   const [summary, setSummary] = useState<ProductSummary | null>(null);
   const [tables, setTables] = useState<ProductBucketTables | null>(null);
   const [productSpaces, setProductSpaces] = useState<ProductJiraSpace[]>([]);
@@ -220,9 +220,6 @@ export function ProductDetailPage() {
             )}
             <Badge className={summary.product.is_active ? "border-primary/40 text-primary" : "border-muted text-muted-foreground"}>
               {summary.product.is_active ? "Active" : "Inactive"}
-            </Badge>
-            <Badge>
-              {fiscalYearLabel} / {fiscalYearRangeLabel}
             </Badge>
           </div>
           {summary.product.description ? (
