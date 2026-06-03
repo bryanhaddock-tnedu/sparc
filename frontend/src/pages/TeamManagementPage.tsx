@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import {
   flexRender,
   getCoreRowModel,
@@ -13,28 +14,48 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
+import { useFiscalYear } from "../lib/fiscalYear";
 import { formatBillRate } from "../lib/teamMembers";
-import type { TeamMember } from "../types/api";
+import { formatHours } from "../lib/utils";
+import type { ReportedValueRow, TeamMember } from "../types/api";
+
+const PIE_COLORS = [
+  "var(--spark-cyan)",
+  "var(--spark-orange)",
+  "var(--spark-navy)",
+  "var(--spark-red)",
+  "#8fb3d9",
+  "#d6d94f",
+  "#7a86a8",
+  "#f2a65a",
+];
 
 export function TeamManagementPage() {
+  const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [members, setMembers] = useState<TeamMember[]>([]);
+  const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadMembers = useCallback(async () => {
-    setMembers(await api.teamMembers());
-  }, []);
+  const loadTeamOverview = useCallback(async () => {
+    const [memberRows, reportedValueRows] = await Promise.all([api.teamMembers(), api.reportedValues({}, fiscalYear)]);
+    setMembers(memberRows);
+    setReportedRows(reportedValueRows);
+  }, [fiscalYear]);
 
   useEffect(() => {
-    loadMembers()
+    setLoading(true);
+    loadTeamOverview()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load team"))
       .finally(() => setLoading(false));
-  }, [loadMembers]);
+  }, [loadTeamOverview]);
 
   const updateBillRate = useCallback(async (member: TeamMember, billRate: number) => {
     const updated = await api.updateTeamMember(member.id, { bill_rate: billRate });
     setMembers((current) => current.map((row) => (row.id === member.id ? updated : row)));
   }, []);
+
+  const analytics = useMemo(() => buildTeamReportedAnalytics(reportedRows, fiscalYear), [reportedRows, fiscalYear]);
 
   const columns = useMemo<ColumnDef<TeamMember>[]>(
     () => [
@@ -88,10 +109,20 @@ export function TeamManagementPage() {
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
           <h1 className="text-2xl font-semibold">Team Management</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{members.length} rostered team members</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {members.length} rostered team members / {fiscalYearLabel} ({fiscalYearRangeLabel})
+          </p>
         </div>
         <PageNav current="team" />
       </div>
+
+      <section className="overflow-x-auto pb-1">
+        <div className="grid min-w-[1080px] grid-cols-3 gap-4">
+          <TeamReportedPieCard title={`Current Month (${analytics.current.label})`} data={analytics.current.data} total={analytics.current.total} />
+          <TeamReportedPieCard title={`Previous Month (${analytics.previous.label})`} data={analytics.previous.data} total={analytics.previous.total} />
+          <TeamReportedPieCard title={`${fiscalYearLabel} FYTD`} data={analytics.fytd.data} total={analytics.fytd.total} />
+        </div>
+      </section>
 
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="overflow-x-auto">
@@ -118,6 +149,45 @@ export function TeamManagementPage() {
             </TableBody>
           </Table>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function TeamReportedPieCard({ title, data, total }: { title: string; data: TeamReportedSlice[]; total: number }) {
+  const hasData = data.some((row) => row.hours > 0);
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase text-muted-foreground">{title}</h2>
+          <div className="numeric-cell mt-1 text-2xl font-semibold text-primary">{formatHours(total)}</div>
+        </div>
+        <div className="text-right text-xs text-muted-foreground">{hasData ? `${data.length} reporting` : "No reported hours"}</div>
+      </div>
+      <div className="relative mt-3 h-56">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={hasData ? data : [{ teamMember: "No reported hours", hours: 1 }]}
+              dataKey="hours"
+              innerRadius={48}
+              nameKey="teamMember"
+              outerRadius={78}
+              paddingAngle={hasData ? 2 : 0}
+            >
+              {(hasData ? data : [{ teamMember: "No reported hours", hours: 1 }]).map((entry, index) => (
+                <Cell key={entry.teamMember} fill={hasData ? PIE_COLORS[index % PIE_COLORS.length] : "hsl(var(--muted))"} />
+              ))}
+            </Pie>
+            {hasData ? <Tooltip formatter={(value: number, name: string) => [`${formatHours(value)} hrs`, name]} /> : null}
+          </PieChart>
+        </ResponsiveContainer>
+        {!hasData ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center text-sm font-medium text-muted-foreground">
+            No reported hours
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -164,4 +234,68 @@ function BillRateInput({ member, onSave }: { member: TeamMember; onSave: (member
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+}
+
+type TeamReportedSlice = {
+  teamMember: string;
+  hours: number;
+};
+
+type TeamReportedPeriod = {
+  label: string;
+  data: TeamReportedSlice[];
+  total: number;
+};
+
+function buildTeamReportedAnalytics(rows: ReportedValueRow[], fiscalYear: number) {
+  const today = new Date();
+  const current = { year: today.getFullYear(), month: today.getMonth() + 1 };
+  const previousDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const previous = { year: previousDate.getFullYear(), month: previousDate.getMonth() + 1 };
+  const currentFiscalYear = current.month >= 7 ? current.year + 1 : current.year;
+  const fytdRows =
+    fiscalYear < currentFiscalYear
+      ? rows
+      : fiscalYear > currentFiscalYear
+        ? []
+        : rows.filter((row) => row.month_sequence <= fiscalSequenceForCalendarMonth(current.month));
+
+  return {
+    current: aggregateReportedPeriod(
+      rows.filter((row) => row.calendar_year === current.year && row.calendar_month === current.month),
+      monthLabel(current.month),
+    ),
+    previous: aggregateReportedPeriod(
+      rows.filter((row) => row.calendar_year === previous.year && row.calendar_month === previous.month),
+      monthLabel(previous.month),
+    ),
+    fytd: aggregateReportedPeriod(fytdRows, "FYTD"),
+  };
+}
+
+function aggregateReportedPeriod(rows: ReportedValueRow[], label: string): TeamReportedPeriod {
+  const hoursByMember = new Map<string, number>();
+  for (const row of rows) {
+    hoursByMember.set(row.team_member, (hoursByMember.get(row.team_member) ?? 0) + row.reported_hours);
+  }
+  const data = Array.from(hoursByMember, ([teamMember, hours]) => ({ teamMember, hours: roundHours(hours) }))
+    .filter((row) => row.hours > 0)
+    .sort((left, right) => right.hours - left.hours || left.teamMember.localeCompare(right.teamMember));
+  return {
+    label,
+    data,
+    total: roundHours(data.reduce((sum, row) => sum + row.hours, 0)),
+  };
+}
+
+function fiscalSequenceForCalendarMonth(calendarMonth: number) {
+  return calendarMonth >= 7 ? calendarMonth - 6 : calendarMonth + 6;
+}
+
+function monthLabel(calendarMonth: number) {
+  return new Intl.DateTimeFormat(undefined, { month: "short" }).format(new Date(2026, calendarMonth - 1, 1));
+}
+
+function roundHours(value: number) {
+  return Math.round(value * 10) / 10;
 }

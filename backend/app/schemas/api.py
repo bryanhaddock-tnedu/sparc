@@ -290,6 +290,9 @@ class ReportedValueRowResponse(BaseModel):
     bucket_code: str
     fiscal_month_id: int
     month_label: str
+    month_sequence: int
+    calendar_year: int
+    calendar_month: int
     forecast_hours: float
     actual_hours: float
     estimated_hours: float

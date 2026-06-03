@@ -300,6 +300,9 @@ export interface ReportedValueRow {
   bucket_code: string;
   fiscal_month_id: number;
   month_label: string;
+  month_sequence: number;
+  calendar_year: number;
+  calendar_month: number;
   forecast_hours: number;
   actual_hours: number;
   estimated_hours: number;
