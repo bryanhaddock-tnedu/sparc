@@ -1,6 +1,6 @@
 import { DatabaseZap, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { PageNav } from "../components/PageNav";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
@@ -91,6 +91,8 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     await loadData();
   }
 
+  const catalogLastCheckedAt = useMemo(() => latestCatalogCheckedAt(jiraCatalog), [jiraCatalog]);
+
   if (loading) return <LoadingBlock />;
   if (error && !jiraStatus) return <ErrorBlock message={error} />;
 
@@ -108,16 +110,10 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
           {embedded ? null : <PageNav current="admin" />}
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button variant="outline" onClick={refreshCatalog} disabled={catalogRefreshing || !jiraStatus?.configured}>
-              <RefreshCw className={`h-4 w-4 ${catalogRefreshing ? "animate-spin" : ""}`} />
-              {catalogRefreshing ? "Refreshing" : "Refresh Project List"}
-            </Button>
-            <Button onClick={runLiveSync} disabled={liveSyncing || !jiraStatus?.configured}>
-              <DatabaseZap className={`h-4 w-4 ${liveSyncing ? "animate-pulse" : ""}`} />
-              {liveSyncing ? "Syncing Jira" : "Sync Jira Actuals"}
-            </Button>
-          </div>
+          <Button onClick={runLiveSync} disabled={liveSyncing || !jiraStatus?.configured}>
+            <DatabaseZap className={`h-4 w-4 ${liveSyncing ? "animate-pulse" : ""}`} />
+            {liveSyncing ? "Syncing Jira" : "Sync Jira Actuals"}
+          </Button>
         </div>
       </section>
 
@@ -126,7 +122,13 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatusCard label="Jira config" value={jiraStatus?.configured ? "Ready" : "Missing"} tone={jiraStatus?.configured ? "good" : "warn"} />
-        <StatusCard label="Project list" value={`${jiraCatalog.length}`} />
+        <ProjectListStatusCard
+          count={jiraCatalog.length}
+          disabled={!jiraStatus?.configured}
+          lastCheckedAt={catalogLastCheckedAt}
+          refreshing={catalogRefreshing}
+          onRefresh={refreshCatalog}
+        />
         <StatusCard label="User mappings" value={`${userMappings.length - unmappedUserCount}/${userMappings.length}`} />
         <StatusCard label="Product mappings" value={`${productMappings.length - unmappedProductCount}/${productMappings.length}`} />
         <StatusCard label="Latest sync" value={syncRuns[0]?.status ?? "No runs"} />
@@ -246,6 +248,45 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   );
 }
 
+function ProjectListStatusCard({
+  count,
+  disabled,
+  lastCheckedAt,
+  refreshing,
+  onRefresh,
+}: {
+  count: number;
+  disabled: boolean;
+  lastCheckedAt: string | null;
+  refreshing: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <Card className="min-h-[118px]">
+      <CardHeader className="flex flex-row items-start justify-between gap-2 p-4 pb-0">
+        <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Project list</CardTitle>
+        <Button
+          aria-label="Refresh Jira project list"
+          className="h-7 w-7"
+          disabled={disabled || refreshing}
+          size="icon"
+          title="Refresh Jira project list"
+          variant="ghost"
+          onClick={onRefresh}
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+        </Button>
+      </CardHeader>
+      <CardContent className="flex min-h-[72px] flex-col items-center justify-center p-4 pt-2">
+        <div className="numeric-cell text-center text-2xl font-semibold leading-none text-foreground sm:text-3xl">{count}</div>
+        <div className="mt-2 text-center text-xs leading-tight text-muted-foreground">
+          {lastCheckedAt ? `Last refreshed ${formatDateTime(lastCheckedAt)}` : "Not refreshed yet"}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function StatusCard({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "good" | "warn" }) {
   const valueClass = tone === "good" ? "text-primary" : tone === "warn" ? "text-warning" : "text-foreground";
   return (
@@ -278,4 +319,14 @@ function MappingTable({ title, unmapped, children }: { title: string; unmapped: 
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+function latestCatalogCheckedAt(projects: JiraProjectCatalog[]) {
+  const timestamps = projects.map((project) => Date.parse(project.last_checked_at)).filter(Number.isFinite);
+  if (!timestamps.length) return null;
+  return new Date(Math.max(...timestamps)).toISOString();
 }
