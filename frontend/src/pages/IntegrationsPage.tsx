@@ -12,7 +12,7 @@ import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
 import type { JiraIntegrationStatus, JiraProductMapping, JiraUserMapping, Product, SyncRun, TeamMember } from "../types/api";
 
-export function IntegrationsPage() {
+export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -80,13 +80,13 @@ export function IntegrationsPage() {
     <div className="space-y-5">
       <section className="flex flex-col justify-between gap-4 border-b pb-5 sm:flex-row sm:items-end">
         <div>
-          <h1 className="text-2xl font-semibold">Jira Sync</h1>
+          {embedded ? <h2 className="text-xl font-semibold">Jira Sync</h2> : <h1 className="text-2xl font-semibold">Jira Sync</h1>}
           <p className="mt-1 text-sm text-muted-foreground">
             Live Jira actual-hours sync, mappings, and sync history for {fiscalYearLabel} ({fiscalYearRangeLabel}).
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
-          <PageNav current="jira" />
+          {embedded ? null : <PageNav current="admin" />}
           <Button onClick={runLiveSync} disabled={liveSyncing || !jiraStatus?.configured}>
             <DatabaseZap className={`h-4 w-4 ${liveSyncing ? "animate-pulse" : ""}`} />
             {liveSyncing ? "Syncing Jira" : "Sync Jira Actuals"}

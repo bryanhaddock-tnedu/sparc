@@ -1,16 +1,15 @@
-import { DatabaseZap, FileSpreadsheet, LayoutDashboard, Package, Users, type LucideIcon } from "lucide-react";
+import { Settings, LayoutDashboard, Package, Users, type LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Button } from "./ui/button";
 
-type PageNavKey = "dashboard" | "products" | "team" | "jira" | "admin-data";
+type PageNavKey = "dashboard" | "products" | "team" | "admin";
 
 const navLinks: Array<{ key: PageNavKey; label: string; href: string; icon: LucideIcon }> = [
   { key: "dashboard", label: "Dashboard", href: "/", icon: LayoutDashboard },
   { key: "products", label: "Products", href: "/products/settings", icon: Package },
   { key: "team", label: "Team", href: "/team", icon: Users },
-  { key: "jira", label: "Jira Sync", href: "/integrations", icon: DatabaseZap },
-  { key: "admin-data", label: "Admin Data", href: "/admin-data", icon: FileSpreadsheet },
+  { key: "admin", label: "Admin", href: "/admin", icon: Settings },
 ];
 
 export function PageNav({ current }: { current?: PageNavKey }) {

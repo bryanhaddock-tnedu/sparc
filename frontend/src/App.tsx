@@ -1,14 +1,13 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import type { ReactNode } from "react";
 
 import { Layout } from "./components/Layout";
 import { LoadingBlock } from "./components/StateBlocks";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { FiscalYearProvider } from "./lib/fiscalYear";
-import { AdminDataPage } from "./pages/AdminDataPage";
+import { AdminPage } from "./pages/AdminPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EstimationSettingsPage } from "./pages/EstimationSettingsPage";
-import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProductDetailPage } from "./pages/ProductDetailPage";
 import { ProductSettingsPage } from "./pages/ProductSettingsPage";
@@ -27,8 +26,9 @@ export default function App() {
               <Route path="/products/:productId" element={<ProductDetailPage />} />
               <Route path="/team-members/:teamMemberId" element={<TeamMemberDetailPage />} />
               <Route path="/team" element={<TeamManagementPage />} />
-              <Route path="/integrations" element={<IntegrationsPage />} />
-              <Route path="/admin-data" element={<AdminDataPage />} />
+              <Route path="/admin" element={<AdminPage />} />
+              <Route path="/integrations" element={<Navigate to="/admin?tab=jira" replace />} />
+              <Route path="/admin-data" element={<Navigate to="/admin?tab=data" replace />} />
               <Route path="/estimations" element={<EstimationSettingsPage />} />
             </Routes>
           </Layout>

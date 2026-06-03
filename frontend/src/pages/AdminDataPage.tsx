@@ -12,7 +12,7 @@ import type { AdminDataExportOption, AdminDataImportResult } from "../types/api"
 
 const EXCLUDED_REFRESH_DATA = ["Actual Jira worklogs", "Sync history", "Jira project catalog snapshots", "Generated estimates"];
 
-export function AdminDataPage() {
+export function AdminDataPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [options, setOptions] = useState<AdminDataExportOption[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -91,10 +91,10 @@ export function AdminDataPage() {
     <div className="space-y-5">
       <section className="flex flex-col justify-between gap-4 border-b pb-5 sm:flex-row sm:items-end">
         <div>
-          <h1 className="text-2xl font-semibold">Admin Data</h1>
+          {embedded ? <h2 className="text-xl font-semibold">Admin Data</h2> : <h1 className="text-2xl font-semibold">Admin Data</h1>}
           <p className="mt-1 text-sm text-muted-foreground">Move SPARC-owned setup, mapping, and forecast data between environments.</p>
         </div>
-        <PageNav current="admin-data" />
+        {embedded ? null : <PageNav current="admin" />}
       </section>
 
       {error ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div> : null}
