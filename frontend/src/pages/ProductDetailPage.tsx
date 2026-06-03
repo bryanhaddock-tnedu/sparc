@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Plus, RotateCcw, Save, Trash2, UserPlus } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2, UserPlus } from "lucide-react";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Link, useParams } from "react-router-dom";
@@ -44,8 +44,7 @@ export function ProductDetailPage() {
   const [forecastLineBucketId, setForecastLineBucketId] = useState("");
   const [forecastLineSaving, setForecastLineSaving] = useState(false);
   const [forecastLineMessage, setForecastLineMessage] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [savingCells, setSavingCells] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,39 +93,50 @@ export function ProductDetailPage() {
       }
       return next;
     });
-    setSaveMessage(null);
   }
 
-  async function saveDrafts() {
-    if (!tables || dirtyEntries.length === 0) return;
-    setSaving(true);
+  async function saveForecastCell(bucket: BucketTable, row: BucketTableRow, cell: MonthCell) {
+    const key = draftKey(bucket, row, cell);
+    const draft = drafts[key];
+    if (draft === undefined) return;
+
+    const value = draft.trim() === "" ? 0 : Number(draft);
+    if (!Number.isFinite(value) || value < 0) return;
+
+    if (value === cell.forecast_hours) {
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      return;
+    }
+
+    setSavingCells((current) => ({ ...current, [key]: true }));
     setError(null);
     try {
-      await api.upsertForecastBatch(
-        dirtyEntries.map(({ bucket, row, cell, value }) => ({
-          product_id: productId,
-          team_member_id: row.team_member_id,
-          bucket_id: bucket.bucket_id,
-          fiscal_month_id: cell.fiscal_month_id,
-          hours: value,
-        })),
-      );
-      setSaveMessage(`${dirtyEntries.length} forecast ${dirtyEntries.length === 1 ? "cell" : "cells"} saved.`);
+      await api.upsertForecast({
+        product_id: productId,
+        team_member_id: row.team_member_id,
+        bucket_id: bucket.bucket_id,
+        fiscal_month_id: cell.fiscal_month_id,
+        hours: value,
+      });
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save forecasts");
+      setError(err instanceof Error ? err.message : "Unable to save forecast");
     } finally {
-      setSaving(false);
+      setSavingCells((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
     }
-  }
-
-  const dirtyEntries = tables ? collectDirtyEntries(tables, drafts) : [];
-  const draftCount = Object.keys(drafts).length;
-  const hasInvalidDrafts = draftCount !== dirtyEntries.length;
-
-  function discardDrafts() {
-    setDrafts({});
-    setSaveMessage(null);
   }
 
   async function addProductTeamMember(teamMemberId: number) {
@@ -300,28 +310,17 @@ export function ProductDetailPage() {
       />
 
       <section className="space-y-5">
-        <div className="flex flex-col justify-between gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center">
-          <div>
-            <div className="text-sm font-medium">Forecast edit session</div>
-            <div className="text-sm text-muted-foreground">
-              {draftCount ? `${draftCount} unsaved ${draftCount === 1 ? "cell" : "cells"}` : "No unsaved changes"}
-              {hasInvalidDrafts ? " / Fix invalid values before saving" : ""}
-              {saveMessage ? ` / ${saveMessage}` : ""}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={discardDrafts} disabled={!draftCount || saving}>
-              <RotateCcw className="h-4 w-4" />
-              Discard
-            </Button>
-            <Button onClick={saveDrafts} disabled={!dirtyEntries.length || hasInvalidDrafts || saving}>
-              <Save className="h-4 w-4" />
-              {saving ? "Saving" : "Save Changes"}
-            </Button>
-          </div>
-        </div>
         {visibleBuckets.length ? (
-          visibleBuckets.map((bucket) => <BucketSection key={bucket.bucket_id} bucket={bucket} drafts={drafts} onDraftChange={updateDraft} />)
+          visibleBuckets.map((bucket) => (
+            <BucketSection
+              key={bucket.bucket_id}
+              bucket={bucket}
+              drafts={drafts}
+              onDraftChange={updateDraft}
+              onDraftCommit={saveForecastCell}
+              savingCells={savingCells}
+            />
+          ))
         ) : (
           <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
             No forecast lines exist for this product yet. Add a Product Team member, then create a forecast line for the bucket they will support.
@@ -603,10 +602,14 @@ function BucketSection({
   bucket,
   drafts,
   onDraftChange,
+  onDraftCommit,
+  savingCells,
 }: {
   bucket: BucketTable;
   drafts: Record<string, string>;
   onDraftChange: (bucket: BucketTable, row: BucketTableRow, cell: MonthCell, value: string) => void;
+  onDraftCommit: (bucket: BucketTable, row: BucketTableRow, cell: MonthCell) => void;
+  savingCells: Record<string, boolean>;
 }) {
   const monthlyTotals =
     bucket.rows[0]?.months.map((month, index) => {
@@ -675,7 +678,9 @@ function BucketSection({
                           cell={cell}
                           value={drafts[draftKey(bucket, row, cell)] ?? String(cell.forecast_hours)}
                           dirty={drafts[draftKey(bucket, row, cell)] !== undefined}
+                          saving={savingCells[draftKey(bucket, row, cell)] === true}
                           onChange={(value) => onDraftChange(bucket, row, cell, value)}
+                          onCommit={() => onDraftCommit(bucket, row, cell)}
                         />
                       </td>
                     ))}
@@ -768,14 +773,18 @@ function ForecastInput({
   cell,
   value,
   dirty,
+  saving,
   onChange,
+  onCommit,
 }: {
   bucket: BucketTable;
   row: BucketTableRow;
   cell: MonthCell;
   value: string;
   dirty: boolean;
+  saving: boolean;
   onChange: (value: string) => void;
+  onCommit: () => void;
 }) {
   const numericValue = Number(value);
   const invalid = value !== "" && (!Number.isFinite(numericValue) || numericValue < 0);
@@ -784,12 +793,19 @@ function ForecastInput({
       aria-label={`${bucket.name} ${row.team_member} ${cell.label} forecast hours`}
       className={`numeric-cell h-7 min-w-0 px-1 text-right text-xs ${dirty ? "border-primary bg-primary/5" : ""} ${
         invalid ? "border-destructive" : ""
-      }`}
+      } ${saving ? "opacity-70" : ""}`}
+      disabled={saving}
       inputMode="decimal"
       pattern="[0-9]*"
       type="text"
       value={value}
+      onBlur={onCommit}
       onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        }
+      }}
     />
   );
 }
@@ -832,20 +848,4 @@ function draftKey(bucket: BucketTable, row: BucketTableRow, cell: MonthCell) {
 
 function forecastLineKey(teamMemberId: number, bucketId: number) {
   return `${teamMemberId}:${bucketId}`;
-}
-
-function collectDirtyEntries(tables: ProductBucketTables, drafts: Record<string, string>) {
-  const entries: { bucket: BucketTable; row: BucketTableRow; cell: MonthCell; value: number }[] = [];
-  for (const bucket of tables.buckets) {
-    for (const row of bucket.rows) {
-      for (const cell of row.months) {
-        const draft = drafts[draftKey(bucket, row, cell)];
-        if (draft === undefined) continue;
-        const value = Number(draft);
-        if (!Number.isFinite(value) || value < 0) continue;
-        entries.push({ bucket, row, cell, value });
-      }
-    }
-  }
-  return entries;
 }
