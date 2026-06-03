@@ -280,8 +280,6 @@ export function ProductDetailPage() {
         </div>
       </section>
 
-      <ReportedValuesTable rows={reportedRows} showTeamMember />
-
       <ProductTeamSection
         assignments={productTeam}
         members={teamMembers}
@@ -333,6 +331,8 @@ export function ProductDetailPage() {
           </div>
         )}
       </section>
+
+      <ReportedValuesTable rows={reportedRows} showTeamMember />
     </div>
   );
 }
