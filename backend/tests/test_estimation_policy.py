@@ -81,7 +81,7 @@ def test_forecast_actual_and_estimated_entries_coexist_at_same_grain():
         assert db.scalar(select(EstimatedEntry)).hours == Decimal("32")
 
 
-def test_reported_effective_rule_prefers_actual_only_when_complete():
+def test_reported_effective_rule_uses_actual_for_closed_months_when_complete_or_unestimated():
     actual_complete = reported_effective_value(
         forecast_hours=Decimal("100"),
         actual_hours=Decimal("80"),
@@ -103,6 +103,13 @@ def test_reported_effective_rule_prefers_actual_only_when_complete():
         month_closed=False,
         future_or_planning_month=True,
     )
+    actual_without_estimate = reported_effective_value(
+        forecast_hours=Decimal("100"),
+        actual_hours=Decimal("22"),
+        estimated_hours=Decimal("0"),
+        month_closed=True,
+        future_or_planning_month=False,
+    )
 
     assert actual_complete.source == "actual"
     assert actual_complete.hours == Decimal("80")
@@ -110,6 +117,8 @@ def test_reported_effective_rule_prefers_actual_only_when_complete():
     assert incomplete_actual.hours == Decimal("100")
     assert future_forecast.source == "forecast"
     assert future_forecast.hours == Decimal("72")
+    assert actual_without_estimate.source == "actual"
+    assert actual_without_estimate.hours == Decimal("22")
 
 
 def test_status_policy_excludes_no_activity_statuses():

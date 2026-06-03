@@ -883,6 +883,8 @@ def reported_effective_value(
 
     if month_closed and estimated > 0 and actual >= estimated * threshold:
         return ReportedValueDecision(actual, "actual", "Actual complete")
+    if month_closed and actual > 0 and estimated <= 0:
+        return ReportedValueDecision(actual, "actual", "Actual logged")
     if estimated > 0:
         return ReportedValueDecision(estimated, "estimated", "Used estimate because actual logging incomplete")
     if future_or_planning_month and forecast > 0:

@@ -118,8 +118,8 @@ export function TeamManagementPage() {
 
       <section className="overflow-x-auto pb-1">
         <div className="grid min-w-[1080px] grid-cols-3 gap-4">
-          <TeamReportedPieCard title={`Current Month (${analytics.current.label})`} data={analytics.current.data} total={analytics.current.total} />
           <TeamReportedPieCard title={`Previous Month (${analytics.previous.label})`} data={analytics.previous.data} total={analytics.previous.total} />
+          <TeamReportedPieCard title={`Current Month (${analytics.current.label})`} data={analytics.current.data} total={analytics.current.total} />
           <TeamReportedPieCard title={`${fiscalYearLabel} FYTD`} data={analytics.fytd.data} total={analytics.fytd.total} />
         </div>
       </section>
@@ -165,15 +165,15 @@ function TeamReportedPieCard({ title, data, total }: { title: string; data: Team
         </div>
         <div className="text-right text-xs text-muted-foreground">{hasData ? `${data.length} reporting` : "No reported hours"}</div>
       </div>
-      <div className="relative mt-3 h-56">
+      <div className="relative mt-2 h-64">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={hasData ? data : [{ teamMember: "No reported hours", hours: 1 }]}
               dataKey="hours"
-              innerRadius={48}
+              innerRadius={52}
               nameKey="teamMember"
-              outerRadius={78}
+              outerRadius={108}
               paddingAngle={hasData ? 2 : 0}
             >
               {(hasData ? data : [{ teamMember: "No reported hours", hours: 1 }]).map((entry, index) => (
