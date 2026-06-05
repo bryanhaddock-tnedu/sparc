@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   flexRender,
   getCoreRowModel,
@@ -124,6 +124,8 @@ export function TeamManagementPage() {
         </div>
       </section>
 
+      <TeamMonthlyActualBarCard data={analytics.monthly} total={analytics.fytd.total} fiscalYearLabel={fiscalYearLabel} />
+
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="overflow-x-auto">
           <Table>
@@ -194,6 +196,31 @@ function TeamActualPieCard({ title, data, total }: { title: string; data: TeamAc
   );
 }
 
+function TeamMonthlyActualBarCard({ data, total, fiscalYearLabel }: { data: TeamActualMonth[]; total: number; fiscalYearLabel: string }) {
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Actual Hours by Fiscal Month</h2>
+          <div className="numeric-cell mt-1 text-2xl font-semibold text-primary">{formatHours(total)}</div>
+        </div>
+        <div className="text-right text-xs text-muted-foreground">{fiscalYearLabel} FYTD</div>
+      </div>
+      <div className="mt-3 h-44">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis axisLine={false} dataKey="label" tickLine={false} />
+            <YAxis axisLine={false} tickFormatter={(value: number) => formatHours(value)} tickLine={false} width={44} />
+            <Tooltip formatter={(value: number) => [`${formatHours(value)} hrs`, "Actual"]} />
+            <Bar dataKey="hours" fill="var(--spark-cyan)" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 function BillRateInput({ member, onSave }: { member: TeamMember; onSave: (member: TeamMember, billRate: number) => Promise<void> }) {
   const [value, setValue] = useState(member.bill_rate > 0 ? String(member.bill_rate) : "");
   const [saving, setSaving] = useState(false);
@@ -248,6 +275,11 @@ type TeamActualPeriod = {
   total: number;
 };
 
+type TeamActualMonth = {
+  label: string;
+  hours: number;
+};
+
 function buildTeamActualAnalytics(rows: ReportedValueRow[], fiscalYear: number) {
   const today = new Date();
   const current = { year: today.getFullYear(), month: today.getMonth() + 1 };
@@ -271,6 +303,7 @@ function buildTeamActualAnalytics(rows: ReportedValueRow[], fiscalYear: number) 
       monthLabel(previous.month),
     ),
     fytd: aggregateActualPeriod(fytdRows, "FYTD"),
+    monthly: aggregateActualMonths(rows),
   };
 }
 
@@ -289,9 +322,22 @@ function aggregateActualPeriod(rows: ReportedValueRow[], label: string): TeamAct
   };
 }
 
+function aggregateActualMonths(rows: ReportedValueRow[]): TeamActualMonth[] {
+  const hoursBySequence = new Map<number, number>();
+  for (const row of rows) {
+    hoursBySequence.set(row.month_sequence, (hoursBySequence.get(row.month_sequence) ?? 0) + row.actual_hours);
+  }
+  return FISCAL_MONTH_LABELS.map((label, index) => ({
+    label,
+    hours: roundHours(hoursBySequence.get(index + 1) ?? 0),
+  }));
+}
+
 function fiscalSequenceForCalendarMonth(calendarMonth: number) {
   return calendarMonth >= 7 ? calendarMonth - 6 : calendarMonth + 6;
 }
+
+const FISCAL_MONTH_LABELS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
 function monthLabel(calendarMonth: number) {
   return new Intl.DateTimeFormat(undefined, { month: "short" }).format(new Date(2026, calendarMonth - 1, 1));
