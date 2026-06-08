@@ -442,6 +442,7 @@ export interface TeamMemberProductRow {
 export interface TeamMemberProducts {
   team_member: TeamMember;
   fiscal_year: number;
+  months: FiscalMonth[];
   budget_amount: number;
   projected_spend: number;
   budget_remaining: number;

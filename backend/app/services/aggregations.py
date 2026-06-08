@@ -368,6 +368,7 @@ def team_member_products(db: Session, team_member_id: int, fiscal_year: int) -> 
     member = db.get(TeamMember, team_member_id)
     if member is None:
         raise ValueError("Team member not found")
+    months = ensure_fiscal_months(db, fiscal_year)
     forecasts = [entry for entry in _forecast_entries(db, fiscal_year) if entry.team_member_id == team_member_id]
     actuals = [entry for entry in _actual_entries(db, fiscal_year) if entry.team_member_id == team_member_id]
     grouped: dict[tuple[int, int], dict[str, object]] = {}
@@ -414,6 +415,7 @@ def team_member_products(db: Session, team_member_id: int, fiscal_year: int) -> 
     return {
         "team_member": serialize_team_member(member),
         "fiscal_year": fiscal_year,
+        "months": [serialize_month(month) for month in months],
         **_budget_metrics(sum((budgets.get(product_id, Decimal("0")) for product_id in product_ids), Decimal("0")), projected_spend),
         "products": rows,
     }

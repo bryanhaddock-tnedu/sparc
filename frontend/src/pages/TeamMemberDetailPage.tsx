@@ -1,8 +1,8 @@
 import { Pencil, Save, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-import { BudgetTracker } from "../components/BudgetTracker";
 import { MetricCard } from "../components/MetricCard";
 import { PageNav } from "../components/PageNav";
 import { ReportedValuesTable } from "../components/ReportedValuesTable";
@@ -16,7 +16,9 @@ import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { formatBillRate } from "../lib/teamMembers";
 import { formatCurrency, formatHours } from "../lib/utils";
-import type { ReportedValueRow, TeamMember, TeamMemberActualWorklog, TeamMemberProducts } from "../types/api";
+import type { FiscalMonth, ReportedValueRow, TeamMember, TeamMemberActualWorklog, TeamMemberProducts } from "../types/api";
+
+const CHART_COLORS = ["var(--spark-cyan)", "var(--spark-orange)", "var(--spark-navy)", "var(--spark-red)", "#8fb3d9", "#d6d94f", "#7a86a8"];
 
 type ProfileFormState = {
   name: string;
@@ -40,6 +42,8 @@ export function TeamMemberDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [forecastDrafts, setForecastDrafts] = useState<Record<string, string>>({});
+  const [savingForecastCells, setSavingForecastCells] = useState<Record<string, boolean>>({});
   const [form, setForm] = useState<ProfileFormState | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -52,6 +56,7 @@ export function TeamMemberDetailPage() {
     setData(productsResult);
     setReportedRows(reportedRowsResult);
     setActualWorklogs(actualWorklogsResult);
+    setForecastDrafts({});
     setWorklogMonthId((current) => {
       if (!current) {
         return defaultWorklogMonthId(actualWorklogsResult);
@@ -80,6 +85,11 @@ export function TeamMemberDetailPage() {
     [actualWorklogs, worklogMonthId],
   );
   const worklogSummary = useMemo(() => summarizeWorklogs(selectedWorklogs), [selectedWorklogs]);
+  const memberAnalytics = useMemo(() => buildMemberAnalytics(reportedRows, data?.months ?? []), [reportedRows, data?.months]);
+  const forecastLines = useMemo(
+    () => buildMemberForecastLines(data?.products ?? [], reportedRows, data?.months ?? [], data?.team_member.bill_rate ?? 0),
+    [data?.products, reportedRows, data?.months, data?.team_member.bill_rate],
+  );
 
   if (loading) return <LoadingBlock />;
   if (error) return <ErrorBlock message={error} />;
@@ -90,6 +100,63 @@ export function TeamMemberDetailPage() {
   const actualHours = data.products.reduce((total, row) => total + row.actual_hours, 0);
   const forecastCost = data.products.reduce((total, row) => total + row.forecast_cost, 0);
   const actualCost = data.products.reduce((total, row) => total + row.actual_cost, 0);
+
+  function updateForecastDraft(line: MemberForecastLine, cell: MemberForecastMonthCell, value: string) {
+    const key = memberForecastDraftKey(line, cell);
+    setForecastDrafts((current) => {
+      const next = { ...current };
+      if (value === String(cell.forecast_hours)) {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+      return next;
+    });
+  }
+
+  async function saveForecastCell(line: MemberForecastLine, cell: MemberForecastMonthCell) {
+    const key = memberForecastDraftKey(line, cell);
+    const draft = forecastDrafts[key];
+    if (draft === undefined) return;
+
+    const value = draft.trim() === "" ? 0 : Number(draft);
+    if (!Number.isFinite(value) || value < 0) return;
+
+    if (value === cell.forecast_hours) {
+      setForecastDrafts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      return;
+    }
+
+    setSavingForecastCells((current) => ({ ...current, [key]: true }));
+    setError(null);
+    try {
+      await api.upsertForecast({
+        product_id: line.product_id,
+        team_member_id: member.id,
+        bucket_id: line.bucket_id,
+        fiscal_month_id: cell.fiscal_month_id,
+        hours: value,
+      });
+      setForecastDrafts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save forecast");
+    } finally {
+      setSavingForecastCells((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    }
+  }
 
   function startEditing() {
     setForm(formFromMember(member));
@@ -154,7 +221,7 @@ export function TeamMemberDetailPage() {
         <PageNav />
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[360px_1fr]">
+      <section className="grid gap-4 xl:grid-cols-[340px_1fr]">
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
@@ -226,20 +293,27 @@ export function TeamMemberDetailPage() {
             )}
           </CardContent>
         </Card>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <BudgetTracker
-            className="sm:col-span-2"
-            budget={0}
-            forecastSpend={forecastCost}
-            actualSpend={actualCost}
-            contextLabel="Member forecast and actuals across supported products"
-          />
-          <MetricCard label="Forecast Hours" value={formatHours(forecastHours)} />
-          <MetricCard label="Actual Hours" value={formatHours(actualHours)} />
-          <MetricCard label="Forecast Cost" value={formatCurrency(forecastCost)} />
-          <MetricCard label="Actual Cost" value={formatCurrency(actualCost)} />
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Forecast Hours FY" value={formatHours(forecastHours)} />
+            <MetricCard label="Actual Hours FYTD" value={formatHours(actualHours)} />
+            <MetricCard label="Forecast Cost FY" value={formatCurrency(forecastCost)} />
+            <MetricCard label="Actual Cost FYTD" value={formatCurrency(actualCost)} />
+          </div>
+          <div className="grid gap-3 xl:grid-cols-[1.35fr_0.65fr]">
+            <MemberMonthlyActualBarCard data={memberAnalytics.monthlyActuals} total={actualHours} />
+            <MemberProductMixCard data={memberAnalytics.actualByProduct} />
+          </div>
         </div>
       </section>
+
+      <MemberForecastTable
+        drafts={forecastDrafts}
+        lines={forecastLines}
+        onDraftChange={updateForecastDraft}
+        onDraftCommit={saveForecastCell}
+        savingCells={savingForecastCells}
+      />
 
       <ReportedValuesTable rows={reportedRows} showProduct />
 
@@ -425,6 +499,311 @@ function ProfileSelect({
   );
 }
 
+function MemberMonthlyActualBarCard({ data, total }: { data: MemberMonthlyHours[]; total: number }) {
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Actual Hours by Fiscal Month</h2>
+          <div className="numeric-cell mt-1 text-2xl font-semibold text-primary">{formatHours(total)}</div>
+        </div>
+        <div className="text-right text-xs text-muted-foreground">FYTD actuals</div>
+      </div>
+      <div className="mt-3 h-44">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis axisLine={false} dataKey="label" tickLine={false} />
+            <YAxis axisLine={false} tickFormatter={(value: number) => formatHours(value)} tickLine={false} width={44} />
+            <Tooltip formatter={(value: number) => [`${formatHours(value)} hrs`, "Actual"]} />
+            <Bar dataKey="hours" fill="var(--spark-cyan)" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function MemberProductMixCard({ data }: { data: MemberProductHours[] }) {
+  const hasData = data.some((row) => row.hours > 0);
+  const chartData = hasData ? data : [{ product: "No actuals", hours: 1 }];
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Actual Mix by Product</h2>
+          <div className="numeric-cell mt-1 text-2xl font-semibold text-primary">{formatHours(data.reduce((sum, row) => sum + row.hours, 0))}</div>
+        </div>
+        <div className="text-right text-xs text-muted-foreground">{hasData ? `${data.length} products` : "No actuals"}</div>
+      </div>
+      <div className="relative mt-2 h-44">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={chartData} dataKey="hours" nameKey="product" outerRadius="88%" paddingAngle={hasData ? 1 : 0}>
+              {chartData.map((entry, index) => (
+                <Cell key={entry.product} fill={hasData ? CHART_COLORS[index % CHART_COLORS.length] : "hsl(var(--muted))"} />
+              ))}
+            </Pie>
+            {hasData ? <Tooltip formatter={(value: number, name: string) => [`${formatHours(value)} hrs`, name]} /> : null}
+          </PieChart>
+        </ResponsiveContainer>
+        {!hasData ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center text-sm font-medium text-muted-foreground">
+            No actuals yet
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function MemberForecastTable({
+  drafts,
+  lines,
+  onDraftChange,
+  onDraftCommit,
+  savingCells,
+}: {
+  drafts: Record<string, string>;
+  lines: MemberForecastLine[];
+  onDraftChange: (line: MemberForecastLine, cell: MemberForecastMonthCell, value: string) => void;
+  onDraftCommit: (line: MemberForecastLine, cell: MemberForecastMonthCell) => void;
+  savingCells: Record<string, boolean>;
+}) {
+  const monthlyTotals =
+    lines[0]?.months.map((month, index) => {
+      return lines.reduce(
+        (acc, line) => {
+          const cell = line.months[index];
+          acc.forecast += cell.forecast_hours;
+          acc.actual += cell.actual_hours;
+          acc.cost += cell.forecast_cost;
+          acc.variance += cell.variance_cost;
+          return acc;
+        },
+        { fiscalMonthId: month.fiscal_month_id, forecast: 0, actual: 0, cost: 0, variance: 0 },
+      );
+    }) ?? [];
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold">Forecast by Product and Bucket</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Manage this team member&apos;s forecasted hours across each fiscal month.</p>
+      </div>
+      {lines.length ? (
+        <div className="overflow-hidden rounded-lg border bg-card">
+          <div className="overflow-x-auto">
+            <table className="w-full table-fixed border-collapse text-xs">
+              <colgroup>
+                <col className="w-44" />
+                <col className="w-20" />
+                {lines[0].months.map((month) => (
+                  <col key={month.fiscal_month_id} className="w-16" />
+                ))}
+                <col className="w-24" />
+              </colgroup>
+              <thead>
+                <tr className="border-b bg-secondary/60">
+                  <th className="sticky left-0 z-10 bg-secondary px-2 py-2 text-left text-[11px] font-semibold uppercase text-muted-foreground">
+                    Product / Bucket
+                  </th>
+                  <th className="sticky left-44 z-10 bg-secondary px-2 py-2 text-left text-[11px] font-semibold uppercase text-muted-foreground">
+                    Metric
+                  </th>
+                  {lines[0].months.map((month) => (
+                    <th key={month.fiscal_month_id} className="px-1 py-2 text-right text-[11px] font-semibold uppercase text-muted-foreground">
+                      {month.label}
+                    </th>
+                  ))}
+                  <th className="px-1 py-2 text-right text-[11px] font-semibold uppercase text-muted-foreground">FY Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line) => (
+                  <Fragment key={`${line.product_id}-${line.bucket_id}`}>
+                    <tr className="border-t align-middle">
+                      <td rowSpan={4} className="sticky left-0 z-10 bg-card px-2 py-2 align-top">
+                        <Link className="block truncate font-medium text-primary hover:underline" to={`/products/${line.product_id}`}>
+                          {line.product}
+                        </Link>
+                        <div className="mt-1 truncate text-[11px] text-muted-foreground">{line.bucket}</div>
+                      </td>
+                      <TeamMemberMetricLabel label="Forecast" />
+                      {line.months.map((cell) => (
+                        <td key={cell.fiscal_month_id} className="px-1 py-1">
+                          <MemberForecastInput
+                            cell={cell}
+                            dirty={drafts[memberForecastDraftKey(line, cell)] !== undefined}
+                            line={line}
+                            onChange={(value) => onDraftChange(line, cell, value)}
+                            onCommit={() => onDraftCommit(line, cell)}
+                            saving={savingCells[memberForecastDraftKey(line, cell)] === true}
+                            value={drafts[memberForecastDraftKey(line, cell)] ?? String(cell.forecast_hours)}
+                          />
+                        </td>
+                      ))}
+                      <TeamMemberValueCell value={formatHours(line.totals.forecast_hours)} strong />
+                    </tr>
+                    <tr>
+                      <TeamMemberMetricLabel label="Actual" muted />
+                      {line.months.map((cell) => (
+                        <TeamMemberValueCell key={cell.fiscal_month_id} value={formatHours(cell.actual_hours)} muted />
+                      ))}
+                      <TeamMemberValueCell value={formatHours(line.totals.actual_hours)} muted strong />
+                    </tr>
+                    <tr>
+                      <TeamMemberMetricLabel label="Fcst $" />
+                      {line.months.map((cell) => (
+                        <TeamMemberValueCell key={cell.fiscal_month_id} value={formatCurrency(cell.forecast_cost)} />
+                      ))}
+                      <TeamMemberValueCell value={formatCurrency(line.totals.forecast_cost)} strong />
+                    </tr>
+                    <tr className="border-b">
+                      <TeamMemberMetricLabel label="Var $" />
+                      {line.months.map((cell) => (
+                        <TeamMemberValueCell
+                          key={cell.fiscal_month_id}
+                          className={cell.variance_cost > 0 ? "text-destructive" : "text-primary"}
+                          value={formatCurrency(cell.variance_cost)}
+                        />
+                      ))}
+                      <TeamMemberValueCell
+                        className={line.totals.variance_cost > 0 ? "text-destructive" : "text-primary"}
+                        strong
+                        value={formatCurrency(line.totals.variance_cost)}
+                      />
+                    </tr>
+                  </Fragment>
+                ))}
+                <tr className="border-t bg-secondary/50 font-semibold">
+                  <td rowSpan={4} className="sticky left-0 z-10 bg-secondary px-2 py-2 align-top">
+                    Member Total
+                  </td>
+                  <TeamMemberMetricLabel label="Forecast" total />
+                  {monthlyTotals.map((totals) => (
+                    <TeamMemberValueCell key={totals.fiscalMonthId} value={formatHours(totals.forecast)} total strong />
+                  ))}
+                  <TeamMemberValueCell value={formatHours(lines.reduce((sum, line) => sum + line.totals.forecast_hours, 0))} total strong />
+                </tr>
+                <tr className="bg-secondary/50 font-semibold">
+                  <TeamMemberMetricLabel label="Actual" muted total />
+                  {monthlyTotals.map((totals) => (
+                    <TeamMemberValueCell key={totals.fiscalMonthId} value={formatHours(totals.actual)} muted total strong />
+                  ))}
+                  <TeamMemberValueCell value={formatHours(lines.reduce((sum, line) => sum + line.totals.actual_hours, 0))} muted total strong />
+                </tr>
+                <tr className="bg-secondary/50 font-semibold">
+                  <TeamMemberMetricLabel label="Fcst $" total />
+                  {monthlyTotals.map((totals) => (
+                    <TeamMemberValueCell key={totals.fiscalMonthId} value={formatCurrency(totals.cost)} total strong />
+                  ))}
+                  <TeamMemberValueCell value={formatCurrency(lines.reduce((sum, line) => sum + line.totals.forecast_cost, 0))} total strong />
+                </tr>
+                <tr className="bg-secondary/50 font-semibold">
+                  <TeamMemberMetricLabel label="Var $" total />
+                  {monthlyTotals.map((totals) => (
+                    <TeamMemberValueCell
+                      key={totals.fiscalMonthId}
+                      className={totals.variance > 0 ? "text-destructive" : "text-primary"}
+                      value={formatCurrency(totals.variance)}
+                      total
+                      strong
+                    />
+                  ))}
+                  <TeamMemberValueCell
+                    className={lines.reduce((sum, line) => sum + line.totals.variance_cost, 0) > 0 ? "text-destructive" : "text-primary"}
+                    value={formatCurrency(lines.reduce((sum, line) => sum + line.totals.variance_cost, 0))}
+                    total
+                    strong
+                  />
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
+          No forecast or actual lines exist for this team member in the selected fiscal year yet.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MemberForecastInput({
+  cell,
+  dirty,
+  line,
+  onChange,
+  onCommit,
+  saving,
+  value,
+}: {
+  cell: MemberForecastMonthCell;
+  dirty: boolean;
+  line: MemberForecastLine;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+  saving: boolean;
+  value: string;
+}) {
+  const numericValue = Number(value);
+  const invalid = value !== "" && (!Number.isFinite(numericValue) || numericValue < 0);
+  return (
+    <Input
+      aria-label={`${line.product} ${line.bucket} ${cell.label} forecast hours`}
+      className={`numeric-cell h-7 min-w-0 px-1 text-right text-xs ${dirty ? "border-primary bg-primary/5" : ""} ${
+        invalid ? "border-destructive" : ""
+      } ${saving ? "opacity-70" : ""}`}
+      disabled={saving}
+      inputMode="decimal"
+      pattern="[0-9]*"
+      type="text"
+      value={value}
+      onBlur={onCommit}
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+function TeamMemberMetricLabel({ label, muted, total }: { label: string; muted?: boolean; total?: boolean }) {
+  return (
+    <td
+      className={`sticky left-44 z-10 px-2 py-1.5 text-[11px] font-semibold uppercase ${
+        total ? "bg-secondary" : "bg-card"
+      } ${muted ? "text-muted-foreground" : "text-foreground"}`}
+    >
+      {label}
+    </td>
+  );
+}
+
+function TeamMemberValueCell({
+  value,
+  muted,
+  strong,
+  total,
+  className,
+}: {
+  value: string;
+  muted?: boolean;
+  strong?: boolean;
+  total?: boolean;
+  className?: string;
+}) {
+  return (
+    <td className={`numeric-cell px-1 py-1.5 text-right text-xs ${total ? "bg-secondary/50" : ""} ${muted ? "text-muted-foreground" : ""}`}>
+      <span className={`block truncate ${strong ? "font-semibold" : "font-medium"} ${className ?? ""}`}>{value}</span>
+    </td>
+  );
+}
+
 function formFromMember(member: TeamMember): ProfileFormState {
   return {
     name: member.name,
@@ -493,4 +872,149 @@ function formatDateOnly(value: string) {
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+type MemberMonthlyHours = {
+  label: string;
+  hours: number;
+};
+
+type MemberProductHours = {
+  product: string;
+  hours: number;
+};
+
+type MemberForecastMonthCell = {
+  fiscal_month_id: number;
+  label: string;
+  forecast_hours: number;
+  actual_hours: number;
+  forecast_cost: number;
+  actual_cost: number;
+  variance_cost: number;
+};
+
+type MemberForecastTotals = {
+  forecast_hours: number;
+  actual_hours: number;
+  forecast_cost: number;
+  actual_cost: number;
+  variance_cost: number;
+};
+
+type MemberForecastLine = {
+  product_id: number;
+  product: string;
+  bucket_id: number;
+  bucket: string;
+  months: MemberForecastMonthCell[];
+  totals: MemberForecastTotals;
+};
+
+function buildMemberAnalytics(rows: ReportedValueRow[], months: FiscalMonth[]) {
+  const monthlyActuals = months.map((month) => ({
+    label: month.label,
+    hours: roundHours(rows.filter((row) => row.fiscal_month_id === month.id).reduce((sum, row) => sum + row.actual_hours, 0)),
+  }));
+
+  const hoursByProduct = new Map<string, number>();
+  for (const row of rows) {
+    hoursByProduct.set(row.product, (hoursByProduct.get(row.product) ?? 0) + row.actual_hours);
+  }
+
+  const actualByProduct = Array.from(hoursByProduct, ([product, hours]) => ({ product, hours: roundHours(hours) }))
+    .filter((row) => row.hours > 0)
+    .sort((left, right) => right.hours - left.hours || left.product.localeCompare(right.product));
+
+  return { actualByProduct, monthlyActuals };
+}
+
+function buildMemberForecastLines(
+  productRows: TeamMemberProducts["products"],
+  reportedRows: ReportedValueRow[],
+  months: FiscalMonth[],
+  billRate: number,
+): MemberForecastLine[] {
+  const lineMap = new Map<string, { product_id: number; product: string; bucket_id: number; bucket: string }>();
+  for (const row of productRows) {
+    lineMap.set(memberForecastLineKey(row.product_id, row.bucket_id), {
+      product_id: row.product_id,
+      product: row.product,
+      bucket_id: row.bucket_id,
+      bucket: row.bucket,
+    });
+  }
+  for (const row of reportedRows) {
+    lineMap.set(memberForecastLineKey(row.product_id, row.bucket_id), {
+      product_id: row.product_id,
+      product: row.product,
+      bucket_id: row.bucket_id,
+      bucket: row.bucket,
+    });
+  }
+
+  const reportedRowByCell = new Map<string, ReportedValueRow>();
+  for (const row of reportedRows) {
+    reportedRowByCell.set(`${memberForecastLineKey(row.product_id, row.bucket_id)}:${row.fiscal_month_id}`, row);
+  }
+
+  return Array.from(lineMap.values())
+    .sort((left, right) => left.product.localeCompare(right.product) || left.bucket.localeCompare(right.bucket))
+    .map((line) => {
+      const cells = months.map((month) => {
+        const sourceRow = reportedRowByCell.get(`${memberForecastLineKey(line.product_id, line.bucket_id)}:${month.id}`);
+        const forecast = sourceRow?.forecast_hours ?? 0;
+        const actual = sourceRow?.actual_hours ?? 0;
+        const forecastCost = roundMoney(forecast * billRate);
+        const actualCost = roundMoney(actual * billRate);
+        return {
+          fiscal_month_id: month.id,
+          label: month.label,
+          forecast_hours: roundHours(forecast),
+          actual_hours: roundHours(actual),
+          forecast_cost: forecastCost,
+          actual_cost: actualCost,
+          variance_cost: roundMoney(actualCost - forecastCost),
+        };
+      });
+      const totals = cells.reduce<MemberForecastTotals>(
+        (acc, cell) => {
+          acc.forecast_hours += cell.forecast_hours;
+          acc.actual_hours += cell.actual_hours;
+          acc.forecast_cost += cell.forecast_cost;
+          acc.actual_cost += cell.actual_cost;
+          acc.variance_cost += cell.variance_cost;
+          return acc;
+        },
+        { forecast_hours: 0, actual_hours: 0, forecast_cost: 0, actual_cost: 0, variance_cost: 0 },
+      );
+
+      return {
+        ...line,
+        months: cells,
+        totals: {
+          forecast_hours: roundHours(totals.forecast_hours),
+          actual_hours: roundHours(totals.actual_hours),
+          forecast_cost: roundMoney(totals.forecast_cost),
+          actual_cost: roundMoney(totals.actual_cost),
+          variance_cost: roundMoney(totals.variance_cost),
+        },
+      };
+    });
+}
+
+function memberForecastLineKey(productId: number, bucketId: number) {
+  return `${productId}:${bucketId}`;
+}
+
+function memberForecastDraftKey(line: MemberForecastLine, cell: MemberForecastMonthCell) {
+  return `${memberForecastLineKey(line.product_id, line.bucket_id)}:${cell.fiscal_month_id}`;
+}
+
+function roundHours(value: number) {
+  return Math.round(value * 10) / 10;
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
 }

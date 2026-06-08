@@ -523,6 +523,7 @@ class TeamMemberProductRowResponse(BaseModel):
 class TeamMemberProductsResponse(BaseModel):
     team_member: TeamMemberResponse
     fiscal_year: int
+    months: list[FiscalMonthResponse]
     budget_amount: float
     projected_spend: float
     budget_remaining: float
