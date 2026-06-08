@@ -1,4 +1,4 @@
-import { Pencil, Save, X } from "lucide-react";
+import { Pencil, Plus, Save, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -16,7 +16,7 @@ import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { formatBillRate } from "../lib/teamMembers";
 import { formatCurrency, formatHours } from "../lib/utils";
-import type { FiscalMonth, ReportedValueRow, TeamMember, TeamMemberActualWorklog, TeamMemberProducts } from "../types/api";
+import type { BucketTable, FiscalMonth, Product, ReportedValueRow, TeamMember, TeamMemberActualWorklog, TeamMemberProducts } from "../types/api";
 
 const CHART_COLORS = ["var(--spark-cyan)", "var(--spark-orange)", "var(--spark-navy)", "var(--spark-red)", "#8fb3d9", "#d6d94f", "#7a86a8"];
 
@@ -35,9 +35,15 @@ export function TeamMemberDetailPage() {
   const teamMemberId = Number(params.teamMemberId);
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [data, setData] = useState<TeamMemberProducts | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [bucketOptions, setBucketOptions] = useState<BucketTable[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [actualWorklogs, setActualWorklogs] = useState<TeamMemberActualWorklog[]>([]);
   const [worklogMonthId, setWorklogMonthId] = useState("");
+  const [forecastLineProductId, setForecastLineProductId] = useState("");
+  const [forecastLineBucketId, setForecastLineBucketId] = useState("");
+  const [forecastLineSaving, setForecastLineSaving] = useState(false);
+  const [forecastLineMessage, setForecastLineMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -48,12 +54,14 @@ export function TeamMemberDetailPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   async function loadData() {
-    const [productsResult, reportedRowsResult, actualWorklogsResult] = await Promise.all([
+    const [productsResult, allProductsResult, reportedRowsResult, actualWorklogsResult] = await Promise.all([
       api.teamMemberProducts(teamMemberId, fiscalYear),
+      api.products(fiscalYear),
       api.reportedValues({ team_member_id: teamMemberId }, fiscalYear),
       api.teamMemberActualWorklogs(teamMemberId, fiscalYear),
     ]);
     setData(productsResult);
+    setProducts(allProductsResult);
     setReportedRows(reportedRowsResult);
     setActualWorklogs(actualWorklogsResult);
     setForecastDrafts({});
@@ -75,6 +83,39 @@ export function TeamMemberDetailPage() {
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load team member"))
       .finally(() => setLoading(false));
   }, [teamMemberId, fiscalYear]);
+
+  useEffect(() => {
+    if (forecastLineProductId || products.length === 0) return;
+    const firstActiveProduct = products.find((product) => product.is_active) ?? products[0];
+    setForecastLineProductId(String(firstActiveProduct.id));
+  }, [forecastLineProductId, products]);
+
+  useEffect(() => {
+    if (!forecastLineProductId) {
+      setBucketOptions([]);
+      setForecastLineBucketId("");
+      return;
+    }
+
+    let cancelled = false;
+    api
+      .productBucketTables(Number(forecastLineProductId), fiscalYear)
+      .then((result) => {
+        if (cancelled) return;
+        setBucketOptions(result.buckets);
+        setForecastLineBucketId((current) => {
+          if (current && result.buckets.some((bucket) => String(bucket.bucket_id) === current)) return current;
+          return result.buckets[0] ? String(result.buckets[0].bucket_id) : "";
+        });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setForecastLineMessage(err instanceof Error ? err.message : "Unable to load buckets for selected product");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [forecastLineProductId, fiscalYear]);
 
   const monthOptions = useMemo(() => worklogMonthOptions(actualWorklogs), [actualWorklogs]);
   const selectedWorklogs = useMemo(
@@ -155,6 +196,52 @@ export function TeamMemberDetailPage() {
         delete next[key];
         return next;
       });
+    }
+  }
+
+  async function addForecastLine() {
+    const productId = Number(forecastLineProductId);
+    const bucketId = Number(forecastLineBucketId);
+    if (!Number.isFinite(productId) || !Number.isFinite(bucketId) || !data?.months[0]) return;
+
+    const selectedProduct = products.find((product) => product.id === productId);
+    const selectedBucket = bucketOptions.find((bucket) => bucket.bucket_id === bucketId);
+    if (forecastLines.some((line) => line.product_id === productId && line.bucket_id === bucketId)) {
+      setForecastLineMessage(`${member.name} already has ${selectedProduct?.name ?? "this product"} / ${selectedBucket?.name ?? "this bucket"} in the forecast table.`);
+      return;
+    }
+
+    setForecastLineSaving(true);
+    setForecastLineMessage(null);
+    setError(null);
+    try {
+      const assignments = await api.productTeamMembers(productId);
+      const existingAssignment = assignments.find((assignment) => assignment.team_member_id === member.id);
+      if (!existingAssignment) {
+        await api.addProductTeamMember(productId, {
+          team_member_id: member.id,
+          default_bucket_id: bucketId,
+          status: "active",
+        });
+      } else if (existingAssignment.status !== "active" || existingAssignment.default_bucket_id !== bucketId) {
+        await api.updateProductTeamMember(productId, existingAssignment.id, {
+          default_bucket_id: bucketId,
+          status: "active",
+        });
+      }
+      await api.upsertForecast({
+        product_id: productId,
+        team_member_id: member.id,
+        bucket_id: bucketId,
+        fiscal_month_id: data.months[0].id,
+        hours: 0,
+      });
+      setForecastLineMessage(`${selectedProduct?.name ?? "Product"} / ${selectedBucket?.name ?? "Bucket"} added for ${member.name}.`);
+      await loadData();
+    } catch (err) {
+      setForecastLineMessage(err instanceof Error ? err.message : "Unable to add product and bucket");
+    } finally {
+      setForecastLineSaving(false);
     }
   }
 
@@ -308,11 +395,24 @@ export function TeamMemberDetailPage() {
       </section>
 
       <MemberForecastTable
+        bucketOptions={bucketOptions}
         drafts={forecastDrafts}
+        forecastLineMessage={forecastLineMessage}
+        forecastLineSaving={forecastLineSaving}
         lines={forecastLines}
         onDraftChange={updateForecastDraft}
         onDraftCommit={saveForecastCell}
+        onForecastLineAdd={addForecastLine}
+        products={products}
         savingCells={savingForecastCells}
+        selectedBucketId={forecastLineBucketId}
+        selectedProductId={forecastLineProductId}
+        setSelectedBucketId={setForecastLineBucketId}
+        setSelectedProductId={(productId) => {
+          setForecastLineProductId(productId);
+          setForecastLineBucketId("");
+          setForecastLineMessage(null);
+        }}
       />
 
       <ReportedValuesTable rows={reportedRows} showProduct />
@@ -558,17 +658,35 @@ function MemberProductMixCard({ data }: { data: MemberProductHours[] }) {
 }
 
 function MemberForecastTable({
+  bucketOptions,
   drafts,
+  forecastLineMessage,
+  forecastLineSaving,
   lines,
   onDraftChange,
   onDraftCommit,
+  onForecastLineAdd,
+  products,
   savingCells,
+  selectedBucketId,
+  selectedProductId,
+  setSelectedBucketId,
+  setSelectedProductId,
 }: {
+  bucketOptions: BucketTable[];
   drafts: Record<string, string>;
+  forecastLineMessage: string | null;
+  forecastLineSaving: boolean;
   lines: MemberForecastLine[];
   onDraftChange: (line: MemberForecastLine, cell: MemberForecastMonthCell, value: string) => void;
   onDraftCommit: (line: MemberForecastLine, cell: MemberForecastMonthCell) => void;
+  onForecastLineAdd: () => void;
+  products: Product[];
   savingCells: Record<string, boolean>;
+  selectedBucketId: string;
+  selectedProductId: string;
+  setSelectedBucketId: (bucketId: string) => void;
+  setSelectedProductId: (productId: string) => void;
 }) {
   const monthlyTotals =
     lines[0]?.months.map((month, index) => {
@@ -587,9 +705,52 @@ function MemberForecastTable({
 
   return (
     <section className="space-y-3">
-      <div>
-        <h2 className="text-lg font-semibold">Forecast by Product and Bucket</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Manage this team member&apos;s forecasted hours across each fiscal month.</p>
+      <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-end">
+        <div>
+          <h2 className="text-lg font-semibold">Forecast by Product and Bucket</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Manage this team member&apos;s forecasted hours across each fiscal month.</p>
+        </div>
+        <div className="flex flex-col gap-2 xl:items-end">
+          <div className="flex flex-wrap gap-2">
+            <select
+              aria-label="Product to add"
+              className="h-9 min-w-52 rounded-md border border-input bg-background px-2 text-sm"
+              disabled={forecastLineSaving || products.length === 0}
+              value={selectedProductId}
+              onChange={(event) => setSelectedProductId(event.target.value)}
+            >
+              <option value="">{products.length ? "Select product" : "No products available"}</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Bucket to add"
+              className="h-9 min-w-44 rounded-md border border-input bg-background px-2 text-sm"
+              disabled={forecastLineSaving || !selectedProductId || bucketOptions.length === 0}
+              value={selectedBucketId}
+              onChange={(event) => setSelectedBucketId(event.target.value)}
+            >
+              <option value="">{bucketOptions.length ? "Select bucket" : "No buckets available"}</option>
+              {bucketOptions.map((bucket) => (
+                <option key={bucket.bucket_id} value={bucket.bucket_id}>
+                  {bucket.name}
+                </option>
+              ))}
+            </select>
+            <Button
+              disabled={forecastLineSaving || !selectedProductId || !selectedBucketId}
+              onClick={() => void onForecastLineAdd()}
+              type="button"
+            >
+              <Plus className="h-4 w-4" />
+              {forecastLineSaving ? "Adding" : "Add"}
+            </Button>
+          </div>
+          {forecastLineMessage ? <div className="max-w-xl text-right text-xs text-muted-foreground">{forecastLineMessage}</div> : null}
+        </div>
       </div>
       {lines.length ? (
         <div className="overflow-hidden rounded-lg border bg-card">
