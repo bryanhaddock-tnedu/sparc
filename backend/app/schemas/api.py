@@ -407,6 +407,12 @@ class DashboardLaborMixResponse(BaseModel):
     roles: list[DashboardLaborMixRoleRowResponse]
 
 
+class SystemScanResponse(BaseModel):
+    fiscal_year: int
+    generated_at: datetime
+    output: str
+
+
 class ProductSummaryRowResponse(BaseModel):
     product_id: int
     product: str

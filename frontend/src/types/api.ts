@@ -86,6 +86,12 @@ export interface DashboardLaborMix {
   }>;
 }
 
+export interface SystemScanResult {
+  fiscal_year: number;
+  generated_at: string;
+  output: string;
+}
+
 export interface ProductSummaryRow {
   product_id: number;
   product: string;

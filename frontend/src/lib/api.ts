@@ -33,6 +33,7 @@ import type {
   ProductTeamMemberUpdatePayload,
   ReportedValueRow,
   SyncRun,
+  SystemScanResult,
   TeamImportResult,
   TeamMember,
   TeamMemberActualWorklog,
@@ -129,6 +130,18 @@ export const api = {
   dashboardProducts: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<ProductSummaryRow[]>(`/api/dashboard/products?fiscal_year=${fiscalYear}`),
   dashboardWorkTypes: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<DashboardWorkTypeRow[]>(`/api/dashboard/work-types?fiscal_year=${fiscalYear}`),
   dashboardLaborMix: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<DashboardLaborMix>(`/api/dashboard/labor-mix?fiscal_year=${fiscalYear}`),
+  systemScan: (
+    fiscalYear = DEFAULT_FISCAL_YEAR,
+    params: { budgetWarningPercent?: number; memberForecastLimitHours?: number; workingDays?: number } = {},
+  ) => {
+    const search = new URLSearchParams({
+      fiscal_year: String(fiscalYear),
+      budget_warning_percent: String(params.budgetWarningPercent ?? 85),
+      member_forecast_limit_hours: String(params.memberForecastLimitHours ?? 10),
+      working_days: String(params.workingDays ?? 7),
+    });
+    return request<SystemScanResult>(`/api/system-scan?${search.toString()}`);
+  },
   productSummary: (productId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<ProductSummary>(`/api/products/${productId}/summary?fiscal_year=${fiscalYear}`),
   bucketDistribution: (productId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
