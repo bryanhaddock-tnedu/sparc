@@ -140,6 +140,7 @@ class ProductJiraSpaceCreate(BaseModel):
     jira_project_key: str | None = None
     is_active: bool = True
     scope_jql: str | None = None
+    replace_existing: bool = False
 
     @model_validator(mode="after")
     def require_catalog_or_key(self) -> "ProductJiraSpaceCreate":

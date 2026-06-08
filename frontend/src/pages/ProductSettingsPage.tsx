@@ -14,6 +14,7 @@ import type { JiraProjectCatalog, Product, ProductJiraSpace, ProductJiraSpacePay
 
 type ProductUpdate = Partial<Pick<Product, "name" | "description" | "budget_amount" | "is_active">>;
 type ProductSpacesById = Record<number, ProductJiraSpace[]>;
+type JiraKeyOwner = { productId: number; productName: string; spaceId: number };
 
 export function ProductSettingsPage() {
   const { fiscalYearLabel, fiscalYearRangeLabel, fiscalYear } = useFiscalYear();
@@ -48,6 +49,19 @@ export function ProductSettingsPage() {
   const mappedJiraKeys = useMemo(() => {
     return new Set(Object.values(productSpaces).flatMap((spaces) => spaces.map((space) => space.jira_project_key)));
   }, [productSpaces]);
+
+  const jiraKeyOwners = useMemo(() => {
+    const productNames = new Map(products.map((product) => [product.id, product.name]));
+    const owners = new Map<string, JiraKeyOwner>();
+    for (const [productId, spaces] of Object.entries(productSpaces)) {
+      const numericProductId = Number(productId);
+      const productName = productNames.get(numericProductId) ?? "Unknown product";
+      for (const space of spaces) {
+        owners.set(space.jira_project_key, { productId: numericProductId, productName, spaceId: space.id });
+      }
+    }
+    return owners;
+  }, [products, productSpaces]);
 
   const unmappedCatalogProjects = useMemo(() => {
     return jiraCatalog
@@ -152,12 +166,16 @@ export function ProductSettingsPage() {
     setNotice(null);
     try {
       const created = await api.addProductJiraSpace(product.id, payload);
-      setProductSpaces((current) => ({
-        ...current,
-        [product.id]: [...(current[product.id] ?? []), created].sort((left, right) =>
-          left.jira_project_key.localeCompare(right.jira_project_key),
-        ),
-      }));
+      setProductSpaces((current) => {
+        const next = removeJiraSpaceFromAllProducts(current, created);
+        return {
+          ...next,
+          [product.id]: [...(next[product.id] ?? []), created].sort((left, right) =>
+            left.jira_project_key.localeCompare(right.jira_project_key),
+          ),
+        };
+      });
+      setNotice(`${created.jira_project_key} was mapped to ${product.name}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to add Jira project");
     } finally {
@@ -316,7 +334,7 @@ export function ProductSettingsPage() {
             saving={savingIds.has(product.id)}
             spaces={productSpaces[product.id] ?? []}
             catalog={jiraCatalog}
-            mappedJiraKeys={mappedJiraKeys}
+            jiraKeyOwners={jiraKeyOwners}
             busyIds={spaceActionIds}
             fiscalYearLabel={fiscalYearLabel}
             onUpdateProduct={(payload) => updateProduct(product, payload)}
@@ -443,7 +461,7 @@ function ProductSettingsCard({
   saving,
   spaces,
   catalog,
-  mappedJiraKeys,
+  jiraKeyOwners,
   busyIds,
   fiscalYearLabel,
   onUpdateProduct,
@@ -458,7 +476,7 @@ function ProductSettingsCard({
   saving: boolean;
   spaces: ProductJiraSpace[];
   catalog: JiraProjectCatalog[];
-  mappedJiraKeys: Set<string>;
+  jiraKeyOwners: Map<string, JiraKeyOwner>;
   busyIds: Set<string>;
   fiscalYearLabel: string;
   onUpdateProduct: (payload: ProductUpdate) => void | Promise<void>;
@@ -537,7 +555,7 @@ function ProductSettingsCard({
             product={product}
             spaces={spaces}
             catalog={catalog}
-            mappedJiraKeys={mappedJiraKeys}
+            jiraKeyOwners={jiraKeyOwners}
             busyIds={busyIds}
             onAdd={onAddSpace}
             onUpdate={onUpdateSpace}
@@ -554,7 +572,7 @@ function ProductJiraSpacesEditor({
   product,
   spaces,
   catalog,
-  mappedJiraKeys,
+  jiraKeyOwners,
   busyIds,
   onAdd,
   onUpdate,
@@ -564,7 +582,7 @@ function ProductJiraSpacesEditor({
   product: Product;
   spaces: ProductJiraSpace[];
   catalog: JiraProjectCatalog[];
-  mappedJiraKeys: Set<string>;
+  jiraKeyOwners: Map<string, JiraKeyOwner>;
   busyIds: Set<string>;
   onAdd: (payload: ProductJiraSpacePayload) => void | Promise<void>;
   onUpdate: (space: ProductJiraSpace, payload: Partial<Pick<ProductJiraSpace, "is_active" | "scope_jql">>) => void | Promise<void>;
@@ -574,19 +592,39 @@ function ProductJiraSpacesEditor({
   const [selectedCatalogId, setSelectedCatalogId] = useState("");
   const [manualKey, setManualKey] = useState("");
   const addBusy = busyIds.has(`add-${product.id}`);
-  const availableCatalog = catalog.filter((project) => !mappedJiraKeys.has(project.jira_project_key));
+  const productKeys = useMemo(() => new Set(spaces.map((space) => space.jira_project_key)), [spaces]);
+  const availableCatalog = useMemo(
+    () =>
+      catalog
+        .filter((project) => !productKeys.has(project.jira_project_key))
+        .sort((left, right) => {
+          const leftMapped = jiraKeyOwners.has(left.jira_project_key) ? 1 : 0;
+          const rightMapped = jiraKeyOwners.has(right.jira_project_key) ? 1 : 0;
+          return leftMapped - rightMapped || left.jira_project_key.localeCompare(right.jira_project_key);
+        }),
+    [catalog, jiraKeyOwners, productKeys],
+  );
+  const selectedProject = availableCatalog.find((project) => String(project.id) === selectedCatalogId);
+  const selectedOwner = selectedProject ? jiraKeyOwners.get(selectedProject.jira_project_key) : undefined;
+  const manualKeyNormalized = manualKey.trim().toUpperCase();
+  const manualKeyOwner = manualKeyNormalized ? jiraKeyOwners.get(manualKeyNormalized) : undefined;
+  const manualKeyAlreadyMappedHere = manualKeyNormalized ? productKeys.has(manualKeyNormalized) : false;
 
   function addSelectedCatalog() {
     const catalogId = Number(selectedCatalogId);
-    if (!Number.isFinite(catalogId)) return;
-    void onAdd({ jira_project_catalog_id: catalogId, is_active: true });
+    if (!Number.isFinite(catalogId) || selectedProject === undefined) return;
+    const replaceExisting = selectedOwner !== undefined && selectedOwner.productId !== product.id;
+    if (replaceExisting && !confirmMove(selectedProject.jira_project_key, selectedOwner.productName, product.name)) return;
+    void onAdd({ jira_project_catalog_id: catalogId, is_active: true, replace_existing: replaceExisting });
     setSelectedCatalogId("");
   }
 
   function addManualKey() {
     const key = manualKey.trim().toUpperCase();
-    if (!key) return;
-    void onAdd({ jira_project_key: key, is_active: true });
+    if (!key || productKeys.has(key)) return;
+    const replaceExisting = manualKeyOwner !== undefined && manualKeyOwner.productId !== product.id;
+    if (replaceExisting && !confirmMove(key, manualKeyOwner.productName, product.name)) return;
+    void onAdd({ jira_project_key: key, is_active: true, replace_existing: replaceExisting });
     setManualKey("");
   }
 
@@ -654,16 +692,16 @@ function ProductJiraSpacesEditor({
           value={selectedCatalogId}
           onChange={(event) => setSelectedCatalogId(event.target.value)}
         >
-          <option value="">{availableCatalog.length === 0 ? "No unmapped catalog projects" : "Select Jira project"}</option>
+          <option value="">{availableCatalog.length === 0 ? "No catalog projects available" : "Select Jira project"}</option>
           {availableCatalog.map((project) => (
             <option key={project.id} value={project.id}>
-              {project.jira_project_key} - {project.jira_project_name}
+              {jiraProjectOptionLabel(project, jiraKeyOwners.get(project.jira_project_key))}
             </option>
           ))}
         </select>
         <Button type="button" variant="outline" size="sm" disabled={addBusy || !selectedCatalogId} onClick={addSelectedCatalog}>
           <Plus className="h-4 w-4" />
-          Add
+          {selectedOwner && selectedOwner.productId !== product.id ? "Move" : "Add"}
         </Button>
         <Input
           aria-label={`${product.name} manual Jira key`}
@@ -676,12 +714,43 @@ function ProductJiraSpacesEditor({
             if (event.key === "Enter") addManualKey();
           }}
         />
-        <Button type="button" variant="outline" size="sm" disabled={addBusy || !manualKey.trim()} onClick={addManualKey}>
+        <Button type="button" variant="outline" size="sm" disabled={addBusy || !manualKey.trim() || manualKeyAlreadyMappedHere} onClick={addManualKey}>
           <Plus className="h-4 w-4" />
-          Add Key
+          {manualKeyOwner && manualKeyOwner.productId !== product.id ? "Move Key" : "Add Key"}
         </Button>
       </div>
+      {selectedOwner && selectedOwner.productId !== product.id ? (
+        <div className="text-xs text-muted-foreground">
+          {selectedProject?.jira_project_key} is currently mapped to {selectedOwner.productName}. Move will reassign it to {product.name}.
+        </div>
+      ) : null}
+      {manualKeyOwner && manualKeyOwner.productId !== product.id ? (
+        <div className="text-xs text-muted-foreground">
+          {manualKeyNormalized} is currently mapped to {manualKeyOwner.productName}. Move Key will reassign it to {product.name}.
+        </div>
+      ) : null}
+      {manualKeyAlreadyMappedHere ? <div className="text-xs text-muted-foreground">{manualKeyNormalized} is already mapped to {product.name}.</div> : null}
     </div>
+  );
+}
+
+function removeJiraSpaceFromAllProducts(current: ProductSpacesById, created: ProductJiraSpace): ProductSpacesById {
+  return Object.fromEntries(
+    Object.entries(current).map(([productId, spaces]) => [
+      Number(productId),
+      spaces.filter((space) => space.id !== created.id && space.jira_project_key !== created.jira_project_key),
+    ]),
+  );
+}
+
+function jiraProjectOptionLabel(project: JiraProjectCatalog, owner: JiraKeyOwner | undefined) {
+  const base = `${project.jira_project_key} - ${project.jira_project_name}`;
+  return owner ? `${base} (mapped to ${owner.productName})` : base;
+}
+
+function confirmMove(jiraProjectKey: string, fromProduct: string, toProduct: string) {
+  return window.confirm(
+    `Move ${jiraProjectKey} from ${fromProduct} to ${toProduct}? Future Jira syncs will attribute this Jira project to ${toProduct}.`,
   );
 }
 

@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import JiraProjectCatalog, Product, ProductJiraSpace
+from app.models import JiraProductMapping, JiraProjectCatalog, Product, ProductJiraSpace
 from app.models.entities import utcnow
 
 
@@ -83,12 +83,34 @@ def add_product_jira_space(
     jira_project_key: str | None = None,
     is_active: bool = True,
     scope_jql: str | None = None,
+    replace_existing: bool = False,
 ) -> ProductJiraSpace:
-    if db.get(Product, product_id) is None:
+    product = db.get(Product, product_id)
+    if product is None:
         raise ValueError("Product not found")
 
     catalog_entry = _resolve_catalog_entry(db, jira_project_catalog_id, jira_project_key)
+    existing_space = db.scalar(select(ProductJiraSpace).where(ProductJiraSpace.jira_project_key == catalog_entry.jira_project_key))
     now = utcnow()
+    if existing_space is not None:
+        if existing_space.product_id != product_id and not replace_existing:
+            existing_product = db.get(Product, existing_space.product_id)
+            owner = existing_product.name if existing_product is not None else "another SPARC product"
+            raise ValueError(f"Jira project is already mapped to {owner}. Move it to reassign this project.")
+        existing_space.product_id = product_id
+        existing_space.jira_project_catalog_id = catalog_entry.id
+        existing_space.jira_project_id = catalog_entry.jira_project_id
+        existing_space.jira_project_key = catalog_entry.jira_project_key
+        existing_space.jira_project_name = catalog_entry.jira_project_name
+        existing_space.is_active = is_active
+        existing_space.scope_jql = _clean_optional(scope_jql)
+        existing_space.validation_status = "valid"
+        existing_space.validation_message = "Found in Jira project catalog"
+        existing_space.last_validated_at = now
+        _sync_legacy_product_mapping(db, existing_space)
+        db.flush()
+        return existing_space
+
     space = ProductJiraSpace(
         product_id=product_id,
         jira_project_catalog_id=catalog_entry.id,
@@ -106,6 +128,7 @@ def add_product_jira_space(
         db.flush()
     except IntegrityError as exc:
         raise ValueError("Jira project is already mapped to a SPARC product") from exc
+    _sync_legacy_product_mapping(db, space)
     return space
 
 
@@ -127,6 +150,7 @@ def update_product_jira_space(
 
 def remove_product_jira_space(db: Session, product_id: int, space_id: int) -> None:
     space = _get_product_jira_space(db, product_id, space_id)
+    _clear_legacy_product_mapping(db, space)
     db.delete(space)
     db.flush()
 
@@ -254,6 +278,27 @@ def _get_product_jira_space(db: Session, product_id: int, space_id: int) -> Prod
     if space is None or space.product_id != product_id:
         raise ValueError("Product Jira project not found")
     return space
+
+
+def _sync_legacy_product_mapping(db: Session, space: ProductJiraSpace) -> None:
+    mapping = db.scalar(select(JiraProductMapping).where(JiraProductMapping.jira_project_key == space.jira_project_key))
+    if mapping is None:
+        db.add(
+            JiraProductMapping(
+                jira_project_key=space.jira_project_key,
+                jira_project_name=space.jira_project_name or space.jira_project_key,
+                product_id=space.product_id,
+            )
+        )
+        return
+    mapping.jira_project_name = space.jira_project_name or mapping.jira_project_name
+    mapping.product_id = space.product_id
+
+
+def _clear_legacy_product_mapping(db: Session, space: ProductJiraSpace) -> None:
+    mapping = db.scalar(select(JiraProductMapping).where(JiraProductMapping.jira_project_key == space.jira_project_key))
+    if mapping is not None and mapping.product_id == space.product_id:
+        mapping.product_id = None
 
 
 def _project_payload_from_jira(payload: dict[str, object]) -> JiraProjectPayload:

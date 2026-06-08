@@ -7,12 +7,12 @@ from sqlalchemy.orm import Session
 from app.api.products import delete_product as delete_product_endpoint
 from app.api.products import remove_product_team_member as remove_product_team_member_endpoint
 from app.db.seed import _seed_buckets
-from app.models import Base, ForecastEntry, JiraProjectCatalog, Product, ProductBudget, ProductTeamMember, TeamMember
+from app.models import Base, ForecastEntry, JiraProductMapping, JiraProjectCatalog, Product, ProductBudget, ProductTeamMember, TeamMember
 from app.services.aggregations import dashboard_products, product_bucket_tables, product_summary
 from app.services.costs import calculate_cost
 from app.services.fiscal_year import fiscal_sequence_for_date, fiscal_year_for_date
 from app.services.forecasting import upsert_forecast_entry
-from app.services.jira_projects import add_product_jira_space, list_product_jira_spaces, update_product_jira_space
+from app.services.jira_projects import add_product_jira_space, list_product_jira_spaces, remove_product_jira_space, update_product_jira_space
 
 
 def test_fiscal_year_mapping():
@@ -270,6 +270,49 @@ def test_product_jira_space_mapping_uses_catalog_and_prevents_double_mapping():
 
         with pytest.raises(ValueError, match="already mapped"):
             add_product_jira_space(db, second_product.id, jira_project_catalog_id=project.id)
+
+        moved = add_product_jira_space(db, second_product.id, jira_project_catalog_id=project.id, replace_existing=True)
+        db.flush()
+
+        assert moved.id == mapping.id
+        assert list_product_jira_spaces(db, first_product.id) == []
+        assert list_product_jira_spaces(db, second_product.id)[0]["jira_project_key"] == "SIS"
+
+
+def test_product_jira_space_move_and_remove_keep_legacy_mapping_aligned():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        first_product = Product(name="Student Information")
+        second_product = Product(name="Educator Licensing")
+        project = JiraProjectCatalog(
+            jira_project_id="10001",
+            jira_project_key="SIS",
+            jira_project_name="Student Information System",
+            project_type_key="software",
+        )
+        legacy_mapping = JiraProductMapping(
+            jira_project_key="SIS",
+            jira_project_name="Student Information System",
+            product_id=None,
+        )
+        db.add_all([first_product, second_product, project, legacy_mapping])
+        db.flush()
+
+        mapping = add_product_jira_space(db, first_product.id, jira_project_catalog_id=project.id)
+        db.flush()
+
+        assert legacy_mapping.product_id == first_product.id
+
+        add_product_jira_space(db, second_product.id, jira_project_catalog_id=project.id, replace_existing=True)
+        db.flush()
+
+        assert legacy_mapping.product_id == second_product.id
+
+        remove_product_jira_space(db, second_product.id, mapping.id)
+        db.flush()
+
+        assert legacy_mapping.product_id is None
 
 
 def test_product_jira_space_mapping_allows_multiple_projects_and_clears_scope():

@@ -206,6 +206,7 @@ export interface ProductJiraSpacePayload {
   jira_project_key?: string | null;
   is_active?: boolean;
   scope_jql?: string | null;
+  replace_existing?: boolean;
 }
 
 export interface ProductJiraSpaceUpdatePayload {
