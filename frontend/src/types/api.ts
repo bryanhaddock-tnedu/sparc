@@ -177,6 +177,10 @@ export interface JiraProjectCatalogSyncResult {
   projects: JiraProjectCatalog[];
 }
 
+export interface JiraProjectCatalogUpdatePayload {
+  is_visible: boolean;
+}
+
 export interface JiraIntegrationStatus {
   configured: boolean;
   site_url: string | null;

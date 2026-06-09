@@ -58,6 +58,15 @@ def list_jira_project_catalog(db: Session) -> list[dict[str, object]]:
     return [serialize_jira_project(project) for project in projects]
 
 
+def update_jira_project_catalog_visibility(db: Session, project_id: int, is_visible: bool) -> dict[str, object]:
+    project = db.get(JiraProjectCatalog, project_id)
+    if project is None:
+        raise ValueError("Jira project not found")
+    project.is_visible = is_visible
+    db.flush()
+    return serialize_jira_project(project)
+
+
 def refresh_jira_project_catalog(db: Session) -> dict[str, object]:
     payloads = fetch_jira_projects()
     projects = [_upsert_jira_project(db, payload) for payload in payloads]
@@ -96,7 +105,7 @@ def add_product_jira_space(
         if existing_space.product_id != product_id and not replace_existing:
             existing_product = db.get(Product, existing_space.product_id)
             owner = existing_product.name if existing_product is not None else "another SPARC product"
-            raise ValueError(f"Jira project is already mapped to {owner}. Move it to reassign this project.")
+            raise ValueError(f"Jira project is already mapped to {owner}. Remove that mapping before assigning this project.")
         existing_space.product_id = product_id
         existing_space.jira_project_catalog_id = catalog_entry.id
         existing_space.jira_project_id = catalog_entry.jira_project_id
@@ -265,7 +274,6 @@ def _upsert_jira_project(db: Session, payload: JiraProjectPayload) -> JiraProjec
         project.jira_project_key = payload.jira_project_key
         project.jira_project_name = payload.jira_project_name
         project.project_type_key = payload.project_type_key
-        project.is_visible = True
         project.is_archived = payload.is_archived
         project.last_seen_at = now
         project.last_checked_at = now

@@ -10,12 +10,13 @@ from app.schemas import (
     JiraLiveSyncRequest,
     JiraProjectCatalogResponse,
     JiraProjectCatalogSyncResponse,
+    JiraProjectCatalogUpdate,
     JiraRovoSyncResponse,
     JiraUserMapRequest,
     JiraUserMappingResponse,
     SyncRunResponse,
 )
-from app.services.jira_projects import list_jira_project_catalog, refresh_jira_project_catalog
+from app.services.jira_projects import list_jira_project_catalog, refresh_jira_project_catalog, update_jira_project_catalog_visibility
 from app.services.jira_rovo import (
     jira_integration_status,
     list_product_mappings,
@@ -48,6 +49,21 @@ def refresh_jira_project_catalog_endpoint(db: Session = Depends(get_db)) -> dict
         result = refresh_jira_project_catalog(db)
         db.commit()
         return result
+    except ValueError as exc:
+        db.rollback()
+        raise bad_request(str(exc)) from exc
+
+
+@router.put("/project-catalog/{project_id}", response_model=JiraProjectCatalogResponse)
+def update_jira_project_catalog_endpoint(
+    project_id: int,
+    payload: JiraProjectCatalogUpdate,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        project = update_jira_project_catalog_visibility(db, project_id, payload.is_visible)
+        db.commit()
+        return project
     except ValueError as exc:
         db.rollback()
         raise bad_request(str(exc)) from exc

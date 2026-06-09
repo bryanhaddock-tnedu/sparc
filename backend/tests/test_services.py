@@ -12,7 +12,15 @@ from app.services.aggregations import dashboard_products, product_bucket_tables,
 from app.services.costs import calculate_cost
 from app.services.fiscal_year import fiscal_sequence_for_date, fiscal_year_for_date
 from app.services.forecasting import upsert_forecast_entry
-from app.services.jira_projects import add_product_jira_space, list_product_jira_spaces, remove_product_jira_space, update_product_jira_space
+from app.services.jira_projects import (
+    JiraProjectPayload,
+    add_product_jira_space,
+    list_product_jira_spaces,
+    remove_product_jira_space,
+    update_jira_project_catalog_visibility,
+    update_product_jira_space,
+)
+from app.services import jira_projects
 
 
 def test_fiscal_year_mapping():
@@ -277,6 +285,41 @@ def test_product_jira_space_mapping_uses_catalog_and_prevents_double_mapping():
         assert moved.id == mapping.id
         assert list_product_jira_spaces(db, first_product.id) == []
         assert list_product_jira_spaces(db, second_product.id)[0]["jira_project_key"] == "SIS"
+
+
+def test_jira_project_catalog_visibility_can_be_toggled_and_survives_refresh(monkeypatch: pytest.MonkeyPatch):
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        project = JiraProjectCatalog(
+            jira_project_id="10001",
+            jira_project_key="IGNORE",
+            jira_project_name="Ignore Me",
+            project_type_key="software",
+        )
+        db.add(project)
+        db.flush()
+
+        updated = update_jira_project_catalog_visibility(db, project.id, False)
+        assert updated["is_visible"] is False
+
+        monkeypatch.setattr(
+            jira_projects,
+            "fetch_jira_projects",
+            lambda: [
+                JiraProjectPayload(
+                    jira_project_id="10001",
+                    jira_project_key="IGNORE",
+                    jira_project_name="Ignore Me Updated",
+                    project_type_key="software",
+                )
+            ],
+        )
+        refreshed = jira_projects.refresh_jira_project_catalog(db)
+        db.flush()
+
+        assert refreshed["projects"][0]["jira_project_name"] == "Ignore Me Updated"
+        assert refreshed["projects"][0]["is_visible"] is False
 
 
 def test_product_jira_space_move_and_remove_keep_legacy_mapping_aligned():

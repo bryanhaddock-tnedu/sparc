@@ -1,4 +1,4 @@
-import { CheckCircle2, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, ExternalLink, EyeOff, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -14,7 +14,7 @@ import type { JiraProjectCatalog, Product, ProductJiraSpace, ProductJiraSpacePay
 
 type ProductUpdate = Partial<Pick<Product, "name" | "description" | "budget_amount" | "is_active">>;
 type ProductSpacesById = Record<number, ProductJiraSpace[]>;
-type JiraKeyOwner = { productId: number; productName: string; spaceId: number };
+type JiraKeyOwner = { productId: number; productName: string };
 
 export function ProductSettingsPage() {
   const { fiscalYearLabel, fiscalYearRangeLabel, fiscalYear } = useFiscalYear();
@@ -30,6 +30,7 @@ export function ProductSettingsPage() {
   const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
   const [spaceActionIds, setSpaceActionIds] = useState<Set<string>>(new Set());
+  const [catalogActionIds, setCatalogActionIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -57,7 +58,7 @@ export function ProductSettingsPage() {
       const numericProductId = Number(productId);
       const productName = productNames.get(numericProductId) ?? "Unknown product";
       for (const space of spaces) {
-        owners.set(space.jira_project_key, { productId: numericProductId, productName, spaceId: space.id });
+        owners.set(space.jira_project_key, { productId: numericProductId, productName });
       }
     }
     return owners;
@@ -66,7 +67,7 @@ export function ProductSettingsPage() {
   const unmappedCatalogProjects = useMemo(() => {
     return jiraCatalog
       .filter((project) => !mappedJiraKeys.has(project.jira_project_key))
-      .sort((left, right) => left.jira_project_key.localeCompare(right.jira_project_key));
+      .sort((left, right) => Number(right.is_visible) - Number(left.is_visible) || left.jira_project_key.localeCompare(right.jira_project_key));
   }, [jiraCatalog, mappedJiraKeys]);
 
   async function createProduct() {
@@ -259,6 +260,25 @@ export function ProductSettingsPage() {
     }
   }, []);
 
+  const updateCatalogProjectVisibility = useCallback(async (project: JiraProjectCatalog, isVisible: boolean) => {
+    setCatalogActionIds((current) => new Set(current).add(project.id));
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await api.updateJiraProjectCatalog(project.id, { is_visible: isVisible });
+      setJiraCatalog((current) => current.map((row) => (row.id === updated.id ? updated : row)));
+      setNotice(`${updated.jira_project_key} was ${isVisible ? "restored to" : "ignored in"} the unmapped Jira project list.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update Jira project");
+    } finally {
+      setCatalogActionIds((current) => {
+        const next = new Set(current);
+        next.delete(project.id);
+        return next;
+      });
+    }
+  }, []);
+
   if (loading) return <LoadingBlock />;
   if (error && products.length === 0) return <ErrorBlock message={error} />;
 
@@ -321,8 +341,10 @@ export function ProductSettingsPage() {
         onToggle={() => setUnmappedPanelOpen((current) => !current)}
         projects={unmappedCatalogProjects}
         searchValue={catalogFilter}
+        busyIds={catalogActionIds}
         totalCatalogCount={jiraCatalog.length}
         onSearchChange={setCatalogFilter}
+        onVisibilityChange={updateCatalogProjectVisibility}
       />
 
       <section className="space-y-4">
@@ -355,18 +377,25 @@ function UnmappedJiraProjectsPanel({
   onToggle,
   projects,
   searchValue,
+  busyIds,
   totalCatalogCount,
   onSearchChange,
+  onVisibilityChange,
 }: {
   isOpen: boolean;
   onToggle: () => void;
   projects: JiraProjectCatalog[];
   searchValue: string;
+  busyIds: Set<number>;
   totalCatalogCount: number;
   onSearchChange: (value: string) => void;
+  onVisibilityChange: (project: JiraProjectCatalog, isVisible: boolean) => void | Promise<void>;
 }) {
   const normalizedSearch = searchValue.trim().toLowerCase();
-  const filteredProjects = projects.filter((project) => {
+  const activeProjects = projects.filter((project) => project.is_visible);
+  const ignoredProjects = projects.filter((project) => !project.is_visible);
+  const orderedProjects = [...activeProjects, ...ignoredProjects];
+  const filteredProjects = orderedProjects.filter((project) => {
     if (!normalizedSearch) return true;
     return (
       project.jira_project_key.toLowerCase().includes(normalizedSearch) ||
@@ -375,6 +404,7 @@ function UnmappedJiraProjectsPanel({
     );
   });
   const archivedCount = projects.filter((project) => project.is_archived).length;
+  const ignoredCount = ignoredProjects.length;
 
   return (
     <section className="rounded-lg border bg-card p-4">
@@ -382,15 +412,16 @@ function UnmappedJiraProjectsPanel({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold uppercase text-muted-foreground">Unmapped Jira Projects</h2>
-            <Badge className={projects.length ? "border-warning/40 text-warning" : "border-primary/40 text-primary"}>
-              {projects.length} unmapped
+            <Badge className={activeProjects.length ? "border-warning/40 text-warning" : "border-primary/40 text-primary"}>
+              {activeProjects.length} unmapped
             </Badge>
+            {ignoredCount ? <Badge className="border-muted-foreground/30 bg-muted text-muted-foreground">{ignoredCount} ignored</Badge> : null}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Review catalog projects that are not assigned to a SPARC product. Leave projects here when they should stay out of SPARC reporting.
           </p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-[9rem_9rem_auto]">
+        <div className="grid gap-2 sm:grid-cols-[9rem_9rem_9rem_auto]">
           <div className="rounded-md bg-secondary/50 px-3 py-2">
             <div className="text-xs font-semibold uppercase text-muted-foreground">Catalog</div>
             <div className="numeric-cell mt-1 text-lg font-semibold text-primary">{totalCatalogCount}</div>
@@ -398,6 +429,10 @@ function UnmappedJiraProjectsPanel({
           <div className="rounded-md bg-secondary/50 px-3 py-2">
             <div className="text-xs font-semibold uppercase text-muted-foreground">Archived</div>
             <div className="numeric-cell mt-1 text-lg font-semibold text-primary">{archivedCount}</div>
+          </div>
+          <div className="rounded-md bg-secondary/50 px-3 py-2">
+            <div className="text-xs font-semibold uppercase text-muted-foreground">Ignored</div>
+            <div className="numeric-cell mt-1 text-lg font-semibold text-primary">{ignoredCount}</div>
           </div>
           <Button type="button" variant="outline" onClick={onToggle}>
             {isOpen ? "Collapse" : "Review Projects"}
@@ -419,25 +454,43 @@ function UnmappedJiraProjectsPanel({
             <div className="rounded-md bg-secondary/50 p-4 text-sm text-muted-foreground">Every Jira catalog project is currently assigned.</div>
           ) : (
             <div className="max-h-80 overflow-auto rounded-md border bg-background">
-              <div className="grid min-w-[720px] grid-cols-[8rem_minmax(18rem,1fr)_9rem_9rem] border-b bg-muted/60 px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
+              <div className="grid min-w-[820px] grid-cols-[8rem_minmax(18rem,1fr)_9rem_9rem_7rem] border-b bg-muted/60 px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
                 <div>Key</div>
                 <div>Name</div>
                 <div>Type</div>
                 <div>Last Seen</div>
+                <div className="text-right">Action</div>
               </div>
               {filteredProjects.length ? (
                 filteredProjects.map((project) => (
                   <div
                     key={project.id}
-                    className="grid min-w-[720px] grid-cols-[8rem_minmax(18rem,1fr)_9rem_9rem] items-center gap-2 border-b px-3 py-2 text-sm last:border-b-0"
+                    className={`grid min-w-[820px] grid-cols-[8rem_minmax(18rem,1fr)_9rem_9rem_7rem] items-center gap-2 border-b px-3 py-2 text-sm last:border-b-0 ${
+                      project.is_visible ? "" : "bg-secondary/40 text-muted-foreground"
+                    }`}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-primary">{project.jira_project_key}</span>
+                      <span className={`font-semibold ${project.is_visible ? "text-primary" : "text-muted-foreground"}`}>
+                        {project.jira_project_key}
+                      </span>
                       {project.is_archived ? <Badge className="border-muted-foreground/30 bg-muted text-muted-foreground">Archived</Badge> : null}
+                      {!project.is_visible ? <Badge className="border-muted-foreground/30 bg-muted text-muted-foreground">Ignored</Badge> : null}
                     </div>
                     <div className="min-w-0 truncate">{project.jira_project_name}</div>
                     <div className="text-muted-foreground">{project.project_type_key ?? "Unknown"}</div>
                     <div className="text-xs text-muted-foreground">{formatDate(project.last_seen_at)}</div>
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        variant={project.is_visible ? "ghost" : "outline"}
+                        size="sm"
+                        disabled={busyIds.has(project.id)}
+                        onClick={() => void onVisibilityChange(project, !project.is_visible)}
+                      >
+                        {project.is_visible ? <EyeOff className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
+                        {busyIds.has(project.id) ? "Saving" : project.is_visible ? "Ignore" : "Restore"}
+                      </Button>
+                    </div>
                   </div>
                 ))
               ) : (
@@ -596,35 +649,27 @@ function ProductJiraSpacesEditor({
   const availableCatalog = useMemo(
     () =>
       catalog
-        .filter((project) => !productKeys.has(project.jira_project_key))
-        .sort((left, right) => {
-          const leftMapped = jiraKeyOwners.has(left.jira_project_key) ? 1 : 0;
-          const rightMapped = jiraKeyOwners.has(right.jira_project_key) ? 1 : 0;
-          return leftMapped - rightMapped || left.jira_project_key.localeCompare(right.jira_project_key);
-        }),
+        .filter((project) => project.is_visible && !productKeys.has(project.jira_project_key) && !jiraKeyOwners.has(project.jira_project_key))
+        .sort((left, right) => left.jira_project_key.localeCompare(right.jira_project_key)),
     [catalog, jiraKeyOwners, productKeys],
   );
   const selectedProject = availableCatalog.find((project) => String(project.id) === selectedCatalogId);
-  const selectedOwner = selectedProject ? jiraKeyOwners.get(selectedProject.jira_project_key) : undefined;
   const manualKeyNormalized = manualKey.trim().toUpperCase();
   const manualKeyOwner = manualKeyNormalized ? jiraKeyOwners.get(manualKeyNormalized) : undefined;
-  const manualKeyAlreadyMappedHere = manualKeyNormalized ? productKeys.has(manualKeyNormalized) : false;
+  const manualKeyAlreadyMappedHere = manualKeyNormalized ? productKeys.has(manualKeyNormalized) || manualKeyOwner?.productId === product.id : false;
+  const manualKeyMappedElsewhere = manualKeyOwner !== undefined && manualKeyOwner.productId !== product.id;
 
   function addSelectedCatalog() {
     const catalogId = Number(selectedCatalogId);
     if (!Number.isFinite(catalogId) || selectedProject === undefined) return;
-    const replaceExisting = selectedOwner !== undefined && selectedOwner.productId !== product.id;
-    if (replaceExisting && !confirmMove(selectedProject.jira_project_key, selectedOwner.productName, product.name)) return;
-    void onAdd({ jira_project_catalog_id: catalogId, is_active: true, replace_existing: replaceExisting });
+    void onAdd({ jira_project_catalog_id: catalogId, is_active: true });
     setSelectedCatalogId("");
   }
 
   function addManualKey() {
     const key = manualKey.trim().toUpperCase();
-    if (!key || productKeys.has(key)) return;
-    const replaceExisting = manualKeyOwner !== undefined && manualKeyOwner.productId !== product.id;
-    if (replaceExisting && !confirmMove(key, manualKeyOwner.productName, product.name)) return;
-    void onAdd({ jira_project_key: key, is_active: true, replace_existing: replaceExisting });
+    if (!key || manualKeyAlreadyMappedHere || manualKeyMappedElsewhere) return;
+    void onAdd({ jira_project_key: key, is_active: true });
     setManualKey("");
   }
 
@@ -695,13 +740,13 @@ function ProductJiraSpacesEditor({
           <option value="">{availableCatalog.length === 0 ? "No catalog projects available" : "Select Jira project"}</option>
           {availableCatalog.map((project) => (
             <option key={project.id} value={project.id}>
-              {jiraProjectOptionLabel(project, jiraKeyOwners.get(project.jira_project_key))}
+              {project.jira_project_key} - {project.jira_project_name}
             </option>
           ))}
         </select>
-        <Button type="button" variant="outline" size="sm" disabled={addBusy || !selectedCatalogId} onClick={addSelectedCatalog}>
+        <Button type="button" variant="outline" size="sm" disabled={addBusy || selectedProject === undefined} onClick={addSelectedCatalog}>
           <Plus className="h-4 w-4" />
-          {selectedOwner && selectedOwner.productId !== product.id ? "Move" : "Add"}
+          Add
         </Button>
         <Input
           aria-label={`${product.name} manual Jira key`}
@@ -714,19 +759,20 @@ function ProductJiraSpacesEditor({
             if (event.key === "Enter") addManualKey();
           }}
         />
-        <Button type="button" variant="outline" size="sm" disabled={addBusy || !manualKey.trim() || manualKeyAlreadyMappedHere} onClick={addManualKey}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={addBusy || !manualKey.trim() || manualKeyAlreadyMappedHere || manualKeyMappedElsewhere}
+          onClick={addManualKey}
+        >
           <Plus className="h-4 w-4" />
-          {manualKeyOwner && manualKeyOwner.productId !== product.id ? "Move Key" : "Add Key"}
+          Add Key
         </Button>
       </div>
-      {selectedOwner && selectedOwner.productId !== product.id ? (
+      {manualKeyMappedElsewhere ? (
         <div className="text-xs text-muted-foreground">
-          {selectedProject?.jira_project_key} is currently mapped to {selectedOwner.productName}. Move will reassign it to {product.name}.
-        </div>
-      ) : null}
-      {manualKeyOwner && manualKeyOwner.productId !== product.id ? (
-        <div className="text-xs text-muted-foreground">
-          {manualKeyNormalized} is currently mapped to {manualKeyOwner.productName}. Move Key will reassign it to {product.name}.
+          {manualKeyNormalized} is already mapped to {manualKeyOwner.productName}.
         </div>
       ) : null}
       {manualKeyAlreadyMappedHere ? <div className="text-xs text-muted-foreground">{manualKeyNormalized} is already mapped to {product.name}.</div> : null}
@@ -740,17 +786,6 @@ function removeJiraSpaceFromAllProducts(current: ProductSpacesById, created: Pro
       Number(productId),
       spaces.filter((space) => space.id !== created.id && space.jira_project_key !== created.jira_project_key),
     ]),
-  );
-}
-
-function jiraProjectOptionLabel(project: JiraProjectCatalog, owner: JiraKeyOwner | undefined) {
-  const base = `${project.jira_project_key} - ${project.jira_project_name}`;
-  return owner ? `${base} (mapped to ${owner.productName})` : base;
-}
-
-function confirmMove(jiraProjectKey: string, fromProduct: string, toProduct: string) {
-  return window.confirm(
-    `Move ${jiraProjectKey} from ${fromProduct} to ${toProduct}? Future Jira syncs will attribute this Jira project to ${toProduct}.`,
   );
 }
 

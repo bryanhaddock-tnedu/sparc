@@ -18,6 +18,7 @@ import type {
   JiraProductMapping,
   JiraProjectCatalog,
   JiraProjectCatalogSyncResult,
+  JiraProjectCatalogUpdatePayload,
   JiraRovoSyncResult,
   JiraUserMapping,
   Product,
@@ -241,6 +242,11 @@ export const api = {
   userMappings: () => request<JiraUserMapping[]>("/api/integrations/jira-rovo/user-mappings"),
   productMappings: () => request<JiraProductMapping[]>("/api/integrations/jira-rovo/product-mappings"),
   jiraProjectCatalog: () => request<JiraProjectCatalog[]>("/api/integrations/jira-rovo/project-catalog"),
+  updateJiraProjectCatalog: (projectId: number, payload: JiraProjectCatalogUpdatePayload) =>
+    request<JiraProjectCatalog>(`/api/integrations/jira-rovo/project-catalog/${projectId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   refreshJiraProjectCatalog: () =>
     request<JiraProjectCatalogSyncResult>("/api/integrations/jira-rovo/project-catalog/refresh", {
       method: "POST",

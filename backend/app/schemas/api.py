@@ -123,6 +123,10 @@ class JiraProjectCatalogSyncResponse(BaseModel):
     projects: list[JiraProjectCatalogResponse]
 
 
+class JiraProjectCatalogUpdate(BaseModel):
+    is_visible: bool
+
+
 class JiraIntegrationStatusResponse(BaseModel):
     configured: bool
     site_url: str | None
