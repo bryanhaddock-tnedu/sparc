@@ -115,9 +115,8 @@ export function DashboardPage() {
             tone={summary.variance_cost > 0 ? "warn" : "good"}
           />
         </div>
+        <DashboardScopeControl fiscalYear={fiscalYear} selectedScope={selectedScope} onScopeChange={setSelectedScope} />
       </section>
-
-      <DashboardScopeControl fiscalYear={fiscalYear} selectedScope={selectedScope} onScopeChange={setSelectedScope} />
 
       <section className="grid gap-4 xl:grid-cols-2">
         <WorkTypeMixCard rows={workTypes} scope={selectedScope} scopeLabel={selectedScopeLabel} />
@@ -153,8 +152,8 @@ function DashboardScopeControl({
   onScopeChange: (scope: DashboardScope) => void;
 }) {
   return (
-    <div className="w-full overflow-x-auto pb-1">
-      <div className="grid min-w-[980px] grid-cols-[repeat(12,minmax(4rem,1fr))_minmax(8rem,1.15fr)] gap-2">
+    <div className="w-full overflow-x-auto py-0.5">
+      <div className="grid min-w-[900px] grid-cols-[repeat(12,minmax(3.75rem,1fr))_minmax(7.5rem,1.12fr)] gap-1.5">
         {FISCAL_MONTHS.map((month) => {
           const periodState = fiscalMonthPeriodState(fiscalYear, month.sequence);
           return (
@@ -196,9 +195,9 @@ function ScopeButton({
   return (
     <button
       className={cn(
-        "h-9 whitespace-nowrap rounded-md border px-3 text-sm font-semibold transition-[background-color,border-color,box-shadow,color]",
-        active && "ring-2 ring-primary ring-offset-1",
-        wide ? "min-w-32" : "min-w-16",
+        "h-8 whitespace-nowrap rounded-md border px-2.5 text-sm font-semibold transition-[background-color,border-color,box-shadow,color]",
+        active && "ring-inset ring-2 ring-primary",
+        wide ? "min-w-28" : "min-w-14",
       )}
       style={style}
       type="button"
