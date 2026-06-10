@@ -38,7 +38,7 @@ export function DashboardPage() {
   const [products, setProducts] = useState<ProductSummaryRow[]>([]);
   const [workTypes, setWorkTypes] = useState<DashboardWorkTypeRow[]>([]);
   const [laborMix, setLaborMix] = useState<DashboardLaborMix | null>(null);
-  const [selectedScope, setSelectedScope] = useState<DashboardScope>(() => currentFiscalMonthSequence());
+  const [selectedScope, setSelectedScope] = useState<DashboardScope>(ENTIRE_FY_SCOPE);
   const [rankedMetric, setRankedMetric] = useState<RankedMetric>("hours");
   const [loading, setLoading] = useState(true);
   const [scopeLoading, setScopeLoading] = useState(false);
@@ -516,11 +516,6 @@ function bucketColor(code: string) {
   if (code === "NET_NEW") return "var(--spark-cyan)";
   if (code === "ENHANCE") return "var(--spark-lime)";
   return "var(--spark-orange)";
-}
-
-function currentFiscalMonthSequence() {
-  const calendarMonth = new Date().getMonth() + 1;
-  return calendarMonth >= 7 ? calendarMonth - 6 : calendarMonth + 6;
 }
 
 function dashboardScopeLabel(scope: DashboardScope) {
