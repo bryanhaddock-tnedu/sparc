@@ -93,6 +93,7 @@ export function DashboardPage() {
 
   const productRows = products.filter((product) => product.forecasted_hours > 0 || product.fytd_hours > 0 || product.budget_amount > 0);
   const selectedScopeLabel = dashboardScopeLabel(selectedScope);
+  const showActualBars = dashboardScopeHasActuals(fiscalYear, selectedScope);
 
   return (
     <div className="space-y-6">
@@ -131,7 +132,7 @@ export function DashboardPage() {
 
       <div className={cn("space-y-6 transition-opacity", scopeLoading && "opacity-70")} aria-busy={scopeLoading}>
         <section className="grid gap-4 xl:grid-cols-2">
-          <WorkTypeMixCard rows={workTypes} scope={selectedScope} scopeLabel={selectedScopeLabel} />
+          <WorkTypeMixCard rows={workTypes} scope={selectedScope} scopeLabel={selectedScopeLabel} showActuals={showActualBars} />
           <LaborMixCard data={laborMix} scopeLabel={selectedScopeLabel} />
         </section>
 
@@ -139,6 +140,7 @@ export function DashboardPage() {
           rows={products}
           fiscalYear={fiscalYear}
           metric={rankedMetric}
+          showActuals={showActualBars}
           scopeLabel={selectedScopeLabel}
           onMetricChange={setRankedMetric}
         />
@@ -222,7 +224,17 @@ function ScopeButton({
   );
 }
 
-function WorkTypeMixCard({ rows, scope, scopeLabel }: { rows: DashboardWorkTypeRow[]; scope: DashboardScope; scopeLabel: string }) {
+function WorkTypeMixCard({
+  rows,
+  scope,
+  scopeLabel,
+  showActuals,
+}: {
+  rows: DashboardWorkTypeRow[];
+  scope: DashboardScope;
+  scopeLabel: string;
+  showActuals: boolean;
+}) {
   const forecastTotal = rows.reduce((total, row) => total + row.forecast_hours, 0);
   const actualTotal = rows.reduce((total, row) => total + row.actual_hours, 0);
   const forecastLabel = scope === ENTIRE_FY_SCOPE ? "Forecast FY" : `Forecast ${scopeLabel}`;
@@ -238,7 +250,7 @@ function WorkTypeMixCard({ rows, scope, scopeLabel }: { rows: DashboardWorkTypeR
       </div>
       <div className="space-y-4">
         <StackedBar label={forecastLabel} rows={rows} total={forecastTotal} valueKey="forecast_hours" />
-        <StackedBar label={actualLabel} rows={rows} total={actualTotal} valueKey="actual_hours" />
+        {showActuals ? <StackedBar label={actualLabel} rows={rows} total={actualTotal} valueKey="actual_hours" /> : null}
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         {rows.map((row) => (
@@ -259,12 +271,14 @@ function TopProductsCard({
   rows,
   fiscalYear,
   metric,
+  showActuals,
   scopeLabel,
   onMetricChange,
 }: {
   rows: ProductSummaryRow[];
   fiscalYear: number;
   metric: RankedMetric;
+  showActuals: boolean;
   scopeLabel: string;
   onMetricChange: (metric: RankedMetric) => void;
 }) {
@@ -272,12 +286,14 @@ function TopProductsCard({
     return [...rows].sort(
       (left, right) =>
         productMetricValue(right, "forecast", metric) - productMetricValue(left, "forecast", metric) ||
-        productMetricValue(right, "actual", metric) - productMetricValue(left, "actual", metric) ||
+        (showActuals ? productMetricValue(right, "actual", metric) - productMetricValue(left, "actual", metric) : 0) ||
         left.product.localeCompare(right.product),
     );
-  }, [rows, metric]);
+  }, [rows, metric, showActuals]);
   const maxValue = Math.max(
-    ...ranked.flatMap((row) => [productMetricValue(row, "forecast", metric), productMetricValue(row, "actual", metric)]),
+    ...ranked.flatMap((row) =>
+      showActuals ? [productMetricValue(row, "forecast", metric), productMetricValue(row, "actual", metric)] : [productMetricValue(row, "forecast", metric)],
+    ),
     0,
   );
 
@@ -324,14 +340,16 @@ function TopProductsCard({
                     total={forecastValue}
                     valueType="forecast"
                   />
-                  <ProductBucketRankingBar
-                    bucketTotals={row.bucket_totals}
-                    label="Actual"
-                    maxValue={maxValue}
-                    metric={metric}
-                    total={actualValue}
-                    valueType="actual"
-                  />
+                  {showActuals ? (
+                    <ProductBucketRankingBar
+                      bucketTotals={row.bucket_totals}
+                      label="Actual"
+                      maxValue={maxValue}
+                      metric={metric}
+                      total={actualValue}
+                      valueType="actual"
+                    />
+                  ) : null}
                 </div>
               </Link>
             );
@@ -511,6 +529,10 @@ function dashboardScopeLabel(scope: DashboardScope) {
 
 function dashboardScopeParams(scope: DashboardScope) {
   return scope === ENTIRE_FY_SCOPE ? {} : { monthSequence: scope };
+}
+
+function dashboardScopeHasActuals(fiscalYear: number, scope: DashboardScope) {
+  return scope === ENTIRE_FY_SCOPE || fiscalMonthPeriodState(fiscalYear, scope) !== "future";
 }
 
 function fiscalMonthPeriodState(fiscalYear: number, sequence: number): MonthPeriodState {
