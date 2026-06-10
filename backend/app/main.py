@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import json
 import logging
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from app.db.session import SessionLocal, create_database
 settings = get_settings()
 logger = logging.getLogger("sparc")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_VERSION_FILE = STATIC_DIR / "app-version.json"
 NO_STORE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
 
 
@@ -71,9 +73,25 @@ def readiness() -> dict[str, str]:
 @app.get("/api/app-version", include_in_schema=False)
 def app_version() -> JSONResponse:
     return JSONResponse(
-        {"version": settings.build_version, "environment": settings.environment},
+        {"version": resolved_build_version(), "environment": settings.environment},
         headers=NO_STORE_HEADERS,
     )
+
+
+def resolved_build_version() -> str:
+    if settings.build_version and settings.build_version != "local":
+        return settings.build_version
+
+    if STATIC_VERSION_FILE.exists():
+        try:
+            payload = json.loads(STATIC_VERSION_FILE.read_text(encoding="utf-8"))
+            version = payload.get("version")
+            if isinstance(version, str) and version.strip():
+                return version
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Unable to read packaged app version from %s", STATIC_VERSION_FILE)
+
+    return settings.build_version
 
 
 app.include_router(api_router)

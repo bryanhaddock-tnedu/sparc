@@ -47,8 +47,19 @@ Optional for `docker-compose.stage.yml`:
 - `SPARC_PORT=8000`
 - `SPARC_FRONTEND_ORIGIN=http://localhost:8000`
 - `SPARC_DEFAULT_FISCAL_YEAR=2027`
+- `SPARC_BUILD_VERSION=<git-sha-or-release-version>`
 
 The stage compose file builds the frontend for same-origin API calls, so `VITE_API_BASE_URL` is intentionally blank there.
+
+## Frontend Versioning
+
+Every user interface change should bump the JavaScript/interface version before pushing to `develop` for STAGE. Update these together:
+
+- `package.json`
+- `frontend/package.json`
+- `frontend/public/app-version.json`
+
+The frontend embeds the package version when `VITE_BUILD_VERSION` is unset or `local`. The packaged FastAPI app also exposes `frontend/public/app-version.json` through `/api/app-version` when no explicit `SPARC_BUILD_VERSION` is provided, which lets browser sessions detect a newer UI build and reload instead of staying on stale JavaScript.
 
 ## Migration Rule
 

@@ -13,5 +13,8 @@ node_modules/
 dist/
 build/
 .vite/
+*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js
 
 spark-postgres-data/
