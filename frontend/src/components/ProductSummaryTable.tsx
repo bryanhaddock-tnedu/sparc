@@ -26,8 +26,8 @@ type ProductSortId =
   | "fytd_cost";
 
 const sortOptions: Array<{ id: ProductSortId; label: string; defaultDesc: boolean }> = [
-  { id: "fytd_cost", label: "FYTD $", defaultDesc: true },
-  { id: "fytd_hours", label: "FYTD Hrs", defaultDesc: true },
+  { id: "fytd_cost", label: "Actual $", defaultDesc: true },
+  { id: "fytd_hours", label: "Actual Hrs", defaultDesc: true },
   { id: "forecasted_cost", label: "Forecast $", defaultDesc: true },
   { id: "forecasted_hours", label: "Forecast Hrs", defaultDesc: true },
   { id: "budget_utilization_percent", label: "Budget Used", defaultDesc: true },
@@ -94,13 +94,13 @@ const columns: ColumnDef<ProductSummaryRow>[] = [
   },
   {
     accessorKey: "fytd_hours",
-    header: "FYTD Hrs",
+    header: "Actual Hrs",
     sortDescFirst: true,
     cell: ({ row }) => <span className="numeric-cell">{formatHours(row.original.fytd_hours)}</span>,
   },
   {
     accessorKey: "fytd_cost",
-    header: "FYTD $",
+    header: "Actual $",
     sortDescFirst: true,
     cell: ({ row }) => <span className="numeric-cell">{formatCurrency(row.original.fytd_cost)}</span>,
   },

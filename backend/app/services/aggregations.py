@@ -69,7 +69,12 @@ def serialize_month(month: FiscalMonth) -> dict[str, object]:
     }
 
 
-def _forecast_entries(db: Session, fiscal_year: int, product_id: int | None = None) -> list[ForecastEntry]:
+def _forecast_entries(
+    db: Session,
+    fiscal_year: int,
+    product_id: int | None = None,
+    month_sequence: int | None = None,
+) -> list[ForecastEntry]:
     statement = (
         select(ForecastEntry)
         .join(ForecastEntry.fiscal_month)
@@ -83,10 +88,17 @@ def _forecast_entries(db: Session, fiscal_year: int, product_id: int | None = No
     )
     if product_id is not None:
         statement = statement.where(ForecastEntry.product_id == product_id)
+    if month_sequence is not None:
+        statement = statement.where(FiscalMonth.sequence == month_sequence)
     return list(db.scalars(statement))
 
 
-def _actual_entries(db: Session, fiscal_year: int, product_id: int | None = None) -> list[ActualEntry]:
+def _actual_entries(
+    db: Session,
+    fiscal_year: int,
+    product_id: int | None = None,
+    month_sequence: int | None = None,
+) -> list[ActualEntry]:
     statement = (
         select(ActualEntry)
         .join(ActualEntry.fiscal_month)
@@ -100,6 +112,8 @@ def _actual_entries(db: Session, fiscal_year: int, product_id: int | None = None
     )
     if product_id is not None:
         statement = statement.where(ActualEntry.product_id == product_id)
+    if month_sequence is not None:
+        statement = statement.where(FiscalMonth.sequence == month_sequence)
     return list(db.scalars(statement))
 
 
@@ -132,10 +146,11 @@ def _budget_metrics(budget_amount: Decimal | float, projected_spend: Decimal | f
     }
 
 
-def dashboard_products(db: Session, fiscal_year: int) -> list[dict[str, object]]:
+def dashboard_products(db: Session, fiscal_year: int, month_sequence: int | None = None) -> list[dict[str, object]]:
     products = db.scalars(select(Product).order_by(Product.name)).all()
-    forecasts = _forecast_entries(db, fiscal_year)
-    actuals = _actual_entries(db, fiscal_year)
+    buckets = db.scalars(select(Bucket).order_by(Bucket.id)).all()
+    forecasts = _forecast_entries(db, fiscal_year, month_sequence=month_sequence)
+    actuals = _actual_entries(db, fiscal_year, month_sequence=month_sequence)
     budgets = product_budget_map(db, fiscal_year)
 
     forecasts_by_product: dict[int, list[ForecastEntry]] = defaultdict(list)
@@ -166,6 +181,7 @@ def dashboard_products(db: Session, fiscal_year: int) -> list[dict[str, object]]
                 "team_members": len(team_member_ids),
                 **budget_metrics,
                 **metrics,
+                "bucket_totals": _bucket_total_rows(buckets, product_forecasts, product_actuals),
                 "forecast_consumed_percent": round(
                     (metrics["fytd_hours"] / metrics["forecasted_hours"] * 100)
                     if metrics["forecasted_hours"]
@@ -205,10 +221,10 @@ def dashboard_summary(db: Session, fiscal_year: int) -> dict[str, float | int]:
     return summary
 
 
-def dashboard_work_type_breakdown(db: Session, fiscal_year: int) -> list[dict[str, object]]:
+def dashboard_work_type_breakdown(db: Session, fiscal_year: int, month_sequence: int | None = None) -> list[dict[str, object]]:
     buckets = db.scalars(select(Bucket).order_by(Bucket.id)).all()
-    forecasts = _forecast_entries(db, fiscal_year)
-    actuals = _actual_entries(db, fiscal_year)
+    forecasts = _forecast_entries(db, fiscal_year, month_sequence=month_sequence)
+    actuals = _actual_entries(db, fiscal_year, month_sequence=month_sequence)
     by_bucket: dict[int, dict[str, Decimal | float]] = defaultdict(
         lambda: {"forecast_hours": Decimal("0"), "actual_hours": Decimal("0"), "forecast_cost": 0.0, "actual_cost": 0.0}
     )
@@ -234,9 +250,9 @@ def dashboard_work_type_breakdown(db: Session, fiscal_year: int) -> list[dict[st
     ]
 
 
-def dashboard_labor_mix(db: Session, fiscal_year: int) -> dict[str, list[dict[str, object]]]:
-    forecasts = _forecast_entries(db, fiscal_year)
-    actuals = _actual_entries(db, fiscal_year)
+def dashboard_labor_mix(db: Session, fiscal_year: int, month_sequence: int | None = None) -> dict[str, list[dict[str, object]]]:
+    forecasts = _forecast_entries(db, fiscal_year, month_sequence=month_sequence)
+    actuals = _actual_entries(db, fiscal_year, month_sequence=month_sequence)
     hire_types: dict[str, dict[str, Decimal | float]] = defaultdict(
         lambda: {"forecast_hours": Decimal("0"), "actual_hours": Decimal("0"), "forecast_cost": 0.0, "actual_cost": 0.0}
     )
@@ -470,3 +486,33 @@ def _labor_mix_rows(source: dict[str, dict[str, Decimal | float]], key_name: str
         for label, values in source.items()
     ]
     return sorted(rows, key=lambda row: (row["forecast_hours"], row["actual_hours"]), reverse=True)
+
+
+def _bucket_total_rows(
+    buckets: list[Bucket],
+    forecasts: list[ForecastEntry],
+    actuals: list[ActualEntry],
+) -> list[dict[str, object]]:
+    by_bucket: dict[int, dict[str, Decimal | float]] = defaultdict(
+        lambda: {"forecast_hours": Decimal("0"), "actual_hours": Decimal("0"), "forecast_cost": 0.0, "actual_cost": 0.0}
+    )
+
+    for entry in forecasts:
+        by_bucket[entry.bucket_id]["forecast_hours"] += entry.hours
+        by_bucket[entry.bucket_id]["forecast_cost"] += calculate_cost(entry.hours, entry.team_member.bill_rate)
+    for entry in actuals:
+        by_bucket[entry.bucket_id]["actual_hours"] += entry.hours
+        by_bucket[entry.bucket_id]["actual_cost"] += calculate_cost(entry.hours, entry.team_member.bill_rate)
+
+    return [
+        {
+            "bucket_id": bucket.id,
+            "bucket": bucket.name,
+            "bucket_code": bucket.code,
+            "forecast_hours": round_hours(by_bucket[bucket.id]["forecast_hours"]),
+            "actual_hours": round_hours(by_bucket[bucket.id]["actual_hours"]),
+            "forecast_cost": round(float(by_bucket[bucket.id]["forecast_cost"]), 2),
+            "actual_cost": round(float(by_bucket[bucket.id]["actual_cost"]), 2),
+        }
+        for bucket in buckets
+    ]

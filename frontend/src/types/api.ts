@@ -60,6 +60,8 @@ export interface DashboardWorkTypeRow {
   actual_cost: number;
 }
 
+export type DashboardProductBucketTotal = DashboardWorkTypeRow;
+
 export interface DashboardLaborMixRow {
   employment_type?: string;
   role?: string;
@@ -109,6 +111,7 @@ export interface ProductSummaryRow {
   remaining_cost: number;
   variance_hours: number;
   variance_cost: number;
+  bucket_totals: DashboardProductBucketTotal[];
   forecast_consumed_percent: number;
 }
 

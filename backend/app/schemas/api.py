@@ -391,6 +391,10 @@ class DashboardWorkTypeRowResponse(BaseModel):
     actual_cost: float
 
 
+class DashboardProductBucketTotalResponse(DashboardWorkTypeRowResponse):
+    pass
+
+
 class DashboardLaborMixHireTypeRowResponse(BaseModel):
     employment_type: str
     forecast_hours: float
@@ -435,6 +439,7 @@ class ProductSummaryRowResponse(BaseModel):
     remaining_cost: float
     variance_hours: float
     variance_cost: float
+    bucket_totals: list[DashboardProductBucketTotalResponse]
     forecast_consumed_percent: float
 
 

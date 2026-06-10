@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 from app.api.products import delete_product as delete_product_endpoint
 from app.api.products import remove_product_team_member as remove_product_team_member_endpoint
 from app.db.seed import _seed_buckets
-from app.models import Base, ForecastEntry, JiraProductMapping, JiraProjectCatalog, Product, ProductBudget, ProductTeamMember, TeamMember
-from app.services.aggregations import dashboard_products, product_bucket_tables, product_summary
+from app.models import ActualEntry, Base, Bucket, ForecastEntry, JiraProductMapping, JiraProjectCatalog, Product, ProductBudget, ProductTeamMember, TeamMember
+from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_work_type_breakdown, product_bucket_tables, product_summary
 from app.services.costs import calculate_cost
-from app.services.fiscal_year import fiscal_sequence_for_date, fiscal_year_for_date
+from app.services.fiscal_year import fiscal_sequence_for_date, fiscal_year_for_date, get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
 from app.services.jira_projects import (
     JiraProjectPayload,
@@ -183,6 +183,71 @@ def test_product_team_assignment_counts_without_forecast_hours():
 
         assert rows[0]["team_members"] == 1
         assert rows[0]["forecasted_hours"] == 0
+
+
+def test_dashboard_breakdowns_can_scope_to_fiscal_month():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", jira_space_key="SIS")
+        member = TeamMember(name="Avery Johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_code="NET_NEW",
+            fiscal_year=2026,
+            month_sequence=1,
+            hours=10,
+        )
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_code="ENHANCE",
+            fiscal_year=2026,
+            month_sequence=2,
+            hours=20,
+        )
+
+        net_new = db.scalar(select(Bucket).where(Bucket.code == "NET_NEW"))
+        month = get_fiscal_month(db, 2026, 1)
+        db.add(
+            ActualEntry(
+                product_id=product.id,
+                team_member_id=member.id,
+                bucket_id=net_new.id,
+                fiscal_month_id=month.id,
+                hours=Decimal("4"),
+                source="test",
+                source_ticket_key="SIS-1",
+                source_worklog_id="1",
+            )
+        )
+        db.flush()
+
+        products = dashboard_products(db, 2026, month_sequence=1)
+        product_row = products[0]
+        net_new_totals = next(row for row in product_row["bucket_totals"] if row["bucket_code"] == "NET_NEW")
+        enhance_totals = next(row for row in product_row["bucket_totals"] if row["bucket_code"] == "ENHANCE")
+
+        assert product_row["forecasted_hours"] == 10
+        assert product_row["fytd_hours"] == 4
+        assert net_new_totals["forecast_hours"] == 10
+        assert net_new_totals["actual_hours"] == 4
+        assert enhance_totals["forecast_hours"] == 0
+
+        work_types = dashboard_work_type_breakdown(db, 2026, month_sequence=1)
+        assert next(row for row in work_types if row["bucket_code"] == "NET_NEW")["forecast_hours"] == 10
+        assert next(row for row in work_types if row["bucket_code"] == "ENHANCE")["forecast_hours"] == 0
+
+        labor_mix = dashboard_labor_mix(db, 2026, month_sequence=1)
+        assert labor_mix["hire_types"][0]["forecast_hours"] == 10
+        assert labor_mix["hire_types"][0]["actual_hours"] == 4
 
 
 def test_product_bucket_tables_use_explicit_forecast_lines_for_bucket_rows():

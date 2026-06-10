@@ -48,6 +48,16 @@ import { appConfig } from "./config";
 const API_BASE_URL = appConfig.apiBaseUrl;
 const DEFAULT_FISCAL_YEAR = appConfig.fiscalYear;
 
+type DashboardScopeParams = {
+  monthSequence?: number | null;
+};
+
+function dashboardQuery(fiscalYear: number, params: DashboardScopeParams = {}) {
+  const search = new URLSearchParams({ fiscal_year: String(fiscalYear) });
+  if (params.monthSequence != null) search.set("month_sequence", String(params.monthSequence));
+  return search.toString();
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     credentials: "include",
@@ -129,9 +139,12 @@ export const api = {
     return upload<AdminDataImportResult>(`/api/admin-data/import${params.toString() ? `?${params.toString()}` : ""}`, formData);
   },
   dashboardSummary: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<DashboardSummary>(`/api/dashboard/summary?fiscal_year=${fiscalYear}`),
-  dashboardProducts: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<ProductSummaryRow[]>(`/api/dashboard/products?fiscal_year=${fiscalYear}`),
-  dashboardWorkTypes: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<DashboardWorkTypeRow[]>(`/api/dashboard/work-types?fiscal_year=${fiscalYear}`),
-  dashboardLaborMix: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<DashboardLaborMix>(`/api/dashboard/labor-mix?fiscal_year=${fiscalYear}`),
+  dashboardProducts: (fiscalYear = DEFAULT_FISCAL_YEAR, params: DashboardScopeParams = {}) =>
+    request<ProductSummaryRow[]>(`/api/dashboard/products?${dashboardQuery(fiscalYear, params)}`),
+  dashboardWorkTypes: (fiscalYear = DEFAULT_FISCAL_YEAR, params: DashboardScopeParams = {}) =>
+    request<DashboardWorkTypeRow[]>(`/api/dashboard/work-types?${dashboardQuery(fiscalYear, params)}`),
+  dashboardLaborMix: (fiscalYear = DEFAULT_FISCAL_YEAR, params: DashboardScopeParams = {}) =>
+    request<DashboardLaborMix>(`/api/dashboard/labor-mix?${dashboardQuery(fiscalYear, params)}`),
   systemScan: (
     fiscalYear = DEFAULT_FISCAL_YEAR,
     params: { budgetWarningPercent?: number; memberForecastLimitHours?: number; workingDays?: number } = {},
