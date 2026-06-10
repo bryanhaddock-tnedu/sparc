@@ -159,13 +159,6 @@ export function TeamManagementPage() {
       {notice ? <div className="rounded-md border border-[color:var(--spark-cyan)] bg-accent/10 px-3 py-2 text-sm text-primary">{notice}</div> : null}
       {actionError ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{actionError}</div> : null}
 
-      <AddTeamMemberPanel
-        creating={creating}
-        form={newMember}
-        onChange={setNewMember}
-        onSubmit={() => void createTeamMember()}
-      />
-
       <section className="overflow-x-auto pb-1">
         <div className="grid min-w-[1080px] grid-cols-3 gap-4">
           <TeamActualPieCard title={`Previous Month (${analytics.previous.label})`} data={analytics.previous.data} total={analytics.previous.total} />
@@ -175,6 +168,13 @@ export function TeamManagementPage() {
       </section>
 
       <TeamMonthlyActualBarCard data={analytics.monthly} total={analytics.fytd.total} fiscalYearLabel={fiscalYearLabel} />
+
+      <AddTeamMemberPanel
+        creating={creating}
+        form={newMember}
+        onChange={setNewMember}
+        onSubmit={() => void createTeamMember()}
+      />
 
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="overflow-x-auto">
