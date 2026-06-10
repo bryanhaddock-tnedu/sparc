@@ -93,7 +93,8 @@ export function DashboardPage() {
 
   const productRows = products.filter((product) => product.forecasted_hours > 0 || product.fytd_hours > 0 || product.budget_amount > 0);
   const selectedScopeLabel = dashboardScopeLabel(selectedScope);
-  const showActualBars = dashboardScopeHasActuals(fiscalYear, selectedScope);
+  const selectedMonthState = selectedScope === ENTIRE_FY_SCOPE ? undefined : fiscalMonthPeriodState(fiscalYear, selectedScope);
+  const showActualBars = selectedScope === ENTIRE_FY_SCOPE || selectedMonthState !== "future";
 
   return (
     <div className="space-y-6">
@@ -529,10 +530,6 @@ function dashboardScopeLabel(scope: DashboardScope) {
 
 function dashboardScopeParams(scope: DashboardScope) {
   return scope === ENTIRE_FY_SCOPE ? {} : { monthSequence: scope };
-}
-
-function dashboardScopeHasActuals(fiscalYear: number, scope: DashboardScope) {
-  return scope === ENTIRE_FY_SCOPE || fiscalMonthPeriodState(fiscalYear, scope) !== "future";
 }
 
 function fiscalMonthPeriodState(fiscalYear: number, sequence: number): MonthPeriodState {
