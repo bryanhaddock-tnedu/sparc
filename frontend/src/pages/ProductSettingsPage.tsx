@@ -336,17 +336,6 @@ export function ProductSettingsPage() {
         </div>
       </section>
 
-      <UnmappedJiraProjectsPanel
-        isOpen={unmappedPanelOpen}
-        onToggle={() => setUnmappedPanelOpen((current) => !current)}
-        projects={unmappedCatalogProjects}
-        searchValue={catalogFilter}
-        busyIds={catalogActionIds}
-        totalCatalogCount={jiraCatalog.length}
-        onSearchChange={setCatalogFilter}
-        onVisibilityChange={updateCatalogProjectVisibility}
-      />
-
       <section className="space-y-4">
         {products.map((product) => (
           <ProductSettingsCard
@@ -368,6 +357,17 @@ export function ProductSettingsPage() {
           />
         ))}
       </section>
+
+      <UnmappedJiraProjectsPanel
+        isOpen={unmappedPanelOpen}
+        onToggle={() => setUnmappedPanelOpen((current) => !current)}
+        projects={unmappedCatalogProjects}
+        searchValue={catalogFilter}
+        busyIds={catalogActionIds}
+        totalCatalogCount={jiraCatalog.length}
+        onSearchChange={setCatalogFilter}
+        onVisibilityChange={updateCatalogProjectVisibility}
+      />
     </div>
   );
 }
