@@ -10,3 +10,4 @@ Important constraints:
 - Use Product, Team Member, Bucket, Forecast, Actual, and Fiscal Month as canonical terms.
 - Do not add task boards, sprint planning, timelines, due dates, Gantt charts, Bootstrap, Kubernetes, authentication, or live Jira/Rovo integration unless explicitly requested.
 - Jira/Rovo access must be app-owned and server-side. The AI should only invoke app codepaths, not direct Jira APIs.
+- For every frontend/interface change, bump the JavaScript/interface version so deployed clients force-refresh stale assets.
