@@ -28,6 +28,18 @@ import type {
 
 const PIE_COLORS = ["#2CCCD3", "#D2D755", "#E87722", "#5E7975"];
 
+interface ProductRoleCostRow {
+  role: string;
+  memberCount: number;
+  forecastCost: number;
+}
+
+interface ProductRoleCostSummary {
+  rows: ProductRoleCostRow[];
+  totalMembers: number;
+  totalCost: number;
+}
+
 export function ProductDetailPage() {
   const params = useParams();
   const productId = Number(params.productId);
@@ -156,6 +168,7 @@ export function ProductDetailPage() {
     }
     return keys;
   }, [tables]);
+  const roleCostSummary = useMemo(() => buildProductRoleCostSummary(productTeam, tables), [productTeam, tables]);
 
   async function addForecastLine(teamMemberId: number, bucketId: number) {
     if (!tables) return;
@@ -276,13 +289,16 @@ export function ProductDetailPage() {
               ) : null}
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <MetricCard label="Actualized Hours FYTD" value={formatHours(summary.fytd_hours)} />
-            <MetricCard label="Forecasted Hours FY" value={formatHours(summary.forecasted_hours)} />
-            <MetricCard label="Remaining Hours" value={formatHours(summary.remaining_hours)} tone="good" />
-            <MetricCard label="Actualized Cost FYTD" value={formatCurrency(summary.fytd_cost)} />
-            <MetricCard label="Forecasted Cost FY" value={formatCurrency(summary.forecasted_cost)} />
-            <MetricCard label="Remaining Cost" value={formatCurrency(summary.remaining_cost)} tone="good" />
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <MetricCard label="Actualized Hours FYTD" value={formatHours(summary.fytd_hours)} />
+              <MetricCard label="Forecasted Hours FY" value={formatHours(summary.forecasted_hours)} />
+              <MetricCard label="Remaining Hours" value={formatHours(summary.remaining_hours)} tone="good" />
+              <MetricCard label="Actualized Cost FYTD" value={formatCurrency(summary.fytd_cost)} />
+              <MetricCard label="Forecasted Cost FY" value={formatCurrency(summary.forecasted_cost)} />
+              <MetricCard label="Remaining Cost" value={formatCurrency(summary.remaining_cost)} tone="good" />
+            </div>
+            <ProductRoleCostCard summary={roleCostSummary} />
           </div>
         </div>
       </section>
@@ -330,6 +346,34 @@ export function ProductDetailPage() {
 
       <ReportedValuesTable rows={reportedRows} showTeamMember />
     </div>
+  );
+}
+
+function ProductRoleCostCard({ summary }: { summary: ProductRoleCostSummary }) {
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <div className="mb-3 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+        <h2 className="text-sm font-semibold uppercase text-muted-foreground">Role Cost Summary</h2>
+        <div className="flex flex-wrap gap-2">
+          <Badge>{summary.totalMembers} team members</Badge>
+          <Badge>{formatCurrency(summary.totalCost)} total</Badge>
+        </div>
+      </div>
+      {summary.rows.length ? (
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {summary.rows.map((row) => (
+            <div key={row.role} className="rounded-md bg-secondary/50 px-3 py-2">
+              <div className="truncate text-xs font-semibold uppercase text-muted-foreground">
+                {row.memberCount} {row.role}
+              </div>
+              <div className="numeric-cell mt-1 text-lg font-semibold text-primary">{formatCurrency(row.forecastCost)}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-md bg-secondary/50 p-3 text-sm text-muted-foreground">No active product team members yet.</div>
+      )}
+    </section>
   );
 }
 
@@ -848,4 +892,37 @@ function draftKey(bucket: BucketTable, row: BucketTableRow, cell: MonthCell) {
 
 function forecastLineKey(teamMemberId: number, bucketId: number) {
   return `${teamMemberId}:${bucketId}`;
+}
+
+function buildProductRoleCostSummary(assignments: ProductTeamMember[], tables: ProductBucketTables | null): ProductRoleCostSummary {
+  const activeAssignments = assignments.filter((assignment) => assignment.status === "active");
+  const activeMemberRoles = new Map(activeAssignments.map((assignment) => [assignment.team_member_id, assignment.role || "Unspecified"]));
+  const rowsByRole = new Map<string, ProductRoleCostRow>();
+
+  for (const assignment of activeAssignments) {
+    const role = assignment.role || "Unspecified";
+    const current = rowsByRole.get(role) ?? { role, memberCount: 0, forecastCost: 0 };
+    current.memberCount += 1;
+    rowsByRole.set(role, current);
+  }
+
+  for (const bucket of tables?.buckets ?? []) {
+    for (const row of bucket.rows) {
+      const role = activeMemberRoles.get(row.team_member_id);
+      if (!role) continue;
+      const current = rowsByRole.get(role) ?? { role, memberCount: 0, forecastCost: 0 };
+      current.forecastCost += row.totals.forecast_cost;
+      rowsByRole.set(role, current);
+    }
+  }
+
+  const rows = [...rowsByRole.values()].sort(
+    (left, right) => right.forecastCost - left.forecastCost || right.memberCount - left.memberCount || left.role.localeCompare(right.role),
+  );
+
+  return {
+    rows,
+    totalMembers: activeAssignments.length,
+    totalCost: rows.reduce((total, row) => total + row.forecastCost, 0),
+  };
 }
