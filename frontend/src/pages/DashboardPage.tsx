@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 
 import { BudgetTracker } from "../components/BudgetTracker";
@@ -41,34 +41,45 @@ export function DashboardPage() {
   const [selectedScope, setSelectedScope] = useState<DashboardScope>(() => currentFiscalMonthSequence());
   const [rankedMetric, setRankedMetric] = useState<RankedMetric>("hours");
   const [loading, setLoading] = useState(true);
+  const [scopeLoading, setScopeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadedFiscalYearRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const fullLoad = summary === null || loadedFiscalYearRef.current !== fiscalYear;
 
     async function loadData() {
       setError(null);
-      const scopeParams = selectedScope === ENTIRE_FY_SCOPE ? {} : { monthSequence: selectedScope };
+      const scopeParams = dashboardScopeParams(selectedScope);
       const [summaryResult, productsResult, workTypeResult, laborMixResult] = await Promise.all([
-        api.dashboardSummary(fiscalYear),
+        fullLoad ? api.dashboardSummary(fiscalYear) : Promise.resolve(null),
         api.dashboardProducts(fiscalYear, scopeParams),
         api.dashboardWorkTypes(fiscalYear, scopeParams),
         api.dashboardLaborMix(fiscalYear, scopeParams),
       ]);
       if (cancelled) return;
-      setSummary(summaryResult);
+      if (summaryResult) setSummary(summaryResult);
       setProducts(productsResult);
       setWorkTypes(workTypeResult);
       setLaborMix(laborMixResult);
+      loadedFiscalYearRef.current = fiscalYear;
     }
 
-    setLoading(true);
+    if (fullLoad) {
+      setLoading(true);
+    } else {
+      setScopeLoading(true);
+    }
     loadData()
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load dashboard");
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setScopeLoading(false);
+        }
       });
 
     return () => {
@@ -118,26 +129,28 @@ export function DashboardPage() {
         <DashboardScopeControl fiscalYear={fiscalYear} selectedScope={selectedScope} onScopeChange={setSelectedScope} />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <WorkTypeMixCard rows={workTypes} scope={selectedScope} scopeLabel={selectedScopeLabel} />
-        <LaborMixCard data={laborMix} scopeLabel={selectedScopeLabel} />
-      </section>
+      <div className={cn("space-y-6 transition-opacity", scopeLoading && "opacity-70")} aria-busy={scopeLoading}>
+        <section className="grid gap-4 xl:grid-cols-2">
+          <WorkTypeMixCard rows={workTypes} scope={selectedScope} scopeLabel={selectedScopeLabel} />
+          <LaborMixCard data={laborMix} scopeLabel={selectedScopeLabel} />
+        </section>
 
-      <TopProductsCard
-        rows={products}
-        fiscalYear={fiscalYear}
-        metric={rankedMetric}
-        scopeLabel={selectedScopeLabel}
-        onMetricChange={setRankedMetric}
-      />
+        <TopProductsCard
+          rows={products}
+          fiscalYear={fiscalYear}
+          metric={rankedMetric}
+          scopeLabel={selectedScopeLabel}
+          onMetricChange={setRankedMetric}
+        />
 
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-lg font-semibold">Product Summary</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{selectedScopeLabel} product totals.</p>
-        </div>
-        <ProductSummaryTable rows={productRows} />
-      </section>
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold">Product Summary</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{selectedScopeLabel} product totals.</p>
+          </div>
+          <ProductSummaryTable rows={productRows} />
+        </section>
+      </div>
     </div>
   );
 }
@@ -494,6 +507,10 @@ function currentFiscalMonthSequence() {
 function dashboardScopeLabel(scope: DashboardScope) {
   if (scope === ENTIRE_FY_SCOPE) return "Entire FY";
   return FISCAL_MONTHS.find((month) => month.sequence === scope)?.label ?? "Selected Month";
+}
+
+function dashboardScopeParams(scope: DashboardScope) {
+  return scope === ENTIRE_FY_SCOPE ? {} : { monthSequence: scope };
 }
 
 function fiscalMonthPeriodState(fiscalYear: number, sequence: number): MonthPeriodState {
