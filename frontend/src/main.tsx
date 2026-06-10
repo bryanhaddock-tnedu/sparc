@@ -7,6 +7,7 @@ import "./index.css";
 import { appConfig } from "./lib/config";
 
 const ACTIVE_BUILD_VERSION = appConfig.buildVersion;
+const MAX_BUILD_RELOAD_ATTEMPTS = 3;
 
 document.documentElement.dataset.sparcBuildVersion = ACTIVE_BUILD_VERSION;
 
@@ -27,12 +28,14 @@ async function reloadForNewBuild() {
     const deployedVersion = payload.version;
     if (!deployedVersion || deployedVersion === "local" || deployedVersion === ACTIVE_BUILD_VERSION) return;
 
-    const reloadMarker = `${ACTIVE_BUILD_VERSION}->${deployedVersion}`;
-    if (window.sessionStorage.getItem("sparc:build-reload") === reloadMarker) return;
-    window.sessionStorage.setItem("sparc:build-reload", reloadMarker);
+    const reloadKey = `sparc:build-reload:${ACTIVE_BUILD_VERSION}->${deployedVersion}`;
+    const reloadAttempts = Number.parseInt(window.sessionStorage.getItem(reloadKey) ?? "0", 10) || 0;
+    if (reloadAttempts >= MAX_BUILD_RELOAD_ATTEMPTS) return;
+    window.sessionStorage.setItem(reloadKey, String(reloadAttempts + 1));
 
     const url = new URL(window.location.href);
     url.searchParams.set("sparcBuild", deployedVersion.slice(0, 12));
+    url.searchParams.set("sparcReload", String(Date.now()));
     window.location.replace(url.toString());
   } catch {
     // Version checks should never block app startup.
