@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 
 import { BudgetTracker } from "../components/BudgetTracker";
@@ -14,6 +14,7 @@ import type { DashboardLaborMix, DashboardSummary, DashboardWorkTypeRow, Product
 
 type RankedMetric = "hours" | "cost";
 type DashboardScope = number | "entire-fy";
+type MonthPeriodState = "past" | "current" | "future";
 
 const ENTIRE_FY_SCOPE = "entire-fy";
 const FISCAL_MONTHS = [
@@ -116,7 +117,7 @@ export function DashboardPage() {
         </div>
       </section>
 
-      <DashboardScopeControl fiscalYearLabel={fiscalYearLabel} selectedScope={selectedScope} onScopeChange={setSelectedScope} />
+      <DashboardScopeControl fiscalYear={fiscalYear} selectedScope={selectedScope} onScopeChange={setSelectedScope} />
 
       <section className="grid gap-4 xl:grid-cols-2">
         <WorkTypeMixCard rows={workTypes} scope={selectedScope} scopeLabel={selectedScopeLabel} />
@@ -143,41 +144,37 @@ export function DashboardPage() {
 }
 
 function DashboardScopeControl({
-  fiscalYearLabel,
+  fiscalYear,
   selectedScope,
   onScopeChange,
 }: {
-  fiscalYearLabel: string;
+  fiscalYear: number;
   selectedScope: DashboardScope;
   onScopeChange: (scope: DashboardScope) => void;
 }) {
   return (
-    <section className="rounded-lg border bg-card p-3">
-      <div className="mb-3 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-        <div>
-          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Breakdown Period</h2>
-        </div>
-        <div className="text-xs font-semibold uppercase text-muted-foreground">{fiscalYearLabel}</div>
-      </div>
-      <div className="overflow-x-auto pb-1">
-        <div className="grid min-w-[920px] grid-cols-[repeat(13,minmax(0,1fr))] gap-1.5">
-          {FISCAL_MONTHS.map((month) => (
+    <div className="w-full overflow-x-auto pb-1">
+      <div className="grid min-w-[980px] grid-cols-[repeat(12,minmax(4rem,1fr))_minmax(8rem,1.15fr)] gap-2">
+        {FISCAL_MONTHS.map((month) => {
+          const periodState = fiscalMonthPeriodState(fiscalYear, month.sequence);
+          return (
             <ScopeButton
               key={month.sequence}
               active={selectedScope === month.sequence}
               label={month.label}
+              periodState={periodState}
               onClick={() => onScopeChange(month.sequence)}
             />
-          ))}
-          <ScopeButton
-            active={selectedScope === ENTIRE_FY_SCOPE}
-            label="Entire FY"
-            wide
-            onClick={() => onScopeChange(ENTIRE_FY_SCOPE)}
-          />
-        </div>
+          );
+        })}
+        <ScopeButton
+          active={selectedScope === ENTIRE_FY_SCOPE}
+          label="Entire FY"
+          wide
+          onClick={() => onScopeChange(ENTIRE_FY_SCOPE)}
+        />
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -185,20 +182,25 @@ function ScopeButton({
   active,
   label,
   onClick,
+  periodState,
   wide = false,
 }: {
   active: boolean;
   label: string;
   onClick: () => void;
+  periodState?: MonthPeriodState;
   wide?: boolean;
 }) {
+  const style = scopeButtonStyle(active, periodState);
+
   return (
     <button
       className={cn(
-        "h-9 rounded-md border px-2 text-sm font-semibold transition-colors",
-        wide ? "min-w-24" : "min-w-14",
-        active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:text-foreground",
+        "h-9 whitespace-nowrap rounded-md border px-3 text-sm font-semibold transition-[background-color,border-color,box-shadow,color]",
+        active && "ring-2 ring-primary ring-offset-1",
+        wide ? "min-w-32" : "min-w-16",
       )}
+      style={style}
       type="button"
       aria-pressed={active}
       onClick={onClick}
@@ -493,6 +495,53 @@ function currentFiscalMonthSequence() {
 function dashboardScopeLabel(scope: DashboardScope) {
   if (scope === ENTIRE_FY_SCOPE) return "Entire FY";
   return FISCAL_MONTHS.find((month) => month.sequence === scope)?.label ?? "Selected Month";
+}
+
+function fiscalMonthPeriodState(fiscalYear: number, sequence: number): MonthPeriodState {
+  const fiscalMonth = fiscalMonthDateParts(fiscalYear, sequence);
+  const today = new Date();
+  const current = { year: today.getFullYear(), month: today.getMonth() + 1 };
+
+  if (fiscalMonth.year === current.year && fiscalMonth.month === current.month) return "current";
+  if (fiscalMonth.year < current.year || (fiscalMonth.year === current.year && fiscalMonth.month < current.month)) return "past";
+  return "future";
+}
+
+function fiscalMonthDateParts(fiscalYear: number, sequence: number) {
+  if (sequence <= 6) {
+    return { year: fiscalYear - 1, month: sequence + 6 };
+  }
+  return { year: fiscalYear, month: sequence - 6 };
+}
+
+function scopeButtonStyle(active: boolean, periodState?: MonthPeriodState): CSSProperties {
+  if (!periodState) {
+    return active
+      ? { backgroundColor: "var(--spark-navy)", borderColor: "var(--spark-navy)", color: "white" }
+      : { backgroundColor: "white", borderColor: "hsl(var(--border))", color: "hsl(var(--foreground))" };
+  }
+
+  if (periodState === "past") {
+    return {
+      backgroundColor: "hsl(var(--secondary))",
+      borderColor: "hsl(var(--border))",
+      color: active ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
+    };
+  }
+
+  if (periodState === "current") {
+    return {
+      backgroundColor: "var(--spark-lime)",
+      borderColor: "var(--spark-lime)",
+      color: "hsl(var(--foreground))",
+    };
+  }
+
+  return {
+    backgroundColor: "var(--spark-cyan)",
+    borderColor: "var(--spark-cyan)",
+    color: "hsl(var(--foreground))",
+  };
 }
 
 function productMetricValue(row: ProductSummaryRow, valueType: "forecast" | "actual", metric: RankedMetric) {
