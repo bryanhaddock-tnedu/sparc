@@ -259,6 +259,7 @@ export function ProductDetailPage() {
           actualSpend={summary.fytd_cost}
           contextLabel={`${summary.product.name} budget, forecast, and actuals`}
         />
+        <ProductRoleCostCard summary={roleCostSummary} />
         <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
           <div className="rounded-lg border bg-card p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase text-muted-foreground">FYTD Actualized Hours</h2>
@@ -289,16 +290,13 @@ export function ProductDetailPage() {
               ) : null}
             </div>
           </div>
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <MetricCard label="Actualized Hours FYTD" value={formatHours(summary.fytd_hours)} />
-              <MetricCard label="Forecasted Hours FY" value={formatHours(summary.forecasted_hours)} />
-              <MetricCard label="Remaining Hours" value={formatHours(summary.remaining_hours)} tone="good" />
-              <MetricCard label="Actualized Cost FYTD" value={formatCurrency(summary.fytd_cost)} />
-              <MetricCard label="Forecasted Cost FY" value={formatCurrency(summary.forecasted_cost)} />
-              <MetricCard label="Remaining Cost" value={formatCurrency(summary.remaining_cost)} tone="good" />
-            </div>
-            <ProductRoleCostCard summary={roleCostSummary} />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <MetricCard label="Actualized Hours FYTD" value={formatHours(summary.fytd_hours)} />
+            <MetricCard label="Forecasted Hours FY" value={formatHours(summary.forecasted_hours)} />
+            <MetricCard label="Remaining Hours" value={formatHours(summary.remaining_hours)} tone="good" />
+            <MetricCard label="Actualized Cost FYTD" value={formatCurrency(summary.fytd_cost)} />
+            <MetricCard label="Forecasted Cost FY" value={formatCurrency(summary.forecasted_cost)} />
+            <MetricCard label="Remaining Cost" value={formatCurrency(summary.remaining_cost)} tone="good" />
           </div>
         </div>
       </section>
