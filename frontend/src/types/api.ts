@@ -438,6 +438,17 @@ export interface TeamMember {
   updated_at: string;
 }
 
+export interface TeamMemberCreatePayload {
+  staff_id?: string | null;
+  name: string;
+  role: string;
+  team: string;
+  bill_rate?: number;
+  employment_type: string;
+  contracting_company?: string | null;
+  status?: string;
+}
+
 export interface TeamMemberProductRow {
   product_id: number;
   product: string;

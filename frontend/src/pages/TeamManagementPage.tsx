@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Plus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
@@ -11,13 +12,14 @@ import {
 import { PageNav } from "../components/PageNav";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { formatBillRate } from "../lib/teamMembers";
 import { formatHours } from "../lib/utils";
-import type { ReportedValueRow, TeamMember } from "../types/api";
+import type { ReportedValueRow, TeamMember, TeamMemberCreatePayload } from "../types/api";
 
 const PIE_COLORS = [
   "var(--spark-cyan)",
@@ -30,12 +32,27 @@ const PIE_COLORS = [
   "#f2a65a",
 ];
 
+type NewTeamMemberForm = {
+  staffId: string;
+  name: string;
+  role: string;
+  team: string;
+  billRate: string;
+  employmentType: string;
+  contractingCompany: string;
+  status: string;
+};
+
 export function TeamManagementPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
+  const [newMember, setNewMember] = useState<NewTeamMemberForm>(() => blankTeamMemberForm());
+  const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const loadTeamOverview = useCallback(async () => {
     const [memberRows, reportedValueRows] = await Promise.all([api.teamMembers(), api.reportedValues({}, fiscalYear)]);
@@ -54,6 +71,29 @@ export function TeamManagementPage() {
     const updated = await api.updateTeamMember(member.id, { bill_rate: billRate });
     setMembers((current) => current.map((row) => (row.id === member.id ? updated : row)));
   }, []);
+
+  const createTeamMember = useCallback(async () => {
+    const payload = teamMemberPayload(newMember);
+    if (typeof payload === "string") {
+      setActionError(payload);
+      setNotice(null);
+      return;
+    }
+
+    setCreating(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      const created = await api.createTeamMember(payload);
+      await loadTeamOverview();
+      setNewMember(blankTeamMemberForm());
+      setNotice(`${created.name} was added to the SPARC roster.`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to add team member");
+    } finally {
+      setCreating(false);
+    }
+  }, [loadTeamOverview, newMember]);
 
   const analytics = useMemo(() => buildTeamActualAnalytics(reportedRows, fiscalYear), [reportedRows, fiscalYear]);
 
@@ -116,6 +156,16 @@ export function TeamManagementPage() {
         <PageNav current="team" />
       </div>
 
+      {notice ? <div className="rounded-md border border-[color:var(--spark-cyan)] bg-accent/10 px-3 py-2 text-sm text-primary">{notice}</div> : null}
+      {actionError ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{actionError}</div> : null}
+
+      <AddTeamMemberPanel
+        creating={creating}
+        form={newMember}
+        onChange={setNewMember}
+        onSubmit={() => void createTeamMember()}
+      />
+
       <section className="overflow-x-auto pb-1">
         <div className="grid min-w-[1080px] grid-cols-3 gap-4">
           <TeamActualPieCard title={`Previous Month (${analytics.previous.label})`} data={analytics.previous.data} total={analytics.previous.total} />
@@ -153,6 +203,135 @@ export function TeamManagementPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AddTeamMemberPanel({
+  creating,
+  form,
+  onChange,
+  onSubmit,
+}: {
+  creating: boolean;
+  form: NewTeamMemberForm;
+  onChange: (form: NewTeamMemberForm) => void;
+  onSubmit: () => void;
+}) {
+  function update<K extends keyof NewTeamMemberForm>(key: K, value: NewTeamMemberForm[K]) {
+    onChange({ ...form, [key]: value });
+  }
+
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold uppercase text-muted-foreground">Add Team Member</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Create a roster record before assigning the Team Member to Products or forecast lines.</p>
+      </div>
+      <form
+        className="grid gap-3 md:grid-cols-2 xl:grid-cols-[0.8fr_1.2fr_1fr_1fr_0.8fr_0.9fr_1fr_0.7fr_auto]"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <TeamMemberField label="Staff ID">
+          <Input
+            aria-label="New team member staff ID"
+            disabled={creating}
+            placeholder="Optional"
+            value={form.staffId}
+            onChange={(event) => update("staffId", event.target.value)}
+          />
+        </TeamMemberField>
+        <TeamMemberField label="Name">
+          <Input
+            aria-label="New team member name"
+            disabled={creating}
+            placeholder="Full name"
+            value={form.name}
+            onChange={(event) => update("name", event.target.value)}
+          />
+        </TeamMemberField>
+        <TeamMemberField label="Role">
+          <Input
+            aria-label="New team member role"
+            disabled={creating}
+            placeholder="Role"
+            value={form.role}
+            onChange={(event) => update("role", event.target.value)}
+          />
+        </TeamMemberField>
+        <TeamMemberField label="Team">
+          <Input
+            aria-label="New team member team"
+            disabled={creating}
+            placeholder="Team"
+            value={form.team}
+            onChange={(event) => update("team", event.target.value)}
+          />
+        </TeamMemberField>
+        <TeamMemberField label="Bill Rate">
+          <Input
+            aria-label="New team member bill rate"
+            className="numeric-cell"
+            disabled={creating}
+            inputMode="decimal"
+            placeholder="0.00"
+            value={form.billRate}
+            onChange={(event) => update("billRate", event.target.value)}
+          />
+        </TeamMemberField>
+        <TeamMemberField label="Employment">
+          <select
+            aria-label="New team member employment type"
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            disabled={creating}
+            value={form.employmentType}
+            onChange={(event) => update("employmentType", event.target.value)}
+          >
+            <option value="Contractor">Contractor</option>
+            <option value="FTE">FTE</option>
+            <option value="Employee">Employee</option>
+          </select>
+        </TeamMemberField>
+        <TeamMemberField label="Company">
+          <Input
+            aria-label="New team member contracting company"
+            disabled={creating}
+            placeholder="Company"
+            value={form.contractingCompany}
+            onChange={(event) => update("contractingCompany", event.target.value)}
+          />
+        </TeamMemberField>
+        <TeamMemberField label="Status">
+          <select
+            aria-label="New team member status"
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            disabled={creating}
+            value={form.status}
+            onChange={(event) => update("status", event.target.value)}
+          >
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </TeamMemberField>
+        <div className="flex items-end">
+          <Button className="w-full" disabled={creating} type="submit">
+            <Plus className="h-4 w-4" />
+            {creating ? "Adding" : "Add"}
+          </Button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function TeamMemberField({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <label className="space-y-1">
+      <span className="text-xs font-semibold uppercase text-muted-foreground">{label}</span>
+      {children}
+    </label>
   );
 }
 
@@ -258,6 +437,57 @@ function BillRateInput({ member, onSave }: { member: TeamMember; onSave: (member
       <div className="numeric-cell mt-1 text-xs text-muted-foreground">{formatBillRate(member.bill_rate, member.employment_type)}</div>
     </div>
   );
+}
+
+function blankTeamMemberForm(): NewTeamMemberForm {
+  return {
+    staffId: "",
+    name: "",
+    role: "",
+    team: "",
+    billRate: "",
+    employmentType: "Contractor",
+    contractingCompany: "",
+    status: "active",
+  };
+}
+
+function teamMemberPayload(form: NewTeamMemberForm): TeamMemberCreatePayload | string {
+  const name = cleanText(form.name);
+  const role = cleanText(form.role);
+  const team = cleanText(form.team);
+  const employmentType = cleanText(form.employmentType);
+  const contractingCompany = cleanText(form.contractingCompany);
+  const billRate = form.billRate.trim() === "" ? 0 : Number(form.billRate);
+  const isContractor = employmentType.toLowerCase().includes("contract");
+
+  if (!name || !role || !team || !employmentType) {
+    return "Name, role, team, and employment type are required.";
+  }
+  if (!Number.isFinite(billRate) || billRate < 0) {
+    return "Bill rate must be a valid non-negative number.";
+  }
+  if (isContractor && billRate <= 0) {
+    return "Bill rate is required for contractors.";
+  }
+  if (isContractor && !contractingCompany) {
+    return "Contracting company is required for contractors.";
+  }
+
+  return {
+    staff_id: cleanText(form.staffId) || null,
+    name,
+    role,
+    team,
+    bill_rate: billRate,
+    employment_type: employmentType,
+    contracting_company: contractingCompany || null,
+    status: form.status,
+  };
+}
+
+function cleanText(value: string) {
+  return value.trim();
 }
 
 function formatDate(value: string) {

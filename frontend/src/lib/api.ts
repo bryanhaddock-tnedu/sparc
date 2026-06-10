@@ -38,6 +38,7 @@ import type {
   TeamImportResult,
   TeamMember,
   TeamMemberActualWorklog,
+  TeamMemberCreatePayload,
   TeamMemberProducts,
   UnmappedProduct,
   UnmappedUser,
@@ -203,6 +204,11 @@ export const api = {
       method: "POST",
     }),
   teamMembers: () => request<TeamMember[]>("/api/team-members"),
+  createTeamMember: (payload: TeamMemberCreatePayload) =>
+    request<TeamMember>("/api/team-members", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateTeamMember: (teamMemberId: number, payload: Partial<TeamMember>) =>
     request<TeamMember>(`/api/team-members/${teamMemberId}`, {
       method: "PUT",
