@@ -4,7 +4,6 @@ import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recha
 import { Link, useParams } from "react-router-dom";
 
 import { BudgetTracker } from "../components/BudgetTracker";
-import { MetricCard } from "../components/MetricCard";
 import { PageNav } from "../components/PageNav";
 import { ReportedValuesTable } from "../components/ReportedValuesTable";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
@@ -290,14 +289,7 @@ export function ProductDetailPage() {
               ) : null}
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <MetricCard label="Actualized Hours FYTD" value={formatHours(summary.fytd_hours)} />
-            <MetricCard label="Forecasted Hours FY" value={formatHours(summary.forecasted_hours)} />
-            <MetricCard label="Remaining Hours" value={formatHours(summary.remaining_hours)} tone="good" />
-            <MetricCard label="Actualized Cost FYTD" value={formatCurrency(summary.fytd_cost)} />
-            <MetricCard label="Forecasted Cost FY" value={formatCurrency(summary.forecasted_cost)} />
-            <MetricCard label="Remaining Cost" value={formatCurrency(summary.remaining_cost)} tone="good" />
-          </div>
+          <ProductSnapshotPanel summary={summary} />
         </div>
       </section>
 
@@ -348,23 +340,36 @@ export function ProductDetailPage() {
 }
 
 function ProductRoleCostCard({ summary }: { summary: ProductRoleCostSummary }) {
+  const maxCost = Math.max(...summary.rows.map((row) => row.forecastCost), 0);
+
   return (
     <section className="rounded-lg border bg-card p-4">
-      <div className="mb-3 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-        <h2 className="text-sm font-semibold uppercase text-muted-foreground">Role Cost Summary</h2>
-        <div className="flex flex-wrap gap-2">
-          <Badge>{summary.totalMembers} team members</Badge>
-          <Badge>{formatCurrency(summary.totalCost)} total</Badge>
+      <div className="mb-3 flex flex-col justify-between gap-2 md:flex-row md:items-start">
+        <div>
+          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Role Cost Summary</h2>
+          <p className="mt-1 text-sm text-muted-foreground">De-identified FY forecast cost by Product Team role.</p>
+        </div>
+        <div className="numeric-cell text-sm font-semibold text-primary">
+          {formatMemberCount(summary.totalMembers)} / {formatCurrency(summary.totalCost)}
         </div>
       </div>
       {summary.rows.length ? (
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        <div className="overflow-hidden rounded-md border bg-background">
           {summary.rows.map((row) => (
-            <div key={row.role} className="rounded-md bg-secondary/50 px-3 py-2">
-              <div className="truncate text-xs font-semibold uppercase text-muted-foreground">
-                {row.memberCount} {row.role}
+            <div key={row.role} className="grid gap-3 border-b px-3 py-2.5 last:border-b-0 lg:grid-cols-[11rem_1fr_8rem] lg:items-center">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-foreground">{row.role}</div>
+                <div className="text-xs text-muted-foreground">{formatMemberCount(row.memberCount)}</div>
               </div>
-              <div className="numeric-cell mt-1 text-lg font-semibold text-primary">{formatCurrency(row.forecastCost)}</div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-[color:var(--spark-cyan)]"
+                  style={{ width: `${maxCost > 0 ? Math.max((row.forecastCost / maxCost) * 100, 4) : 0}%` }}
+                />
+              </div>
+              <div className="numeric-cell text-left text-sm font-semibold text-primary lg:text-right">
+                {formatCurrency(row.forecastCost)}
+              </div>
             </div>
           ))}
         </div>
@@ -372,6 +377,37 @@ function ProductRoleCostCard({ summary }: { summary: ProductRoleCostSummary }) {
         <div className="rounded-md bg-secondary/50 p-3 text-sm text-muted-foreground">No active product team members yet.</div>
       )}
     </section>
+  );
+}
+
+function ProductSnapshotPanel({ summary }: { summary: ProductSummary }) {
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <h2 className="text-sm font-semibold uppercase text-muted-foreground">FY Snapshot</h2>
+      <div className="mt-3 grid gap-4 lg:grid-cols-2">
+        <div className="space-y-2">
+          <div className="text-xs font-semibold uppercase text-muted-foreground">Hours</div>
+          <SnapshotRow label="Actualized FYTD" value={formatHours(summary.fytd_hours)} />
+          <SnapshotRow label="Forecasted FY" value={formatHours(summary.forecasted_hours)} />
+          <SnapshotRow label="Remaining" value={formatHours(summary.remaining_hours)} />
+        </div>
+        <div className="space-y-2">
+          <div className="text-xs font-semibold uppercase text-muted-foreground">Cost</div>
+          <SnapshotRow label="Actualized FYTD" value={formatCurrency(summary.fytd_cost)} />
+          <SnapshotRow label="Forecasted FY" value={formatCurrency(summary.forecasted_cost)} />
+          <SnapshotRow label="Remaining" value={formatCurrency(summary.remaining_cost)} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SnapshotRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 rounded-md bg-secondary/50 px-3 py-2">
+      <span className="truncate text-sm text-muted-foreground">{label}</span>
+      <span className="numeric-cell shrink-0 text-base font-semibold text-primary">{value}</span>
+    </div>
   );
 }
 
@@ -890,6 +926,10 @@ function draftKey(bucket: BucketTable, row: BucketTableRow, cell: MonthCell) {
 
 function forecastLineKey(teamMemberId: number, bucketId: number) {
   return `${teamMemberId}:${bucketId}`;
+}
+
+function formatMemberCount(count: number) {
+  return `${count} team ${count === 1 ? "member" : "members"}`;
 }
 
 function buildProductRoleCostSummary(assignments: ProductTeamMember[], tables: ProductBucketTables | null): ProductRoleCostSummary {
