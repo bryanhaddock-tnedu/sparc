@@ -120,6 +120,8 @@ export interface Product {
   name: string;
   jira_space_key: string | null;
   description: string | null;
+  office: string | null;
+  division: string | null;
   budget_amount: number;
   is_active: boolean;
   created_at: string;
@@ -130,6 +132,8 @@ export interface ProductCreatePayload {
   name: string;
   jira_space_key?: string | null;
   description?: string | null;
+  office?: string | null;
+  division?: string | null;
   budget_amount?: number;
   is_active?: boolean;
 }

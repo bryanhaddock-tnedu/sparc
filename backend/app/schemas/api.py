@@ -1,7 +1,14 @@
 from decimal import Decimal
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.services.product_org import (
+    clean_product_org_value,
+    product_division_error,
+    product_office_error,
+    product_org_pair_error,
+)
 
 
 class ApiMessage(BaseModel):
@@ -41,6 +48,8 @@ class ProductResponse(BaseModel):
     name: str
     jira_space_key: str | None
     description: str | None
+    office: str | None
+    division: str | None
     budget_amount: float
     is_active: bool
     created_at: datetime
@@ -65,16 +74,50 @@ class ProductCreate(BaseModel):
     name: str
     jira_space_key: str | None = None
     description: str | None = None
+    office: str | None = None
+    division: str | None = None
     budget_amount: Decimal = Field(default=Decimal("0.00"), ge=0)
     is_active: bool = True
+
+    @field_validator("office", "division", mode="before")
+    @classmethod
+    def clean_org_value(cls, value: str | None) -> str | None:
+        return clean_product_org_value(value)
+
+    @model_validator(mode="after")
+    def validate_product_org(self) -> "ProductCreate":
+        if error := product_org_pair_error(self.office, self.division):
+            raise ValueError(error)
+        return self
 
 
 class ProductUpdate(BaseModel):
     name: str | None = None
     jira_space_key: str | None = None
     description: str | None = None
+    office: str | None = None
+    division: str | None = None
     budget_amount: Decimal | None = Field(default=None, ge=0)
     is_active: bool | None = None
+
+    @field_validator("office", "division", mode="before")
+    @classmethod
+    def clean_org_value(cls, value: str | None) -> str | None:
+        return clean_product_org_value(value)
+
+    @field_validator("office")
+    @classmethod
+    def validate_office(cls, value: str | None) -> str | None:
+        if error := product_office_error(value):
+            raise ValueError(error)
+        return value
+
+    @field_validator("division")
+    @classmethod
+    def validate_division(cls, value: str | None) -> str | None:
+        if error := product_division_error(value):
+            raise ValueError(error)
+        return value
 
 
 class ProductTeamMemberCreate(BaseModel):

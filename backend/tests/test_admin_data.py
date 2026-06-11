@@ -17,7 +17,13 @@ def test_admin_data_export_imports_owned_data_and_excludes_jira_refresh_data():
 
     with Session(source_engine) as source_db:
         _seed_buckets(source_db)
-        product = Product(name="SWORD", jira_space_key="SWRD", budget_amount=Decimal("0.00"))
+        product = Product(
+            name="SWORD",
+            jira_space_key="SWRD",
+            office="Operations",
+            division="IT",
+            budget_amount=Decimal("0.00"),
+        )
         member = TeamMember(
             staff_id="TM-1",
             name="Avery Johnson",
@@ -83,6 +89,8 @@ def test_admin_data_export_imports_owned_data_and_excludes_jira_refresh_data():
 
         assert result["errors"] == []
         assert imported_product is not None
+        assert imported_product.office == "Operations"
+        assert imported_product.division == "IT"
         assert imported_member is not None
         assert target_db.scalar(select(ProductBudget).where(ProductBudget.product_id == imported_product.id)).budget_amount == Decimal("250000.00")
         assert target_db.scalar(select(ProductJiraSpace).where(ProductJiraSpace.jira_project_key == "SWRD")).product_id == imported_product.id

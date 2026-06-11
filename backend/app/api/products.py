@@ -30,6 +30,7 @@ from app.services.jira_projects import (
     update_product_jira_space,
     validate_product_jira_space,
 )
+from app.services.product_org import product_org_pair_error
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -74,6 +75,11 @@ def update_product(product_id: int, payload: ProductUpdate, fiscal_year: int = 2
     if product is None:
         raise not_found("Product")
     updates = payload.model_dump(exclude_unset=True)
+    if "office" in updates or "division" in updates:
+        next_office = updates.get("office", product.office)
+        next_division = updates.get("division", product.division)
+        if error := product_org_pair_error(next_office, next_division):
+            raise bad_request(error)
     budget_amount = updates.pop("budget_amount", None)
     for key, value in updates.items():
         setattr(product, key, value)

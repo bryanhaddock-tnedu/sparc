@@ -30,6 +30,8 @@ class Product(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(160), unique=True, index=True, nullable=False)
     jira_space_key: Mapped[str | None] = mapped_column(String(40), unique=True)
     description: Mapped[str | None] = mapped_column(Text)
+    office: Mapped[str | None] = mapped_column(String(80))
+    division: Mapped[str | None] = mapped_column(String(160))
     budget_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

@@ -372,6 +372,8 @@ def _write_products(workbook: Workbook, db: Session) -> None:
             product.name,
             product.jira_space_key,
             product.description,
+            product.office,
+            product.division,
             _number(product.budget_amount),
             product.is_active,
             _iso(product.created_at),
@@ -382,7 +384,18 @@ def _write_products(workbook: Workbook, db: Session) -> None:
     _append_sheet(
         workbook,
         "Products",
-        ("source_product_id", "name", "jira_space_key", "description", "legacy_budget_amount", "is_active", "created_at", "updated_at"),
+        (
+            "source_product_id",
+            "name",
+            "jira_space_key",
+            "description",
+            "office",
+            "division",
+            "legacy_budget_amount",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ),
         rows,
     )
 
@@ -685,6 +698,8 @@ def _import_products(db: Session, workbook, result: dict[str, int | str], errors
         product.name = name
         product.jira_space_key = _text(row, "jira_space_key")
         product.description = _text(row, "description")
+        product.office = _text(row, "office")
+        product.division = _text(row, "division")
         product.budget_amount = _decimal(row, "legacy_budget_amount")
         product.is_active = _bool(row.get("is_active"), default=True)
         result["created" if created else "updated"] += 1

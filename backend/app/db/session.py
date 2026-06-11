@@ -36,6 +36,20 @@ def ensure_database_compatibility() -> None:
                 "sqlite": "ALTER TABLE products ADD COLUMN budget_amount NUMERIC(12, 2) NOT NULL DEFAULT 0",
             }
             connection.execute(text(product_budget_sql[dialect]))
+        product_org_column_sql = {
+            "office": {
+                "postgresql": "ALTER TABLE products ADD COLUMN IF NOT EXISTS office VARCHAR(80)",
+                "sqlite": "ALTER TABLE products ADD COLUMN office VARCHAR(80)",
+            },
+            "division": {
+                "postgresql": "ALTER TABLE products ADD COLUMN IF NOT EXISTS division VARCHAR(160)",
+                "sqlite": "ALTER TABLE products ADD COLUMN division VARCHAR(160)",
+            },
+        }
+        for column_name, statements in product_org_column_sql.items():
+            if column_name in product_columns:
+                continue
+            connection.execute(text(statements[dialect]))
 
     inspector = inspect(engine)
     table_names = inspector.get_table_names()

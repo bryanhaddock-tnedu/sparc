@@ -78,6 +78,7 @@ Use a monorepo:
 - Budget tracker compares Budgeted, Forecast, and Actuals using a compact horizontal bar.
 - Team Member ID is optional and system-generated if not provided.
 - Team Members default to active.
+- Products may be tagged with Office and Division for organizational reporting. Office options are Academics, Operations, and Programs; Division options are constrained by the selected Office.
 - Created date and last updated date are required.
 
 ## Product Buckets
@@ -141,6 +142,7 @@ Each Product Detail page should include:
 1. Product header
    - Product name
    - Jira space key/reference badges
+   - Office and Division badges, if available
    - Product description, if available
    - Active/inactive status
 
@@ -198,6 +200,8 @@ Columns:
 
 - Product name
 - Jira spaces/projects
+- Office
+- Division
 - Fiscal Year Budget
 - Status
 - Description
@@ -207,6 +211,8 @@ Rules:
 
 - Product detail remains accessible from each row.
 - New Products can be added from this page.
+- Office and Division are editable dropdown selectors.
+- Division options depend on the selected Office.
 - Budget is editable per selected Fiscal Year and drives the dashboard/product budget tracker.
 - Jira mappings are one-to-many: one SPARC Product can contain multiple Jira spaces/projects.
 - A Jira space/project should only map to one SPARC Product to avoid double-counting actual hours.

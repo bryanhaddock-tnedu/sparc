@@ -171,7 +171,7 @@ export const api = {
     }),
   updateProduct: (
     productId: number,
-    payload: Partial<Pick<Product, "name" | "jira_space_key" | "description" | "budget_amount" | "is_active">>,
+    payload: Partial<Pick<Product, "name" | "jira_space_key" | "description" | "office" | "division" | "budget_amount" | "is_active">>,
     fiscalYear = DEFAULT_FISCAL_YEAR,
   ) =>
     request<Product>(`/api/products/${productId}?fiscal_year=${fiscalYear}`, {

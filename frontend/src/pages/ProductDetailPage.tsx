@@ -243,6 +243,12 @@ export function ProductDetailPage() {
             <Badge className={summary.product.is_active ? "border-primary/40 text-primary" : "border-muted text-muted-foreground"}>
               {summary.product.is_active ? "Active" : "Inactive"}
             </Badge>
+            {summary.product.office ? (
+              <Badge className="border-muted-foreground/30 bg-muted text-muted-foreground">Office: {summary.product.office}</Badge>
+            ) : null}
+            {summary.product.division ? (
+              <Badge className="border-muted-foreground/30 bg-muted text-muted-foreground">Division: {summary.product.division}</Badge>
+            ) : null}
           </div>
           {summary.product.description ? (
             <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{summary.product.description}</p>

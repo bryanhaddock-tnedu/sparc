@@ -9,10 +9,11 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
+import { OFFICE_OPTIONS, divisionBelongsToOffice, divisionOptionsForOffice } from "../lib/productOrg";
 import { formatCurrency } from "../lib/utils";
 import type { JiraProjectCatalog, Product, ProductJiraSpace, ProductJiraSpacePayload } from "../types/api";
 
-type ProductUpdate = Partial<Pick<Product, "name" | "description" | "budget_amount" | "is_active">>;
+type ProductUpdate = Partial<Pick<Product, "name" | "description" | "office" | "division" | "budget_amount" | "is_active">>;
 type ProductSpacesById = Record<number, ProductJiraSpace[]>;
 type JiraKeyOwner = { productId: number; productName: string };
 
@@ -25,6 +26,8 @@ export function ProductSettingsPage() {
     name: "",
     budget: "",
     description: "",
+    office: "",
+    division: "",
   });
   const [creating, setCreating] = useState(false);
   const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
@@ -88,13 +91,15 @@ export function ProductSettingsPage() {
           jira_space_key: null,
           budget_amount: budgetAmount,
           description: newProduct.description.trim() || null,
+          office: newProduct.office || null,
+          division: newProduct.division || null,
           is_active: true,
         },
         fiscalYear,
       );
       setProducts((current) => [...current, created].sort((left, right) => left.name.localeCompare(right.name)));
       setProductSpaces((current) => ({ ...current, [created.id]: [] }));
-      setNewProduct({ name: "", budget: "", description: "" });
+      setNewProduct({ name: "", budget: "", description: "", office: "", division: "" });
       setNotice(`${created.name} was added. Assign Jira projects from the product row when ready.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to add product");
@@ -302,7 +307,7 @@ export function ProductSettingsPage() {
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">Add Product</h2>
           <p className="mt-1 text-sm text-muted-foreground">Budget entered here applies to {fiscalYearLabel} only.</p>
         </div>
-        <div className="grid gap-3 lg:grid-cols-[1.2fr_0.7fr_1.8fr_auto]">
+        <div className="grid gap-3 xl:grid-cols-[1.1fr_0.65fr_0.9fr_1.3fr_1.4fr_auto]">
           <Input
             aria-label="New product name"
             disabled={creating}
@@ -319,6 +324,41 @@ export function ProductSettingsPage() {
             value={newProduct.budget}
             onChange={(event) => setNewProduct((current) => ({ ...current, budget: event.target.value }))}
           />
+          <select
+            aria-label="New product office"
+            className="h-10 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+            disabled={creating}
+            value={newProduct.office}
+            onChange={(event) => {
+              const office = event.target.value;
+              setNewProduct((current) => ({
+                ...current,
+                office,
+                division: divisionBelongsToOffice(office, current.division) ? current.division : "",
+              }));
+            }}
+          >
+            <option value="">Office</option>
+            {OFFICE_OPTIONS.map((office) => (
+              <option key={office} value={office}>
+                {office}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="New product division"
+            className="h-10 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+            disabled={creating || !newProduct.office}
+            value={newProduct.division}
+            onChange={(event) => setNewProduct((current) => ({ ...current, division: event.target.value }))}
+          >
+            <option value="">{newProduct.office ? "Division" : "Select office first"}</option>
+            {divisionOptionsForOffice(newProduct.office).map((division) => (
+              <option key={division} value={division}>
+                {division}
+              </option>
+            ))}
+          </select>
           <Input
             aria-label="New product description"
             disabled={creating}
@@ -591,6 +631,8 @@ function ProductSettingsCard({
             </label>
           </div>
 
+          <ProductOrgFields product={product} disabled={saving} onUpdateProduct={onUpdateProduct} />
+
           <div className="text-xs text-muted-foreground">Last updated {formatDate(product.updated_at)}</div>
         </div>
 
@@ -618,6 +660,64 @@ function ProductSettingsCard({
         </div>
       </div>
     </article>
+  );
+}
+
+function ProductOrgFields({
+  product,
+  disabled,
+  onUpdateProduct,
+}: {
+  product: Product;
+  disabled?: boolean;
+  onUpdateProduct: (payload: ProductUpdate) => void | Promise<void>;
+}) {
+  const divisionOptions = divisionOptionsForOffice(product.office);
+
+  function updateOffice(office: string) {
+    void onUpdateProduct({
+      office: office || null,
+      division: divisionBelongsToOffice(office, product.division) ? product.division : null,
+    });
+  }
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <label className="block space-y-1">
+        <span className="text-xs font-semibold uppercase text-muted-foreground">Office</span>
+        <select
+          aria-label={`${product.name} office`}
+          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+          disabled={disabled}
+          value={product.office ?? ""}
+          onChange={(event) => updateOffice(event.target.value)}
+        >
+          <option value="">Not set</option>
+          {OFFICE_OPTIONS.map((office) => (
+            <option key={office} value={office}>
+              {office}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block space-y-1">
+        <span className="text-xs font-semibold uppercase text-muted-foreground">Division</span>
+        <select
+          aria-label={`${product.name} division`}
+          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+          disabled={disabled || !product.office}
+          value={product.division ?? ""}
+          onChange={(event) => void onUpdateProduct({ division: event.target.value || null })}
+        >
+          <option value="">{product.office ? "Not set" : "Select office first"}</option>
+          {divisionOptions.map((division) => (
+            <option key={division} value={division}>
+              {division}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
   );
 }
 

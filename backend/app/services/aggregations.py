@@ -16,6 +16,8 @@ def serialize_product(product: Product, budget_amount: Decimal | float | None = 
         "name": product.name,
         "jira_space_key": product.jira_space_key,
         "description": product.description,
+        "office": product.office,
+        "division": product.division,
         "budget_amount": round(float(budget or 0), 2),
         "is_active": product.is_active,
         "created_at": product.created_at,
