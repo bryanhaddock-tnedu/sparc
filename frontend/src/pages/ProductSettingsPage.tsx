@@ -580,69 +580,58 @@ function ProductSettingsCard({
   onRemoveSpace: (space: ProductJiraSpace) => void | Promise<void>;
 }) {
   return (
-    <article className="rounded-lg border bg-card p-4">
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 flex-1 space-y-1">
-              <TextInput
-                ariaLabel={`${product.name} product name`}
-                allowEmpty={false}
-                className="text-base font-semibold"
-                disabled={saving}
-                value={product.name}
-                onCommit={(name) => onUpdateProduct({ name })}
-              />
-              <Link className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline" to={`/products/${product.id}`}>
-                View product detail
-                <ExternalLink className="h-3 w-3" />
-              </Link>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusSelect product={product} disabled={saving || deleting} onCommit={(is_active) => onUpdateProduct({ is_active })} />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={saving || deleting || spaces.length > 0}
-                title={spaces.length > 0 ? "Remove mapped Jira projects before deleting this product" : `Delete ${product.name}`}
-                onClick={() => void onDeleteProduct()}
-              >
-                <Trash2 className="h-4 w-4" />
-                {deleting ? "Deleting" : "Delete"}
-              </Button>
-            </div>
+    <article className="overflow-hidden rounded-lg border bg-card">
+      <div className="flex flex-col gap-3 border-b bg-secondary/20 px-3 py-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="min-w-0 sm:max-w-sm sm:flex-1">
+            <TextInput
+              ariaLabel={`${product.name} product name`}
+              allowEmpty={false}
+              className="h-9 text-base font-semibold"
+              disabled={saving}
+              value={product.name}
+              onCommit={(name) => onUpdateProduct({ name })}
+            />
           </div>
-
-          <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
-            <div>
-              <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">{fiscalYearLabel} Budget</div>
-              <BudgetInput product={product} disabled={saving} onCommit={(budget_amount) => onUpdateProduct({ budget_amount })} />
-            </div>
-            <label className="block space-y-1">
-              <span className="text-xs font-semibold uppercase text-muted-foreground">Description</span>
-              <TextInput
-                ariaLabel={`${product.name} description`}
-                disabled={saving}
-                placeholder="No description"
-                value={product.description ?? ""}
-                onCommit={(description) => onUpdateProduct({ description: description || null })}
-              />
-            </label>
-          </div>
-
-          <ProductOrgFields product={product} disabled={saving} onUpdateProduct={onUpdateProduct} />
-
-          <div className="text-xs text-muted-foreground">Last updated {formatDate(product.updated_at)}</div>
+          <Link
+            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-1 text-sm font-medium text-primary hover:underline"
+            to={`/products/${product.id}`}
+          >
+            Detail
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
         </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <StatusSelect product={product} disabled={saving || deleting} onCommit={(is_active) => onUpdateProduct({ is_active })} />
+          <Button
+            aria-label={deleting ? `Deleting ${product.name}` : `Delete ${product.name}`}
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={saving || deleting || spaces.length > 0}
+            title={spaces.length > 0 ? "Remove mapped Jira projects before deleting this product" : `Delete ${product.name}`}
+            onClick={() => void onDeleteProduct()}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
-        <div className="rounded-md border bg-background/60 p-3">
-          <div className="mb-3 flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
-            <div>
+      <div className="grid gap-4 p-3 xl:grid-cols-[minmax(20rem,0.9fr)_minmax(0,1.6fr)]">
+        <ProductMetadataFields
+          disabled={saving}
+          fiscalYearLabel={fiscalYearLabel}
+          product={product}
+          onUpdateProduct={onUpdateProduct}
+        />
+
+        <div className="min-w-0 space-y-3 xl:border-l xl:pl-4">
+          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+            <div className="min-w-0">
               <h2 className="text-sm font-semibold uppercase text-muted-foreground">Jira Projects</h2>
-              <p className="text-sm text-muted-foreground">One SPARC product can own multiple Jira projects.</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">Map one or more Jira projects to this SPARC product.</p>
             </div>
-            <Badge className={spaces.length ? "border-primary/40 text-primary" : "border-muted text-muted-foreground"}>
+            <Badge className={`shrink-0 ${spaces.length ? "border-primary/40 text-primary" : "border-muted text-muted-foreground"}`}>
               {spaces.length} mapped
             </Badge>
           </div>
@@ -663,13 +652,15 @@ function ProductSettingsCard({
   );
 }
 
-function ProductOrgFields({
+function ProductMetadataFields({
   product,
   disabled,
+  fiscalYearLabel,
   onUpdateProduct,
 }: {
   product: Product;
   disabled?: boolean;
+  fiscalYearLabel: string;
   onUpdateProduct: (payload: ProductUpdate) => void | Promise<void>;
 }) {
   const divisionOptions = divisionOptionsForOffice(product.office);
@@ -682,41 +673,59 @@ function ProductOrgFields({
   }
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <label className="block space-y-1">
-        <span className="text-xs font-semibold uppercase text-muted-foreground">Office</span>
-        <select
-          aria-label={`${product.name} office`}
-          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-          disabled={disabled}
-          value={product.office ?? ""}
-          onChange={(event) => updateOffice(event.target.value)}
-        >
-          <option value="">Not set</option>
-          {OFFICE_OPTIONS.map((office) => (
-            <option key={office} value={office}>
-              {office}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="block space-y-1">
-        <span className="text-xs font-semibold uppercase text-muted-foreground">Division</span>
-        <select
-          aria-label={`${product.name} division`}
-          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-          disabled={disabled || !product.office}
-          value={product.division ?? ""}
-          onChange={(event) => void onUpdateProduct({ division: event.target.value || null })}
-        >
-          <option value="">{product.office ? "Not set" : "Select office first"}</option>
-          {divisionOptions.map((division) => (
-            <option key={division} value={division}>
-              {division}
-            </option>
-          ))}
-        </select>
-      </label>
+    <div className="rounded-md bg-secondary/30 p-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block space-y-1">
+          <span className="text-xs font-semibold uppercase text-muted-foreground">{fiscalYearLabel} Budget</span>
+          <BudgetInput product={product} disabled={disabled} onCommit={(budget_amount) => onUpdateProduct({ budget_amount })} />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs font-semibold uppercase text-muted-foreground">Office</span>
+          <select
+            aria-label={`${product.name} office`}
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            disabled={disabled}
+            value={product.office ?? ""}
+            onChange={(event) => updateOffice(event.target.value)}
+          >
+            <option value="">Not set</option>
+            {OFFICE_OPTIONS.map((office) => (
+              <option key={office} value={office}>
+                {office}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs font-semibold uppercase text-muted-foreground">Division</span>
+          <select
+            aria-label={`${product.name} division`}
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            disabled={disabled || !product.office}
+            value={product.division ?? ""}
+            onChange={(event) => void onUpdateProduct({ division: event.target.value || null })}
+          >
+            <option value="">{product.office ? "Not set" : "Select office first"}</option>
+            {divisionOptions.map((division) => (
+              <option key={division} value={division}>
+                {division}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs font-semibold uppercase text-muted-foreground">Description</span>
+          <TextInput
+            ariaLabel={`${product.name} description`}
+            className="h-9"
+            disabled={disabled}
+            placeholder="No description"
+            value={product.description ?? ""}
+            onCommit={(description) => onUpdateProduct({ description: description || null })}
+          />
+        </label>
+      </div>
+      <div className="mt-3 text-xs text-muted-foreground">Last updated {formatDate(product.updated_at)}</div>
     </div>
   );
 }
@@ -774,17 +783,19 @@ function ProductJiraSpacesEditor({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div className="space-y-2">
-        {spaces.length === 0 ? <div className="text-sm text-muted-foreground">No Jira projects mapped.</div> : null}
+        {spaces.length === 0 ? (
+          <div className="rounded-md bg-secondary/35 px-3 py-2 text-sm text-muted-foreground">No Jira projects mapped.</div>
+        ) : null}
         {spaces.map((space) => {
           const updating = busyIds.has(`update-${product.id}-${space.id}`);
           const validating = busyIds.has(`validate-${product.id}-${space.id}`);
           const removing = busyIds.has(`remove-${product.id}-${space.id}`);
           const busy = updating || validating || removing;
           return (
-            <div key={space.id} className="rounded-md border bg-background p-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            <div key={space.id} className="rounded-md border bg-background px-3 py-2">
+              <div className="flex flex-col justify-between gap-2 lg:flex-row lg:items-start">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-primary">{space.jira_project_key}</span>
@@ -793,7 +804,7 @@ function ProductJiraSpacesEditor({
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">{space.validation_message ?? "Not validated yet"}</div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <select
                     aria-label={`${space.jira_project_key} mapping status`}
                     className="h-8 rounded-md border border-input bg-background px-2 text-sm"
@@ -829,7 +840,7 @@ function ProductJiraSpacesEditor({
         })}
       </div>
 
-      <div className="grid gap-2 lg:grid-cols-[1fr_auto_0.7fr_auto]">
+      <div className="grid gap-2 rounded-md border border-dashed bg-secondary/20 p-2 lg:grid-cols-[minmax(0,1fr)_auto_minmax(12rem,0.65fr)_auto]">
         <select
           aria-label={`${product.name} Jira project catalog`}
           className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
@@ -972,10 +983,10 @@ function BudgetInput({
   const invalid = value !== "" && (!Number.isFinite(Number(value)) || Number(value) < 0);
 
   return (
-    <div className="w-36">
+    <div className="w-full">
       <Input
         aria-label={`${product.name} budget`}
-        className={`numeric-cell h-8 ${invalid ? "border-destructive" : ""}`}
+        className={`numeric-cell h-9 ${invalid ? "border-destructive" : ""}`}
         disabled={disabled}
         inputMode="decimal"
         pattern="[0-9]*"
