@@ -1,12 +1,14 @@
-import { Plus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Plus, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type MouseEventHandler, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   flexRender,
   getCoreRowModel,
+  getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type SortingState,
 } from "@tanstack/react-table";
 
 import { PageNav } from "../components/PageNav";
@@ -53,6 +55,8 @@ export function TeamManagementPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [nameSearch, setNameSearch] = useState("");
+  const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
 
   const loadTeamOverview = useCallback(async () => {
     const [memberRows, reportedValueRows] = await Promise.all([api.teamMembers(), api.reportedValues({}, fiscalYear)]);
@@ -66,11 +70,6 @@ export function TeamManagementPage() {
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load team"))
       .finally(() => setLoading(false));
   }, [loadTeamOverview]);
-
-  const updateBillRate = useCallback(async (member: TeamMember, billRate: number) => {
-    const updated = await api.updateTeamMember(member.id, { bill_rate: billRate });
-    setMembers((current) => current.map((row) => (row.id === member.id ? updated : row)));
-  }, []);
 
   const createTeamMember = useCallback(async () => {
     const payload = teamMemberPayload(newMember);
@@ -95,7 +94,12 @@ export function TeamManagementPage() {
     }
   }, [loadTeamOverview, newMember]);
 
-  const analytics = useMemo(() => buildTeamActualAnalytics(reportedRows, fiscalYear), [reportedRows, fiscalYear]);
+  const analytics = useMemo(() => buildTeamActualAnalytics(reportedRows, members, fiscalYear), [reportedRows, members, fiscalYear]);
+  const normalizedNameSearch = nameSearch.trim().toLowerCase();
+  const filteredMembers = useMemo(() => {
+    if (!normalizedNameSearch) return members;
+    return members.filter((member) => member.name.toLowerCase().split(/\s+/).some((namePart) => namePart.startsWith(normalizedNameSearch)));
+  }, [members, normalizedNameSearch]);
 
   const columns = useMemo<ColumnDef<TeamMember>[]>(
     () => [
@@ -113,7 +117,11 @@ export function TeamManagementPage() {
       {
         accessorKey: "bill_rate",
         header: "Bill Rate",
-        cell: ({ row }) => <BillRateInput member={row.original} onSave={updateBillRate} />,
+        cell: ({ row }) => (
+          <span className="numeric-cell whitespace-nowrap font-medium text-primary" title="Edit bill rate on the Team Member profile">
+            {formatBillRate(row.original.bill_rate, row.original.employment_type, { includeUnit: true })}
+          </span>
+        ),
       },
       { accessorKey: "employment_type", header: "Employment Type" },
       {
@@ -136,10 +144,17 @@ export function TeamManagementPage() {
         cell: ({ row }) => formatDate(row.original.updated_at),
       },
     ],
-    [updateBillRate],
+    [],
   );
 
-  const table = useReactTable({ data: members, columns, getCoreRowModel: getCoreRowModel() });
+  const table = useReactTable({
+    data: filteredMembers,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
 
   if (loading) return <LoadingBlock />;
   if (error) return <ErrorBlock message={error} />;
@@ -161,9 +176,9 @@ export function TeamManagementPage() {
 
       <section className="overflow-x-auto pb-1">
         <div className="grid min-w-[1080px] grid-cols-3 gap-4">
-          <TeamActualPieCard title={`Previous Month (${analytics.previous.label})`} data={analytics.previous.data} total={analytics.previous.total} />
-          <TeamActualPieCard title={`Current Month (${analytics.current.label})`} data={analytics.current.data} total={analytics.current.total} />
-          <TeamActualPieCard title={`${fiscalYearLabel} FYTD`} data={analytics.fytd.data} total={analytics.fytd.total} />
+          <TeamActualPieCard title={`Previous Month by Team (${analytics.previous.label})`} data={analytics.previous.data} total={analytics.previous.total} />
+          <TeamActualPieCard title={`Current Month by Team (${analytics.current.label})`} data={analytics.current.data} total={analytics.current.total} />
+          <TeamActualPieCard title={`${fiscalYearLabel} FYTD by Team`} data={analytics.fytd.data} total={analytics.fytd.total} />
         </div>
       </section>
 
@@ -176,6 +191,25 @@ export function TeamManagementPage() {
         onSubmit={() => void createTeamMember()}
       />
 
+      <section className="flex flex-col justify-between gap-3 rounded-lg border bg-card p-4 md:flex-row md:items-center">
+        <div>
+          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Roster</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Showing {filteredMembers.length} of {members.length} Team Members.
+          </p>
+        </div>
+        <label className="relative block w-full md:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="Search team members by name"
+            className="pl-9"
+            placeholder="Search name prefix"
+            value={nameSearch}
+            onChange={(event) => setNameSearch(event.target.value)}
+          />
+        </label>
+      </section>
+
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="overflow-x-auto">
           <Table>
@@ -184,20 +218,36 @@ export function TeamManagementPage() {
                 <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
                     <TableHead key={header.id}>
-                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.isPlaceholder ? null : (
+                        <HeaderSortButton
+                          canSort={header.column.getCanSort()}
+                          direction={header.column.getIsSorted()}
+                          onClick={(event) => header.column.getToggleSortingHandler()?.(event)}
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                        </HeaderSortButton>
+                      )}
                     </TableHead>
                   ))}
                 </TableRow>
               ))}
             </TableHeader>
             <TableBody>
-              {table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
-                  ))}
+              {table.getRowModel().rows.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell className="py-5 text-muted-foreground" colSpan={columns.length}>
+                    No Team Members match that name prefix.
+                  </TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </div>
@@ -335,6 +385,37 @@ function TeamMemberField({ children, label }: { children: ReactNode; label: stri
   );
 }
 
+function HeaderSortButton({
+  canSort,
+  children,
+  direction,
+  onClick,
+}: {
+  canSort: boolean;
+  children: ReactNode;
+  direction: false | "asc" | "desc";
+  onClick: MouseEventHandler<HTMLButtonElement>;
+}) {
+  if (!canSort) {
+    return <span className="text-xs font-semibold uppercase text-muted-foreground">{children}</span>;
+  }
+
+  const Icon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ChevronsUpDown;
+  const label = direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "sortable";
+
+  return (
+    <button
+      aria-label={`Sort by ${String(children)} (${label})`}
+      className="flex w-full items-center gap-1 text-left text-xs font-semibold uppercase text-muted-foreground hover:text-primary"
+      onClick={onClick}
+      type="button"
+    >
+      <span className="min-w-0 truncate">{children}</span>
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+    </button>
+  );
+}
+
 function TeamActualPieCard({ title, data, total }: { title: string; data: TeamActualSlice[]; total: number }) {
   const hasData = data.some((row) => row.hours > 0);
   return (
@@ -344,7 +425,7 @@ function TeamActualPieCard({ title, data, total }: { title: string; data: TeamAc
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">{title}</h2>
           <div className="numeric-cell mt-1 text-2xl font-semibold text-primary">{formatHours(total)}</div>
         </div>
-        <div className="text-right text-xs text-muted-foreground">{hasData ? `${data.length} logging` : "No logged hours"}</div>
+        <div className="text-right text-xs text-muted-foreground">{hasData ? `${data.length} teams logging` : "No logged hours"}</div>
       </div>
       <div className="relative mx-auto mt-1 aspect-square w-full max-w-96">
         <ResponsiveContainer width="100%" height="100%">
@@ -352,14 +433,14 @@ function TeamActualPieCard({ title, data, total }: { title: string; data: TeamAc
             <Pie
               cx="50%"
               cy="50%"
-              data={hasData ? data : [{ teamMember: "No logged hours", hours: 1 }]}
+              data={hasData ? data : [{ team: "No logged hours", hours: 1 }]}
               dataKey="hours"
-              nameKey="teamMember"
+              nameKey="team"
               outerRadius="94%"
               paddingAngle={hasData ? 0.75 : 0}
             >
-              {(hasData ? data : [{ teamMember: "No logged hours", hours: 1 }]).map((entry, index) => (
-                <Cell key={entry.teamMember} fill={hasData ? PIE_COLORS[index % PIE_COLORS.length] : "hsl(var(--muted))"} />
+              {(hasData ? data : [{ team: "No logged hours", hours: 1 }]).map((entry, index) => (
+                <Cell key={entry.team} fill={hasData ? PIE_COLORS[index % PIE_COLORS.length] : "hsl(var(--muted))"} />
               ))}
             </Pie>
             {hasData ? <Tooltip formatter={(value: number, name: string) => [`${formatHours(value)} hrs`, name]} /> : null}
@@ -396,45 +477,6 @@ function TeamMonthlyActualBarCard({ data, total, fiscalYearLabel }: { data: Team
           </BarChart>
         </ResponsiveContainer>
       </div>
-    </div>
-  );
-}
-
-function BillRateInput({ member, onSave }: { member: TeamMember; onSave: (member: TeamMember, billRate: number) => Promise<void> }) {
-  const [value, setValue] = useState(member.bill_rate > 0 ? String(member.bill_rate) : "");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => setValue(member.bill_rate > 0 ? String(member.bill_rate) : ""), [member.bill_rate]);
-
-  async function commit() {
-    const nextValue = value.trim() === "" ? 0 : Number(value);
-    if (!Number.isFinite(nextValue) || nextValue < 0 || nextValue === member.bill_rate) return;
-    setSaving(true);
-    try {
-      await onSave(member, nextValue);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="w-28">
-      <Input
-        aria-label={`${member.name} bill rate`}
-        className="numeric-cell h-8"
-        disabled={saving}
-        inputMode="decimal"
-        pattern="[0-9]*"
-        placeholder="Not set"
-        type="text"
-        value={value}
-        onBlur={commit}
-        onChange={(event) => setValue(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-        }}
-      />
-      <div className="numeric-cell mt-1 text-xs text-muted-foreground">{formatBillRate(member.bill_rate, member.employment_type)}</div>
     </div>
   );
 }
@@ -495,7 +537,7 @@ function formatDate(value: string) {
 }
 
 type TeamActualSlice = {
-  teamMember: string;
+  team: string;
   hours: number;
 };
 
@@ -510,7 +552,8 @@ type TeamActualMonth = {
   hours: number;
 };
 
-function buildTeamActualAnalytics(rows: ReportedValueRow[], fiscalYear: number) {
+function buildTeamActualAnalytics(rows: ReportedValueRow[], members: TeamMember[], fiscalYear: number) {
+  const teamByMemberId = new Map(members.map((member) => [member.id, member.team || "Unassigned"]));
   const today = new Date();
   const current = { year: today.getFullYear(), month: today.getMonth() + 1 };
   const previousDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
@@ -527,24 +570,27 @@ function buildTeamActualAnalytics(rows: ReportedValueRow[], fiscalYear: number) 
     current: aggregateActualPeriod(
       rows.filter((row) => row.calendar_year === current.year && row.calendar_month === current.month),
       monthLabel(current.month),
+      teamByMemberId,
     ),
     previous: aggregateActualPeriod(
       rows.filter((row) => row.calendar_year === previous.year && row.calendar_month === previous.month),
       monthLabel(previous.month),
+      teamByMemberId,
     ),
-    fytd: aggregateActualPeriod(fytdRows, "FYTD"),
+    fytd: aggregateActualPeriod(fytdRows, "FYTD", teamByMemberId),
     monthly: aggregateActualMonths(rows),
   };
 }
 
-function aggregateActualPeriod(rows: ReportedValueRow[], label: string): TeamActualPeriod {
-  const hoursByMember = new Map<string, number>();
+function aggregateActualPeriod(rows: ReportedValueRow[], label: string, teamByMemberId: Map<number, string>): TeamActualPeriod {
+  const hoursByTeam = new Map<string, number>();
   for (const row of rows) {
-    hoursByMember.set(row.team_member, (hoursByMember.get(row.team_member) ?? 0) + row.actual_hours);
+    const team = teamByMemberId.get(row.team_member_id) ?? "Unassigned";
+    hoursByTeam.set(team, (hoursByTeam.get(team) ?? 0) + row.actual_hours);
   }
-  const data = Array.from(hoursByMember, ([teamMember, hours]) => ({ teamMember, hours: roundHours(hours) }))
+  const data = Array.from(hoursByTeam, ([team, hours]) => ({ team, hours: roundHours(hours) }))
     .filter((row) => row.hours > 0)
-    .sort((left, right) => right.hours - left.hours || left.teamMember.localeCompare(right.teamMember));
+    .sort((left, right) => right.hours - left.hours || left.team.localeCompare(right.team));
   return {
     label,
     data,

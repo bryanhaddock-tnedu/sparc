@@ -260,7 +260,7 @@ Rules:
 
 ## Team Management Page Requirements
 
-Team Management should be an editable table.
+Team Management should be a searchable, sortable roster table.
 
 Columns:
 
@@ -275,10 +275,12 @@ Columns:
 
 Rules:
 
-- Inline editing preferred.
 - Name links to Team Member Detail page.
 - Active status defaults to active.
-- Bill rates can be updated after import.
+- The roster table can be sorted by clicking column headers.
+- Name search should match typed prefixes for first or last names.
+- Bill Rate is read-only on the Team Management table.
+- Bill rates can be updated from the Team Member Detail profile after import.
 - Rate changes affect future forecasting calculations.
 - Created date and updated date are maintained by the backend.
 
