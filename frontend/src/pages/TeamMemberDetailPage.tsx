@@ -19,6 +19,8 @@ import { formatCurrency, formatHours } from "../lib/utils";
 import type { BucketTable, FiscalMonth, Product, ReportedValueRow, TeamMember, TeamMemberActualWorklog, TeamMemberProducts } from "../types/api";
 
 const CHART_COLORS = ["var(--spark-cyan)", "var(--spark-orange)", "var(--spark-navy)", "var(--spark-red)", "#8fb3d9", "#d6d94f", "#7a86a8"];
+const COST_VARIANCE_HELP =
+  "Actual cost minus forecast cost. Negative means actuals are under forecast; positive means actuals exceeded forecast.";
 
 type ProfileFormState = {
   name: string;
@@ -709,6 +711,7 @@ function MemberForecastTable({
         <div>
           <h2 className="text-lg font-semibold">Forecast by Product and Bucket</h2>
           <p className="mt-1 text-sm text-muted-foreground">Manage this team member&apos;s forecasted hours across each fiscal month.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Cost variance = actual - forecast.</p>
         </div>
         <div className="flex flex-col gap-2 xl:items-end">
           <div className="flex flex-wrap gap-2">
@@ -758,7 +761,7 @@ function MemberForecastTable({
             <table className="w-full table-fixed border-collapse text-xs">
               <colgroup>
                 <col className="w-44" />
-                <col className="w-20" />
+                <col className="w-24" />
                 {lines[0].months.map((month) => (
                   <col key={month.fiscal_month_id} className="w-16" />
                 ))}
@@ -821,16 +824,16 @@ function MemberForecastTable({
                       <TeamMemberValueCell value={formatCurrency(line.totals.forecast_cost)} strong />
                     </tr>
                     <tr className="border-b">
-                      <TeamMemberMetricLabel label="Var $" />
+                      <TeamMemberMetricLabel label="Actual-Fcst $" title={COST_VARIANCE_HELP} />
                       {line.months.map((cell) => (
                         <TeamMemberValueCell
                           key={cell.fiscal_month_id}
-                          className={cell.variance_cost > 0 ? "text-destructive" : "text-primary"}
+                          className={varianceCostClassName(cell.variance_cost)}
                           value={formatCurrency(cell.variance_cost)}
                         />
                       ))}
                       <TeamMemberValueCell
-                        className={line.totals.variance_cost > 0 ? "text-destructive" : "text-primary"}
+                        className={varianceCostClassName(line.totals.variance_cost)}
                         strong
                         value={formatCurrency(line.totals.variance_cost)}
                       />
@@ -862,18 +865,18 @@ function MemberForecastTable({
                   <TeamMemberValueCell value={formatCurrency(lines.reduce((sum, line) => sum + line.totals.forecast_cost, 0))} total strong />
                 </tr>
                 <tr className="bg-secondary/50 font-semibold">
-                  <TeamMemberMetricLabel label="Var $" total />
+                  <TeamMemberMetricLabel label="Actual-Fcst $" title={COST_VARIANCE_HELP} total />
                   {monthlyTotals.map((totals) => (
                     <TeamMemberValueCell
                       key={totals.fiscalMonthId}
-                      className={totals.variance > 0 ? "text-destructive" : "text-primary"}
+                      className={varianceCostClassName(totals.variance)}
                       value={formatCurrency(totals.variance)}
                       total
                       strong
                     />
                   ))}
                   <TeamMemberValueCell
-                    className={lines.reduce((sum, line) => sum + line.totals.variance_cost, 0) > 0 ? "text-destructive" : "text-primary"}
+                    className={varianceCostClassName(lines.reduce((sum, line) => sum + line.totals.variance_cost, 0))}
                     value={formatCurrency(lines.reduce((sum, line) => sum + line.totals.variance_cost, 0))}
                     total
                     strong
@@ -933,16 +936,28 @@ function MemberForecastInput({
   );
 }
 
-function TeamMemberMetricLabel({ label, muted, total }: { label: string; muted?: boolean; total?: boolean }) {
+function TeamMemberMetricLabel({ label, muted, title, total }: { label: string; muted?: boolean; title?: string; total?: boolean }) {
   return (
     <td
+      aria-label={title ? `${label}: ${title}` : label}
       className={`sticky left-44 z-10 px-2 py-1.5 text-[11px] font-semibold uppercase ${
         total ? "bg-secondary" : "bg-card"
       } ${muted ? "text-muted-foreground" : "text-foreground"}`}
+      title={title}
     >
       {label}
     </td>
   );
+}
+
+function varianceCostClassName(value: number) {
+  if (value > 0) {
+    return "text-destructive";
+  }
+  if (value < 0) {
+    return "text-primary";
+  }
+  return "text-muted-foreground";
 }
 
 function TeamMemberValueCell({

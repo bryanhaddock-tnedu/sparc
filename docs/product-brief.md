@@ -190,7 +190,7 @@ Rules:
 - Forecast Hours cells are editable.
 - Actual Hours cells are read-only.
 - Cost cells are read-only calculated values.
-- Variance cells are read-only calculated values.
+- Cost variance cells are read-only calculated values using Actual cost minus Forecast cost. Negative values mean actuals are under forecast; positive values mean actuals exceeded forecast.
 
 ## Product Settings Page Requirements
 

@@ -26,6 +26,8 @@ import type {
 } from "../types/api";
 
 const PIE_COLORS = ["#2CCCD3", "#D2D755", "#E87722", "#5E7975"];
+const COST_VARIANCE_HELP =
+  "Actual cost minus forecast cost. Negative means actuals are under forecast; positive means actuals exceeded forecast.";
 
 interface ProductRoleCostRow {
   role: string;
@@ -714,8 +716,11 @@ function BucketSection({
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">{bucket.name}</h2>
-        <div className="numeric-cell text-sm text-muted-foreground">
-          {formatHours(bucket.totals.forecast_hours)} forecast / {formatHours(bucket.totals.actual_hours)} actual
+        <div className="text-right">
+          <div className="numeric-cell text-sm text-muted-foreground">
+            {formatHours(bucket.totals.forecast_hours)} forecast / {formatHours(bucket.totals.actual_hours)} actual
+          </div>
+          <div className="text-xs text-muted-foreground">Cost variance = actual - forecast</div>
         </div>
       </div>
       <div className="overflow-hidden rounded-lg border bg-card">
@@ -723,7 +728,7 @@ function BucketSection({
           <table className="w-full table-fixed border-collapse text-xs">
             <colgroup>
               <col className="w-32" />
-              <col className="w-20" />
+              <col className="w-24" />
               {bucket.rows[0]?.months.map((month) => <col key={month.fiscal_month_id} className="w-16" />)}
               <col className="w-24" />
             </colgroup>
@@ -785,17 +790,17 @@ function BucketSection({
                     <ValueCell value={formatCurrency(row.totals.forecast_cost)} strong />
                   </tr>
                   <tr className="border-b">
-                    <MetricLabel label="Var $" />
+                    <MetricLabel label="Actual-Fcst $" title={COST_VARIANCE_HELP} />
                     {row.months.map((cell) => (
                       <ValueCell
                         key={cell.fiscal_month_id}
                         value={formatCurrency(cell.variance_cost)}
-                        className={cell.variance_cost > 0 ? "text-destructive" : "text-primary"}
+                        className={varianceCostClassName(cell.variance_cost)}
                       />
                     ))}
                     <ValueCell
                       value={formatCurrency(row.totals.variance_cost)}
-                      className={row.totals.variance_cost > 0 ? "text-destructive" : "text-primary"}
+                      className={varianceCostClassName(row.totals.variance_cost)}
                       strong
                     />
                   </tr>
@@ -826,19 +831,19 @@ function BucketSection({
                 <ValueCell value={formatCurrency(bucket.totals.forecast_cost)} total strong />
               </tr>
               <tr className="bg-secondary/50 font-semibold">
-                <MetricLabel label="Var $" total />
+                <MetricLabel label="Actual-Fcst $" title={COST_VARIANCE_HELP} total />
                 {monthlyTotals.map((totals) => (
                   <ValueCell
                     key={totals.fiscalMonthId}
                     value={formatCurrency(totals.variance)}
-                    className={totals.variance > 0 ? "text-destructive" : "text-primary"}
+                    className={varianceCostClassName(totals.variance)}
                     total
                     strong
                   />
                 ))}
                 <ValueCell
                   value={formatCurrency(bucket.totals.variance_cost)}
-                  className={bucket.totals.variance_cost > 0 ? "text-destructive" : "text-primary"}
+                  className={varianceCostClassName(bucket.totals.variance_cost)}
                   total
                   strong
                 />
@@ -894,16 +899,28 @@ function ForecastInput({
   );
 }
 
-function MetricLabel({ label, muted, total }: { label: string; muted?: boolean; total?: boolean }) {
+function MetricLabel({ label, muted, title, total }: { label: string; muted?: boolean; title?: string; total?: boolean }) {
   return (
     <td
+      aria-label={title ? `${label}: ${title}` : label}
       className={`sticky left-32 z-10 px-2 py-1.5 text-[11px] font-semibold uppercase ${
         total ? "bg-secondary" : "bg-card"
       } ${muted ? "text-muted-foreground" : "text-foreground"}`}
+      title={title}
     >
       {label}
     </td>
   );
+}
+
+function varianceCostClassName(value: number) {
+  if (value > 0) {
+    return "text-destructive";
+  }
+  if (value < 0) {
+    return "text-primary";
+  }
+  return "text-muted-foreground";
 }
 
 function ValueCell({
