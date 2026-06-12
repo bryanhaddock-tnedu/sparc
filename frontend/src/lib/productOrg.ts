@@ -1,4 +1,4 @@
-export const OFFICE_OPTIONS = ["Academics", "Operations", "Programs"] as const;
+export const OFFICE_OPTIONS = ["Academics", "Operations", "Programs", "Deputy Commissioner", "Commissioners Office", "General Counsel"] as const;
 
 export type ProductOffice = (typeof OFFICE_OPTIONS)[number];
 
@@ -19,6 +19,9 @@ export const DIVISION_OPTIONS_BY_OFFICE: Record<ProductOffice, string[]> = {
     "School Turnaround",
     "State Special Schools",
   ],
+  "Deputy Commissioner": ["Operational Data Strategy", "Performance Management"],
+  "Commissioners Office": ["Communications", "Policy & Legislative Affairs"],
+  "General Counsel": [],
 };
 
 export function isProductOffice(value: string | null | undefined): value is ProductOffice {

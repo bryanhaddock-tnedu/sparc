@@ -78,7 +78,7 @@ Use a monorepo:
 - Budget tracker compares Budgeted, Forecast, and Actuals using a compact horizontal bar.
 - Team Member ID is optional and system-generated if not provided.
 - Team Members default to active.
-- Products may be tagged with Office and Division for organizational reporting. Office options are Academics, Operations, and Programs; Division options are constrained by the selected Office.
+- Products may be tagged with Office and Division for organizational reporting. Office options are Academics, Operations, Programs, Deputy Commissioner, Commissioners Office, and General Counsel; Division options are constrained by the selected Office.
 - Created date and last updated date are required.
 
 ## Product Buckets

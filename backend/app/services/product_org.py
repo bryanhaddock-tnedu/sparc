@@ -1,4 +1,11 @@
-PRODUCT_OFFICES = ("Academics", "Operations", "Programs")
+PRODUCT_OFFICES = (
+    "Academics",
+    "Operations",
+    "Programs",
+    "Deputy Commissioner",
+    "Commissioners Office",
+    "General Counsel",
+)
 
 PRODUCT_DIVISIONS_BY_OFFICE: dict[str, tuple[str, ...]] = {
     "Academics": (
@@ -21,6 +28,15 @@ PRODUCT_DIVISIONS_BY_OFFICE: dict[str, tuple[str, ...]] = {
         "School Turnaround",
         "State Special Schools",
     ),
+    "Deputy Commissioner": (
+        "Operational Data Strategy",
+        "Performance Management",
+    ),
+    "Commissioners Office": (
+        "Communications",
+        "Policy & Legislative Affairs",
+    ),
+    "General Counsel": (),
 }
 
 PRODUCT_DIVISIONS = frozenset(

@@ -72,6 +72,7 @@ export function ProductSettingsPage() {
       .filter((project) => !mappedJiraKeys.has(project.jira_project_key))
       .sort((left, right) => Number(right.is_visible) - Number(left.is_visible) || left.jira_project_key.localeCompare(right.jira_project_key));
   }, [jiraCatalog, mappedJiraKeys]);
+  const newProductDivisionOptions = divisionOptionsForOffice(newProduct.office);
 
   async function createProduct() {
     const name = newProduct.name.trim();
@@ -348,12 +349,14 @@ export function ProductSettingsPage() {
           <select
             aria-label="New product division"
             className="h-10 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
-            disabled={creating || !newProduct.office}
+            disabled={creating || !newProduct.office || newProductDivisionOptions.length === 0}
             value={newProduct.division}
             onChange={(event) => setNewProduct((current) => ({ ...current, division: event.target.value }))}
           >
-            <option value="">{newProduct.office ? "Division" : "Select office first"}</option>
-            {divisionOptionsForOffice(newProduct.office).map((division) => (
+            <option value="">
+              {!newProduct.office ? "Select office first" : newProductDivisionOptions.length ? "Division" : "No divisions listed"}
+            </option>
+            {newProductDivisionOptions.map((division) => (
               <option key={division} value={division}>
                 {division}
               </option>
@@ -701,11 +704,13 @@ function ProductMetadataFields({
           <select
             aria-label={`${product.name} division`}
             className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-            disabled={disabled || !product.office}
+            disabled={disabled || !product.office || divisionOptions.length === 0}
             value={product.division ?? ""}
             onChange={(event) => void onUpdateProduct({ division: event.target.value || null })}
           >
-            <option value="">{product.office ? "Not set" : "Select office first"}</option>
+            <option value="">
+              {!product.office ? "Select office first" : divisionOptions.length ? "Not set" : "No divisions listed"}
+            </option>
             {divisionOptions.map((division) => (
               <option key={division} value={division}>
                 {division}
