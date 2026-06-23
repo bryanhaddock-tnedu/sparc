@@ -8,6 +8,7 @@ import {
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type Row,
   type SortingState,
 } from "@tanstack/react-table";
 
@@ -43,6 +44,12 @@ type NewTeamMemberForm = {
   employmentType: string;
   contractingCompany: string;
   status: string;
+};
+
+type TeamMemberRowGroup = {
+  team: string;
+  rows: Row<TeamMember>[];
+  activeCount: number;
 };
 
 export function TeamManagementPage() {
@@ -113,7 +120,6 @@ export function TeamManagementPage() {
         ),
       },
       { accessorKey: "role", header: "Role" },
-      { accessorKey: "team", header: "Team" },
       {
         accessorKey: "bill_rate",
         header: "Bill Rate",
@@ -155,6 +161,7 @@ export function TeamManagementPage() {
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
+  const groupedMemberRows = groupTeamMemberRows(table.getRowModel().rows);
 
   if (loading) return <LoadingBlock />;
   if (error) return <ErrorBlock message={error} />;
@@ -195,7 +202,7 @@ export function TeamManagementPage() {
         <div>
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">Roster</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Showing {filteredMembers.length} of {members.length} Team Members.
+            Showing {filteredMembers.length} of {members.length} Team Members across {teamGroupCountLabel(groupedMemberRows.length)}.
           </p>
         </div>
         <label className="relative block w-full md:max-w-sm">
@@ -210,48 +217,60 @@ export function TeamManagementPage() {
         </label>
       </section>
 
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder ? null : (
-                        <HeaderSortButton
-                          canSort={header.column.getCanSort()}
-                          direction={header.column.getIsSorted()}
-                          onClick={(event) => header.column.getToggleSortingHandler()?.(event)}
-                        >
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                        </HeaderSortButton>
-                      )}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {table.getRowModel().rows.length ? (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+      {groupedMemberRows.length ? (
+        <div className="space-y-3">
+          {groupedMemberRows.map((group) => (
+            <section key={group.team} className="overflow-hidden rounded-lg border bg-card">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-secondary/50 px-3 py-2">
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-semibold text-foreground">{group.team}</h3>
+                  <p className="text-xs text-muted-foreground">{teamMemberCountLabel(group.rows.length)}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge className="border-primary/40 text-primary">{group.activeCount} active</Badge>
+                  {group.rows.length - group.activeCount > 0 ? (
+                    <Badge className="border-muted text-muted-foreground">{group.rows.length - group.activeCount} inactive</Badge>
+                  ) : null}
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    {table.getHeaderGroups().map((headerGroup) => (
+                      <TableRow key={headerGroup.id}>
+                        {headerGroup.headers.map((header) => (
+                          <TableHead key={header.id}>
+                            {header.isPlaceholder ? null : (
+                              <HeaderSortButton
+                                canSort={header.column.getCanSort()}
+                                direction={header.column.getIsSorted()}
+                                onClick={(event) => header.column.getToggleSortingHandler()?.(event)}
+                              >
+                                {flexRender(header.column.columnDef.header, header.getContext())}
+                              </HeaderSortButton>
+                            )}
+                          </TableHead>
+                        ))}
+                      </TableRow>
                     ))}
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell className="py-5 text-muted-foreground" colSpan={columns.length}>
-                    No Team Members match that name prefix.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {group.rows.map((row) => (
+                      <TableRow key={row.id}>
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </section>
+          ))}
         </div>
-      </div>
+      ) : (
+        <div className="rounded-lg border bg-card p-5 text-sm text-muted-foreground">No Team Members match that name prefix.</div>
+      )}
     </div>
   );
 }
@@ -383,6 +402,40 @@ function TeamMemberField({ children, label }: { children: ReactNode; label: stri
       {children}
     </label>
   );
+}
+
+function groupTeamMemberRows(rows: Row<TeamMember>[]): TeamMemberRowGroup[] {
+  const groups = new Map<string, Row<TeamMember>[]>();
+  rows.forEach((row) => {
+    const team = cleanText(row.original.team) || "Unassigned";
+    groups.set(team, [...(groups.get(team) ?? []), row]);
+  });
+
+  return [...groups.entries()]
+    .map(([team, groupRows]) => ({
+      team,
+      rows: groupRows,
+      activeCount: groupRows.filter((row) => row.original.status === "active").length,
+    }))
+    .sort((left, right) => compareTeamNames(left.team, right.team));
+}
+
+function compareTeamNames(left: string, right: string) {
+  if (left === "Unassigned" && right !== "Unassigned") {
+    return 1;
+  }
+  if (right === "Unassigned" && left !== "Unassigned") {
+    return -1;
+  }
+  return left.localeCompare(right, undefined, { sensitivity: "base" });
+}
+
+function teamMemberCountLabel(count: number) {
+  return `${count} Team ${count === 1 ? "Member" : "Members"}`;
+}
+
+function teamGroupCountLabel(count: number) {
+  return `${count} ${count === 1 ? "team" : "teams"}`;
 }
 
 function HeaderSortButton({

@@ -260,13 +260,12 @@ Rules:
 
 ## Team Management Page Requirements
 
-Team Management should be a searchable, sortable roster table.
+Team Management should be a searchable, sortable roster grouped by Team. Each Team group should render its own roster table.
 
 Columns:
 
 - Name
 - Role
-- Team
 - Bill Rate
 - Employment Type
 - Contracting Company
@@ -277,7 +276,8 @@ Rules:
 
 - Name links to Team Member Detail page.
 - Active status defaults to active.
-- The roster table can be sorted by clicking column headers.
+- Team appears as the group heading instead of a repeated table column.
+- Roster tables can be sorted by clicking column headers.
 - Name search should match typed prefixes for first or last names.
 - Bill Rate is read-only on the Team Management table.
 - Bill rates can be updated from the Team Member Detail profile after import.
