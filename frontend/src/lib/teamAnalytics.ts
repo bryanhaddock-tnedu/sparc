@@ -1,4 +1,4 @@
-import type { ReportedValueRow, TeamMember, TeamMemberStoryPointMetric } from "../types/api";
+import type { DeliveryFlowIssue, ReportedValueRow, TeamMember, TeamMemberStoryPointMetric } from "../types/api";
 
 export const UNASSIGNED_TEAM = "Unassigned";
 export const FISCAL_MONTH_LABELS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
@@ -38,6 +38,15 @@ export const TEAM_RANKING_DIMENSIONS: Array<{ key: TeamRankingDimension; label: 
   { key: "hours_per_story_point", label: "Hours / Story Point" },
   { key: "story_points_per_logged_hour", label: "Story Points / Logged Hour" },
 ];
+
+export const DELIVERY_FLOW_STAGE_ORDER = ["in_engineering", "engineering_work_done", "business_acceptance", "done", "blocked"];
+export const DELIVERY_FLOW_STAGE_LABELS: Record<string, string> = {
+  in_engineering: "In Engineering",
+  engineering_work_done: "Engineering Work Done",
+  business_acceptance: "Business Acceptance",
+  done: "Business Accepted / Done",
+  blocked: "Blocked / Paused",
+};
 
 export type TeamActualSlice = {
   team: string;
@@ -126,6 +135,26 @@ export type TeamAnalytics = {
   workTypes: TeamAnalyticsBreakdownRow[];
   roles: TeamAnalyticsBreakdownRow[];
   memberContributions: TeamMemberContribution[];
+};
+
+export type TeamDeliveryFlowStageSummary = {
+  stage: string;
+  label: string;
+  issueCount: number;
+  storyPoints: number;
+  loggedHours: number;
+  oldestUpdatedDaysAgo: number | null;
+};
+
+export type TeamDeliveryFlowStatusSummary = TeamDeliveryFlowStageSummary & {
+  status: string;
+};
+
+export type TeamDeliveryFlowAnalytics = {
+  issues: DeliveryFlowIssue[];
+  stages: TeamDeliveryFlowStageSummary[];
+  statuses: TeamDeliveryFlowStatusSummary[];
+  acceptanceQueue: TeamDeliveryFlowStageSummary;
 };
 
 type PeriodRows = Record<TeamRankingPeriod, { label: string; rows: ReportedValueRow[] }>;
@@ -250,6 +279,26 @@ export function buildSingleTeamAnalytics(teamName: string, members: TeamMember[]
     roles: roleRows,
     memberContributions: aggregateTeamMemberContributions(teamMembers, teamRows, fytdRows),
   };
+}
+
+export function buildTeamDeliveryFlowAnalytics(teamName: string, issues: DeliveryFlowIssue[]): TeamDeliveryFlowAnalytics {
+  const team = teamDisplayName(teamName).toLowerCase();
+  const scopedIssues = issues.filter((issue) => teamDisplayName(issue.team).toLowerCase() === team);
+  const stages = finalizeDeliveryFlowSummaries(
+    groupDeliveryFlow(scopedIssues, (issue) => issue.delivery_stage, (issue) => issue.delivery_stage_label),
+  );
+  const statuses = finalizeDeliveryFlowSummaries(
+    groupDeliveryFlow(scopedIssues, (issue) => `${issue.delivery_stage}:${issue.issue_status || "No status"}`, (issue) => issue.issue_status || "No status"),
+  )
+    .map((summary) => {
+      const stage = summary.stage.split(":")[0];
+      const stageLabel = scopedIssues.find((issue) => issue.delivery_stage === stage)?.delivery_stage_label ?? DELIVERY_FLOW_STAGE_LABELS[stage] ?? stage;
+      return { ...summary, stage, label: stageLabel, status: summary.label };
+    })
+    .sort((left, right) => compareDeliveryStages(left.stage, right.stage) || right.issueCount - left.issueCount || left.status.localeCompare(right.status));
+  const acceptanceQueueIssues = scopedIssues.filter((issue) => issue.delivery_stage === "engineering_work_done" || issue.delivery_stage === "business_acceptance");
+  const acceptanceQueue = aggregateDeliveryFlowIssues("acceptance_queue", "Acceptance Queue", acceptanceQueueIssues);
+  return { issues: scopedIssues, stages, statuses, acceptanceQueue };
 }
 
 function buildActualPeriodRows(rows: ReportedValueRow[], fiscalYear: number): PeriodRows {
@@ -414,6 +463,68 @@ function aggregateTeamMemberContributions(
       };
     })
     .sort((left, right) => right.hours - left.hours || left.name.localeCompare(right.name));
+}
+
+function groupDeliveryFlow(
+  issues: DeliveryFlowIssue[],
+  keyForIssue: (issue: DeliveryFlowIssue) => string,
+  labelForIssue: (issue: DeliveryFlowIssue) => string,
+) {
+  const summaries = new Map<string, TeamDeliveryFlowStageSummary>();
+  for (const issue of issues) {
+    const key = keyForIssue(issue);
+    const existing = summaries.get(key) ?? {
+      stage: key,
+      label: labelForIssue(issue),
+      issueCount: 0,
+      storyPoints: 0,
+      loggedHours: 0,
+      oldestUpdatedDaysAgo: null,
+    };
+    existing.issueCount += 1;
+    existing.storyPoints += issue.story_points ?? 0;
+    existing.loggedHours += issue.issue_logged_hours;
+    existing.oldestUpdatedDaysAgo = maxNullable(existing.oldestUpdatedDaysAgo, issue.updated_days_ago);
+    summaries.set(key, existing);
+  }
+  return [...summaries.values()];
+}
+
+function aggregateDeliveryFlowIssues(stage: string, label: string, issues: DeliveryFlowIssue[]): TeamDeliveryFlowStageSummary {
+  return {
+    stage,
+    label,
+    issueCount: issues.length,
+    storyPoints: roundHours(issues.reduce((sum, issue) => sum + (issue.story_points ?? 0), 0)),
+    loggedHours: roundHours(issues.reduce((sum, issue) => sum + issue.issue_logged_hours, 0)),
+    oldestUpdatedDaysAgo: issues.reduce<number | null>((oldest, issue) => maxNullable(oldest, issue.updated_days_ago), null),
+  };
+}
+
+function finalizeDeliveryFlowSummaries<T extends TeamDeliveryFlowStageSummary>(summaries: T[]): T[] {
+  return summaries
+    .map((summary) => ({
+      ...summary,
+      storyPoints: roundHours(summary.storyPoints),
+      loggedHours: roundHours(summary.loggedHours),
+    }))
+    .sort((left, right) => {
+      return compareDeliveryStages(left.stage, right.stage) || right.issueCount - left.issueCount || left.label.localeCompare(right.label);
+    });
+}
+
+function compareDeliveryStages(left: string, right: string) {
+  const leftIndex = DELIVERY_FLOW_STAGE_ORDER.indexOf(left);
+  const rightIndex = DELIVERY_FLOW_STAGE_ORDER.indexOf(right);
+  const normalizedLeft = leftIndex === -1 ? DELIVERY_FLOW_STAGE_ORDER.length : leftIndex;
+  const normalizedRight = rightIndex === -1 ? DELIVERY_FLOW_STAGE_ORDER.length : rightIndex;
+  return normalizedLeft - normalizedRight;
+}
+
+function maxNullable(left: number | null, right: number | null) {
+  if (left == null) return right;
+  if (right == null) return left;
+  return Math.max(left, right);
 }
 
 function finalizeBreakdownRows(rows: TeamAnalyticsBreakdownRow[]) {

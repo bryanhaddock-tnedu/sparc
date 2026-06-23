@@ -13,15 +13,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
 import {
+  DELIVERY_FLOW_STAGE_LABELS,
+  DELIVERY_FLOW_STAGE_ORDER,
+  buildTeamDeliveryFlowAnalytics,
   buildSingleTeamAnalytics,
   buildTeamMemberRankingRows,
   teamDisplayName,
   type TeamAnalytics,
   type TeamAnalyticsBreakdownRow,
+  type TeamDeliveryFlowAnalytics,
+  type TeamDeliveryFlowStageSummary,
   type TeamRankingDimension,
 } from "../lib/teamAnalytics";
 import { formatHours } from "../lib/utils";
-import type { ReportedValueRow, TeamMember, TeamMemberStoryPointMetric } from "../types/api";
+import type { DeliveryFlowIssue, ReportedValueRow, TeamMember, TeamMemberStoryPointMetric } from "../types/api";
 
 export function TeamAnalyticsPage() {
   const params = useParams();
@@ -30,17 +35,19 @@ export function TeamAnalyticsPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [storyMetrics, setStoryMetrics] = useState<TeamMemberStoryPointMetric[]>([]);
+  const [deliveryIssues, setDeliveryIssues] = useState<DeliveryFlowIssue[]>([]);
   const [rankingDimension, setRankingDimension] = useState<TeamRankingDimension>("fytd_actual");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([api.teamMembers(), api.reportedValues({}, fiscalYear), api.teamMemberStoryPointMetrics(fiscalYear)])
-      .then(([memberRows, reportedValueRows, storyPointRows]) => {
+    Promise.all([api.teamMembers(), api.reportedValues({}, fiscalYear), api.teamMemberStoryPointMetrics(fiscalYear), api.deliveryFlowIssues(fiscalYear)])
+      .then(([memberRows, reportedValueRows, storyPointRows, deliveryFlowRows]) => {
         setMembers(memberRows);
         setReportedRows(reportedValueRows);
         setStoryMetrics(storyPointRows);
+        setDeliveryIssues(deliveryFlowRows);
         setError(null);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load team analytics"))
@@ -52,6 +59,7 @@ export function TeamAnalyticsPage() {
     () => buildTeamMemberRankingRows(reportedRows, members, fiscalYear, storyMetrics, teamName),
     [fiscalYear, members, reportedRows, storyMetrics, teamName],
   );
+  const deliveryFlow = useMemo(() => buildTeamDeliveryFlowAnalytics(teamName, deliveryIssues), [deliveryIssues, teamName]);
 
   if (loading) return <LoadingBlock />;
   if (error) return <ErrorBlock message={error} />;
@@ -83,6 +91,7 @@ export function TeamAnalyticsPage() {
       {analytics.members.length ? (
         <>
           <TeamSummaryCards analytics={analytics} />
+          <TeamDeliveryFlowPanel flow={deliveryFlow} />
           <TeamMonthlyForecastActualCard analytics={analytics} />
           <TeamMemberRankingsTable
             description={`${analytics.team} members ranked by the selected hours, ticket, or story point signal.`}
@@ -111,6 +120,114 @@ function safeDecodeURIComponent(value: string) {
   } catch {
     return value;
   }
+}
+
+function TeamDeliveryFlowPanel({ flow }: { flow: TeamDeliveryFlowAnalytics }) {
+  const stageSummaries = stageSummariesWithDefaults(flow.stages);
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Delivery Flow</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Unique Jira issues from the latest estimation run, separated so engineering-complete work is not hidden by UAT or business acceptance lag.
+          </p>
+        </div>
+        <div className="text-right text-xs text-muted-foreground">Aging uses latest Jira update date</div>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[1.4fr_repeat(4,minmax(0,1fr))]">
+        <div className="rounded-lg border border-[color:var(--spark-orange)] bg-[color:var(--spark-orange)]/10 p-4">
+          <div className="text-xs font-semibold uppercase text-muted-foreground">Acceptance Queue</div>
+          <div className="numeric-cell mt-2 text-3xl font-semibold text-primary">{flow.acceptanceQueue.issueCount}</div>
+          <p className="mt-1 text-sm text-muted-foreground">Engineering done or in UAT/business acceptance, but not accepted as Done.</p>
+          <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+            <FlowMiniMetric label="SP" value={formatHours(flow.acceptanceQueue.storyPoints)} />
+            <FlowMiniMetric label="Hours" value={formatHours(flow.acceptanceQueue.loggedHours)} />
+            <FlowMiniMetric label="Oldest" value={formatDays(flow.acceptanceQueue.oldestUpdatedDaysAgo)} />
+          </div>
+        </div>
+
+        {stageSummaries
+          .filter((summary) => summary.stage !== "blocked")
+          .map((summary) => (
+            <div key={summary.stage} className="rounded-lg border bg-secondary/30 p-3">
+              <div className="text-xs font-semibold uppercase text-muted-foreground">{summary.label}</div>
+              <div className="numeric-cell mt-2 text-2xl font-semibold text-primary">{summary.issueCount}</div>
+              <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                <div>{formatHours(summary.storyPoints)} SP</div>
+                <div>{formatHours(summary.loggedHours)} logged hrs</div>
+                <div>{formatDays(summary.oldestUpdatedDaysAgo)} oldest update</div>
+              </div>
+            </div>
+          ))}
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Jira Status</TableHead>
+              <TableHead>SPARC Stage</TableHead>
+              <TableHead className="text-right">Issues</TableHead>
+              <TableHead className="text-right">Story Points</TableHead>
+              <TableHead className="text-right">Logged Hrs</TableHead>
+              <TableHead className="text-right">Oldest Update</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {flow.statuses.length ? (
+              flow.statuses.map((status) => (
+                <TableRow key={`${status.stage}-${status.status}`}>
+                  <TableCell className="font-medium">{status.status}</TableCell>
+                  <TableCell>{status.label}</TableCell>
+                  <TableCell className="numeric-cell text-right">{status.issueCount}</TableCell>
+                  <TableCell className="numeric-cell text-right">{formatHours(status.storyPoints)}</TableCell>
+                  <TableCell className="numeric-cell text-right">{formatHours(status.loggedHours)}</TableCell>
+                  <TableCell className="numeric-cell text-right">{formatDays(status.oldestUpdatedDaysAgo)}</TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell className="py-5 text-muted-foreground" colSpan={6}>
+                  No delivery-flow evidence from the latest estimation run yet.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
+function FlowMiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-card/70 p-2">
+      <div className="text-[10px] font-semibold uppercase text-muted-foreground">{label}</div>
+      <div className="numeric-cell mt-1 font-semibold text-primary">{value}</div>
+    </div>
+  );
+}
+
+function stageSummariesWithDefaults(summaries: TeamDeliveryFlowStageSummary[]) {
+  const summaryByStage = new Map(summaries.map((summary) => [summary.stage, summary]));
+  return DELIVERY_FLOW_STAGE_ORDER.map(
+    (stage) =>
+      summaryByStage.get(stage) ?? {
+        stage,
+        label: DELIVERY_FLOW_STAGE_LABELS[stage] ?? stage,
+        issueCount: 0,
+        storyPoints: 0,
+        loggedHours: 0,
+        oldestUpdatedDaysAgo: null,
+      },
+  );
+}
+
+function formatDays(value: number | null) {
+  if (value == null) return "N/A";
+  return `${value}d`;
 }
 
 function TeamSummaryCards({ analytics }: { analytics: TeamAnalytics }) {

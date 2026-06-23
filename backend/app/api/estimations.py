@@ -1,3 +1,4 @@
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends
@@ -8,6 +9,7 @@ from app.api.errors import not_found
 from app.db.session import get_db
 from app.models import EstimatedIssueAllocation, EstimationProfile, EstimationRun
 from app.schemas import (
+    DeliveryFlowIssueResponse,
     EstimatedIssueAllocationResponse,
     EstimationProfileResponse,
     EstimationProfileUpdate,
@@ -20,6 +22,45 @@ from app.schemas import (
 from app.services.estimation_policy import ensure_default_estimation_profile, preview_mock_estimation, reported_value_rows, run_mock_estimation
 
 router = APIRouter(prefix="/estimations", tags=["estimations"])
+
+DELIVERY_STAGE_LABELS = {
+    "in_engineering": "In Engineering",
+    "engineering_work_done": "Engineering Work Done",
+    "business_acceptance": "Business Acceptance",
+    "done": "Business Accepted / Done",
+    "blocked": "Blocked / Paused",
+}
+
+ENGINEERING_DONE_PATTERNS = (
+    "ready for uat",
+    "ready for user acceptance",
+    "ready for acceptance",
+    "ready for business",
+    "ready for validation",
+    "ready for testing",
+    "ready for qa",
+    "dev complete",
+    "development complete",
+    "code complete",
+    "engineering complete",
+    "build complete",
+)
+BUSINESS_ACCEPTANCE_PATTERNS = (
+    "in uat",
+    "uat",
+    "user acceptance",
+    "business acceptance",
+    "business review",
+    "awaiting acceptance",
+    "pending acceptance",
+    "awaiting signoff",
+    "awaiting sign off",
+    "signoff",
+    "sign off",
+    "validation",
+)
+DONE_PATTERNS = ("done", "closed", "resolved", "released", "complete", "completed", "accepted")
+BLOCKED_PATTERNS = ("blocked", "on hold", "paused")
 
 
 @router.get("/profiles", response_model=list[EstimationProfileResponse])
@@ -103,22 +144,25 @@ def list_team_member_story_point_metrics(
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
 ) -> list[dict[str, object]]:
-    latest_run = db.scalar(
-        select(EstimationRun)
-        .where(EstimationRun.fiscal_year == fiscal_year, EstimationRun.status == "completed")
-        .order_by(EstimationRun.started_at.desc())
-        .limit(1)
-    )
+    latest_run = _latest_completed_estimation_run(db, fiscal_year)
     if latest_run is None:
         return []
 
-    allocations = db.scalars(
-        select(EstimatedIssueAllocation).where(
-            EstimatedIssueAllocation.estimation_run_id == latest_run.id,
-            EstimatedIssueAllocation.included.is_(True),
-        )
-    ).all()
+    allocations = _included_allocations_for_run(db, latest_run.id)
     return _serialize_team_member_story_point_metrics(latest_run.id, allocations)
+
+
+@router.get("/delivery-flow", response_model=list[DeliveryFlowIssueResponse])
+def list_delivery_flow_issues(
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    latest_run = _latest_completed_estimation_run(db, fiscal_year)
+    if latest_run is None:
+        return []
+
+    allocations = _included_allocations_for_run(db, latest_run.id)
+    return _serialize_delivery_flow_issues(latest_run.id, allocations)
 
 
 @router.get("/reported-values", response_model=list[ReportedValueRowResponse])
@@ -198,6 +242,24 @@ def _serialize_summary(summary) -> dict[str, object]:
     }
 
 
+def _latest_completed_estimation_run(db: Session, fiscal_year: int) -> EstimationRun | None:
+    return db.scalar(
+        select(EstimationRun)
+        .where(EstimationRun.fiscal_year == fiscal_year, EstimationRun.status == "completed")
+        .order_by(EstimationRun.started_at.desc())
+        .limit(1)
+    )
+
+
+def _included_allocations_for_run(db: Session, run_id: int) -> list[EstimatedIssueAllocation]:
+    return db.scalars(
+        select(EstimatedIssueAllocation).where(
+            EstimatedIssueAllocation.estimation_run_id == run_id,
+            EstimatedIssueAllocation.included.is_(True),
+        )
+    ).all()
+
+
 def _serialize_team_member_story_point_metrics(estimation_run_id: int, allocations: list[EstimatedIssueAllocation]) -> list[dict[str, object]]:
     unique_issue_rows: dict[tuple[int, str], EstimatedIssueAllocation] = {}
     for allocation in allocations:
@@ -229,6 +291,72 @@ def _serialize_team_member_story_point_metrics(estimation_run_id: int, allocatio
         )
 
     return sorted(rows, key=lambda row: (-float(row["story_points"]), row["team_member_id"]))
+
+
+def _serialize_delivery_flow_issues(estimation_run_id: int, allocations: list[EstimatedIssueAllocation]) -> list[dict[str, object]]:
+    unique_issue_rows: dict[tuple[int, str], EstimatedIssueAllocation] = {}
+    for allocation in allocations:
+        unique_issue_rows.setdefault((allocation.team_member_id, allocation.issue_key), allocation)
+
+    rows: list[dict[str, object]] = []
+    for allocation in unique_issue_rows.values():
+        stage = delivery_stage_for_status(allocation.issue_status, allocation.status_category)
+        rows.append(
+            {
+                "estimation_run_id": estimation_run_id,
+                "team_member_id": allocation.team_member_id,
+                "team_member": allocation.team_member.name,
+                "team": allocation.team_member.team,
+                "role": allocation.team_member.role,
+                "product_id": allocation.product_id,
+                "product": allocation.product.name if allocation.product else None,
+                "bucket_id": allocation.bucket_id,
+                "bucket": allocation.bucket.name if allocation.bucket else None,
+                "issue_key": allocation.issue_key,
+                "issue_summary": allocation.issue_summary,
+                "issue_status": allocation.issue_status,
+                "status_category": allocation.status_category,
+                "delivery_stage": stage,
+                "delivery_stage_label": DELIVERY_STAGE_LABELS[stage],
+                "story_points": float(allocation.story_points) if allocation.story_points is not None else None,
+                "issue_logged_hours": float(allocation.issue_logged_hours),
+                "updated_days_ago": _days_since(allocation.updated_at_from_jira),
+            }
+        )
+    return sorted(rows, key=lambda row: (str(row["delivery_stage"]), str(row["issue_status"] or ""), str(row["issue_key"])))
+
+
+def delivery_stage_for_status(issue_status: str | None, status_category: str | None) -> str:
+    status = _normalize_status(issue_status)
+    category = _normalize_status(status_category)
+    if _contains_any(status, ENGINEERING_DONE_PATTERNS):
+        return "engineering_work_done"
+    if category == "done":
+        return "done"
+    if _contains_any(status, BUSINESS_ACCEPTANCE_PATTERNS):
+        return "business_acceptance"
+    if _contains_any(status, DONE_PATTERNS):
+        return "done"
+    if _contains_any(status, BLOCKED_PATTERNS):
+        return "blocked"
+    return "in_engineering"
+
+
+def _normalize_status(value: str | None) -> str:
+    return " ".join((value or "").strip().lower().replace("_", " ").replace("-", " ").split())
+
+
+def _contains_any(value: str, patterns: tuple[str, ...]) -> bool:
+    return any(pattern in value for pattern in patterns)
+
+
+def _days_since(value: datetime | None) -> int | None:
+    if value is None:
+        return None
+    compare_value = value
+    if compare_value.tzinfo is not None:
+        compare_value = compare_value.astimezone(UTC).replace(tzinfo=None)
+    return max(0, (date.today() - compare_value.date()).days)
 
 
 def _serialize_allocation(allocation: EstimatedIssueAllocation) -> dict[str, object]:

@@ -337,6 +337,27 @@ class TeamMemberStoryPointMetricResponse(BaseModel):
     issue_count: int
 
 
+class DeliveryFlowIssueResponse(BaseModel):
+    estimation_run_id: int
+    team_member_id: int
+    team_member: str
+    team: str
+    role: str
+    product_id: int | None
+    product: str | None
+    bucket_id: int | None
+    bucket: str | None
+    issue_key: str
+    issue_summary: str | None
+    issue_status: str | None
+    status_category: str | None
+    delivery_stage: str
+    delivery_stage_label: str
+    story_points: float | None
+    issue_logged_hours: float
+    updated_days_ago: int | None
+
+
 class ReportedValueRowResponse(BaseModel):
     product_id: int
     product: str

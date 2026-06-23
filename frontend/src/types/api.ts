@@ -370,6 +370,27 @@ export interface TeamMemberStoryPointMetric {
   issue_count: number;
 }
 
+export interface DeliveryFlowIssue {
+  estimation_run_id: number;
+  team_member_id: number;
+  team_member: string;
+  team: string;
+  role: string;
+  product_id: number | null;
+  product: string | null;
+  bucket_id: number | null;
+  bucket: string | null;
+  issue_key: string;
+  issue_summary: string | null;
+  issue_status: string | null;
+  status_category: string | null;
+  delivery_stage: string;
+  delivery_stage_label: string;
+  story_points: number | null;
+  issue_logged_hours: number;
+  updated_days_ago: number | null;
+}
+
 export interface ProductSummary {
   product: Product;
   fiscal_year: number;

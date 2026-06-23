@@ -4,7 +4,7 @@ from decimal import Decimal
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.api.estimations import _serialize_team_member_story_point_metrics
+from app.api.estimations import _serialize_team_member_story_point_metrics, delivery_stage_for_status
 from app.db.seed import _seed_buckets
 from app.models import (
     ActualEntry,
@@ -131,6 +131,16 @@ def test_team_member_story_point_metrics_count_unique_issue_once():
             "issue_count": 2,
         }
     ]
+
+
+def test_delivery_stage_taxonomy_separates_engineering_done_from_uat():
+    assert delivery_stage_for_status("Ready for UAT", "In Progress") == "engineering_work_done"
+    assert delivery_stage_for_status("Dev Complete", "In Progress") == "engineering_work_done"
+    assert delivery_stage_for_status("In UAT", "In Progress") == "business_acceptance"
+    assert delivery_stage_for_status("Awaiting Business Acceptance", "In Progress") == "business_acceptance"
+    assert delivery_stage_for_status("UAT Complete", "Done") == "done"
+    assert delivery_stage_for_status("Done", "Done") == "done"
+    assert delivery_stage_for_status("In Development", "In Progress") == "in_engineering"
 
 
 def test_reported_effective_rule_uses_actual_for_closed_months_when_complete_or_unestimated():

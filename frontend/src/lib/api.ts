@@ -6,6 +6,7 @@ import type {
   DashboardLaborMix,
   DashboardSummary,
   DashboardWorkTypeRow,
+  DeliveryFlowIssue,
   EstimatedIssueAllocation,
   EstimationPreview,
   EstimationProfile,
@@ -309,4 +310,5 @@ export const api = {
     request<EstimatedIssueAllocation[]>(`/api/estimations/runs/${runId}/allocations?limit=${limit}`),
   teamMemberStoryPointMetrics: (fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<TeamMemberStoryPointMetric[]>(`/api/estimations/story-point-metrics?fiscal_year=${fiscalYear}`),
+  deliveryFlowIssues: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<DeliveryFlowIssue[]>(`/api/estimations/delivery-flow?fiscal_year=${fiscalYear}`),
 };

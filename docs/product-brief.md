@@ -300,6 +300,7 @@ The page should include:
 - Products supported.
 - Primary Product and primary work type.
 - Monthly forecast versus actual hours.
+- Delivery Flow section that separates In Engineering, Engineering Work Done, Business Acceptance, and Business Accepted / Done.
 - Team Member ranking table with a dimension selector.
 - Product, work type, and role mix tables.
 
@@ -310,6 +311,9 @@ Rules:
 - Story point ratios are context signals, not productivity scores.
 - Story points should be counted once per unique Jira issue, even if an issue is allocated across multiple months.
 - Ratio values with no denominator should display as unavailable rather than zero.
+- Engineering Work Done should represent Jira statuses such as Ready for UAT, Ready for Acceptance, Dev Complete, or Code Complete.
+- Business Acceptance should represent Jira statuses such as In UAT, Business Acceptance, Business Review, Awaiting Acceptance, or Signoff.
+- Delivery-flow aging should use the latest Jira updated date until SPARC captures explicit Jira status-transition dates.
 
 ## Backend Requirements
 
@@ -408,6 +412,7 @@ Estimations:
 - `POST /api/estimations/run`
 - `GET /api/estimations/runs/{run_id}/allocations`
 - `GET /api/estimations/story-point-metrics?fiscal_year=2026`
+- `GET /api/estimations/delivery-flow?fiscal_year=2026`
 - `GET /api/estimations/reported-values?fiscal_year=2026&product_id=&team_member_id=`
 
 ## Jira/Rovo Integration
