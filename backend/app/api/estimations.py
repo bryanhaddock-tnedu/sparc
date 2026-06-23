@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,6 +15,7 @@ from app.schemas import (
     EstimationRunRequest,
     EstimationRunResponse,
     ReportedValueRowResponse,
+    TeamMemberStoryPointMetricResponse,
 )
 from app.services.estimation_policy import ensure_default_estimation_profile, preview_mock_estimation, reported_value_rows, run_mock_estimation
 
@@ -95,6 +98,29 @@ def list_estimation_run_allocations(
     return [_serialize_allocation(row) for row in db.scalars(statement).all()]
 
 
+@router.get("/story-point-metrics", response_model=list[TeamMemberStoryPointMetricResponse])
+def list_team_member_story_point_metrics(
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    latest_run = db.scalar(
+        select(EstimationRun)
+        .where(EstimationRun.fiscal_year == fiscal_year, EstimationRun.status == "completed")
+        .order_by(EstimationRun.started_at.desc())
+        .limit(1)
+    )
+    if latest_run is None:
+        return []
+
+    allocations = db.scalars(
+        select(EstimatedIssueAllocation).where(
+            EstimatedIssueAllocation.estimation_run_id == latest_run.id,
+            EstimatedIssueAllocation.included.is_(True),
+        )
+    ).all()
+    return _serialize_team_member_story_point_metrics(latest_run.id, allocations)
+
+
 @router.get("/reported-values", response_model=list[ReportedValueRowResponse])
 def get_reported_values(
     fiscal_year: int = 2027,
@@ -170,6 +196,39 @@ def _serialize_summary(summary) -> dict[str, object]:
         "run_id": summary.run_id,
         "status": summary.status,
     }
+
+
+def _serialize_team_member_story_point_metrics(estimation_run_id: int, allocations: list[EstimatedIssueAllocation]) -> list[dict[str, object]]:
+    unique_issue_rows: dict[tuple[int, str], EstimatedIssueAllocation] = {}
+    for allocation in allocations:
+        unique_issue_rows.setdefault((allocation.team_member_id, allocation.issue_key), allocation)
+
+    totals: dict[int, dict[str, Decimal | int]] = {}
+    for allocation in unique_issue_rows.values():
+        member_totals = totals.setdefault(
+            allocation.team_member_id,
+            {"story_points": Decimal("0"), "issue_logged_hours": Decimal("0"), "issue_count": 0},
+        )
+        member_totals["story_points"] += allocation.story_points or Decimal("0")
+        member_totals["issue_logged_hours"] += allocation.issue_logged_hours
+        member_totals["issue_count"] += 1
+
+    rows: list[dict[str, object]] = []
+    for team_member_id, member_totals in totals.items():
+        story_points = Decimal(member_totals["story_points"])
+        logged_hours = Decimal(member_totals["issue_logged_hours"])
+        rows.append(
+            {
+                "estimation_run_id": estimation_run_id,
+                "team_member_id": team_member_id,
+                "story_points": float(story_points),
+                "issue_logged_hours": float(logged_hours),
+                "story_points_per_logged_hour": float((story_points / logged_hours).quantize(Decimal("0.01"))) if logged_hours > 0 else None,
+                "issue_count": member_totals["issue_count"],
+            }
+        )
+
+    return sorted(rows, key=lambda row: (-float(row["story_points"]), row["team_member_id"]))
 
 
 def _serialize_allocation(allocation: EstimatedIssueAllocation) -> dict[str, object]:

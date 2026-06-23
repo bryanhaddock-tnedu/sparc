@@ -98,6 +98,7 @@ Build these primary routes:
 - `/` — Dashboard
 - `/products/:productId` — Product Detail
 - `/products/settings` — Product Settings
+- `/teams/:teamName` — Team Analytics
 - `/team-members/:teamMemberId` — Team Member Detail
 - `/team` — Team Management
 
@@ -260,7 +261,9 @@ Rules:
 
 ## Team Management Page Requirements
 
-Team Management should be a searchable, sortable roster grouped by Team. Each Team group should render its own roster table.
+Team Management should be a searchable, sortable roster grouped by Team. Each Team group should render its own roster table and link to a team-specific analytics page.
+
+The page should also include an all-Team-Member ranking table with a dimension selector for hours, ticket, and story point signals. These rankings are context signals only; they must not be labeled as performance scores.
 
 Columns:
 
@@ -277,12 +280,36 @@ Rules:
 - Name links to Team Member Detail page.
 - Active status defaults to active.
 - Team appears as the group heading instead of a repeated table column.
+- Team headings link to Team Analytics pages.
 - Roster tables can be sorted by clicking column headers.
 - Name search should match typed prefixes for first or last names.
 - Bill Rate is read-only on the Team Management table.
 - Bill rates can be updated from the Team Member Detail profile after import.
 - Rate changes affect future forecasting calculations.
 - Created date and updated date are maintained by the backend.
+
+## Team Analytics Page Requirements
+
+Team Analytics should summarize one Team at a time.
+
+The page should include:
+
+- Active and inactive Team Member counts.
+- FYTD actual hours.
+- FY forecast hours.
+- Products supported.
+- Primary Product and primary work type.
+- Monthly forecast versus actual hours.
+- Team Member ranking table with a dimension selector.
+- Product, work type, and role mix tables.
+
+Ranking dimensions may include actual hours, average hours per month, forecast hours, actual-versus-forecast hours, products supported, tickets touched, story points, hours per ticket, hours per story point, and story points per logged hour.
+
+Rules:
+
+- Story point ratios are context signals, not productivity scores.
+- Story points should be counted once per unique Jira issue, even if an issue is allocated across multiple months.
+- Ratio values with no denominator should display as unavailable rather than zero.
 
 ## Backend Requirements
 
@@ -380,6 +407,7 @@ Estimations:
 - `POST /api/estimations/preview`
 - `POST /api/estimations/run`
 - `GET /api/estimations/runs/{run_id}/allocations`
+- `GET /api/estimations/story-point-metrics?fiscal_year=2026`
 - `GET /api/estimations/reported-values?fiscal_year=2026&product_id=&team_member_id=`
 
 ## Jira/Rovo Integration

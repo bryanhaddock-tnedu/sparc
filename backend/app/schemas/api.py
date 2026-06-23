@@ -328,6 +328,15 @@ class EstimatedIssueAllocationResponse(BaseModel):
     exclusion_reason: str | None
 
 
+class TeamMemberStoryPointMetricResponse(BaseModel):
+    estimation_run_id: int
+    team_member_id: int
+    story_points: float
+    issue_logged_hours: float
+    story_points_per_logged_hour: float | None
+    issue_count: int
+
+
 class ReportedValueRowResponse(BaseModel):
     product_id: int
     product: str

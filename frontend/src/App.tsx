@@ -11,6 +11,7 @@ import { EstimationSettingsPage } from "./pages/EstimationSettingsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProductDetailPage } from "./pages/ProductDetailPage";
 import { ProductSettingsPage } from "./pages/ProductSettingsPage";
+import { TeamAnalyticsPage } from "./pages/TeamAnalyticsPage";
 import { TeamManagementPage } from "./pages/TeamManagementPage";
 import { TeamMemberDetailPage } from "./pages/TeamMemberDetailPage";
 
@@ -25,6 +26,7 @@ export default function App() {
               <Route path="/products/settings" element={<ProductSettingsPage />} />
               <Route path="/products/:productId" element={<ProductDetailPage />} />
               <Route path="/team-members/:teamMemberId" element={<TeamMemberDetailPage />} />
+              <Route path="/teams/:teamName" element={<TeamAnalyticsPage />} />
               <Route path="/team" element={<TeamManagementPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/integrations" element={<Navigate to="/admin?tab=jira" replace />} />

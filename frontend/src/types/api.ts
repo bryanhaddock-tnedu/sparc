@@ -361,6 +361,15 @@ export interface EstimatedIssueAllocation {
   exclusion_reason: string | null;
 }
 
+export interface TeamMemberStoryPointMetric {
+  estimation_run_id: number;
+  team_member_id: number;
+  story_points: number;
+  issue_logged_hours: number;
+  story_points_per_logged_hour: number | null;
+  issue_count: number;
+}
+
 export interface ProductSummary {
   product: Product;
   fiscal_year: number;

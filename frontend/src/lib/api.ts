@@ -40,6 +40,7 @@ import type {
   TeamMemberActualWorklog,
   TeamMemberCreatePayload,
   TeamMemberProducts,
+  TeamMemberStoryPointMetric,
   UnmappedProduct,
   UnmappedUser,
 } from "../types/api";
@@ -306,4 +307,6 @@ export const api = {
   },
   estimationRunAllocations: (runId: number, limit = 100) =>
     request<EstimatedIssueAllocation[]>(`/api/estimations/runs/${runId}/allocations?limit=${limit}`),
+  teamMemberStoryPointMetrics: (fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<TeamMemberStoryPointMetric[]>(`/api/estimations/story-point-metrics?fiscal_year=${fiscalYear}`),
 };

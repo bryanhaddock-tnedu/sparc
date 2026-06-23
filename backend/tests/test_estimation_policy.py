@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app.api.estimations import _serialize_team_member_story_point_metrics
 from app.db.seed import _seed_buckets
 from app.models import (
     ActualEntry,
@@ -79,6 +80,57 @@ def test_forecast_actual_and_estimated_entries_coexist_at_same_grain():
         assert db.scalar(select(ForecastEntry)).hours == Decimal("40")
         assert db.scalar(select(ActualEntry)).hours == Decimal("12")
         assert db.scalar(select(EstimatedEntry)).hours == Decimal("32")
+
+
+def test_team_member_story_point_metrics_count_unique_issue_once():
+    rows = [
+        EstimatedIssueAllocation(
+            estimation_run_id=7,
+            team_member_id=10,
+            issue_id="ABC1",
+            issue_key="ABC-1",
+            jira_project_key="ABC",
+            allocated_hours=Decimal("2"),
+            story_points=Decimal("5"),
+            issue_logged_hours=Decimal("2"),
+            included=True,
+        ),
+        EstimatedIssueAllocation(
+            estimation_run_id=7,
+            team_member_id=10,
+            issue_id="ABC1",
+            issue_key="ABC-1",
+            jira_project_key="ABC",
+            allocated_hours=Decimal("3"),
+            story_points=Decimal("5"),
+            issue_logged_hours=Decimal("2"),
+            included=True,
+        ),
+        EstimatedIssueAllocation(
+            estimation_run_id=7,
+            team_member_id=10,
+            issue_id="ABC2",
+            issue_key="ABC-2",
+            jira_project_key="ABC",
+            allocated_hours=Decimal("4"),
+            story_points=Decimal("3"),
+            issue_logged_hours=Decimal("6"),
+            included=True,
+        ),
+    ]
+
+    metrics = _serialize_team_member_story_point_metrics(7, rows)
+
+    assert metrics == [
+        {
+            "estimation_run_id": 7,
+            "team_member_id": 10,
+            "story_points": 8.0,
+            "issue_logged_hours": 8.0,
+            "story_points_per_logged_hour": 1.0,
+            "issue_count": 2,
+        }
+    ]
 
 
 def test_reported_effective_rule_uses_actual_for_closed_months_when_complete_or_unestimated():

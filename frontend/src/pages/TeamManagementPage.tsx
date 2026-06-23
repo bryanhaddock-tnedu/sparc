@@ -14,15 +14,25 @@ import {
 
 import { PageNav } from "../components/PageNav";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
+import { TeamMemberRankingsTable } from "../components/TeamMemberRankingsTable";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
+import {
+  buildTeamActualAnalytics,
+  buildTeamMemberRankingRows,
+  teamAnalyticsPath,
+  teamDisplayName,
+  type TeamActualMonth,
+  type TeamActualSlice,
+  type TeamRankingDimension,
+} from "../lib/teamAnalytics";
 import { formatBillRate } from "../lib/teamMembers";
 import { formatHours } from "../lib/utils";
-import type { ReportedValueRow, TeamMember, TeamMemberCreatePayload } from "../types/api";
+import type { ReportedValueRow, TeamMember, TeamMemberCreatePayload, TeamMemberStoryPointMetric } from "../types/api";
 
 const PIE_COLORS = [
   "var(--spark-cyan)",
@@ -56,6 +66,7 @@ export function TeamManagementPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
+  const [storyMetrics, setStoryMetrics] = useState<TeamMemberStoryPointMetric[]>([]);
   const [newMember, setNewMember] = useState<NewTeamMemberForm>(() => blankTeamMemberForm());
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -63,12 +74,18 @@ export function TeamManagementPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [nameSearch, setNameSearch] = useState("");
+  const [rankingDimension, setRankingDimension] = useState<TeamRankingDimension>("fytd_actual");
   const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
 
   const loadTeamOverview = useCallback(async () => {
-    const [memberRows, reportedValueRows] = await Promise.all([api.teamMembers(), api.reportedValues({}, fiscalYear)]);
+    const [memberRows, reportedValueRows, storyPointRows] = await Promise.all([
+      api.teamMembers(),
+      api.reportedValues({}, fiscalYear),
+      api.teamMemberStoryPointMetrics(fiscalYear),
+    ]);
     setMembers(memberRows);
     setReportedRows(reportedValueRows);
+    setStoryMetrics(storyPointRows);
   }, [fiscalYear]);
 
   useEffect(() => {
@@ -102,6 +119,10 @@ export function TeamManagementPage() {
   }, [loadTeamOverview, newMember]);
 
   const analytics = useMemo(() => buildTeamActualAnalytics(reportedRows, members, fiscalYear), [reportedRows, members, fiscalYear]);
+  const rankingRows = useMemo(
+    () => buildTeamMemberRankingRows(reportedRows, members, fiscalYear, storyMetrics),
+    [fiscalYear, members, reportedRows, storyMetrics],
+  );
   const normalizedNameSearch = nameSearch.trim().toLowerCase();
   const filteredMembers = useMemo(() => {
     if (!normalizedNameSearch) return members;
@@ -191,6 +212,14 @@ export function TeamManagementPage() {
 
       <TeamMonthlyActualBarCard data={analytics.monthly} total={analytics.fytd.total} fiscalYearLabel={fiscalYearLabel} />
 
+      <TeamMemberRankingsTable
+        description="All rostered Team Members ranked by the selected hours, ticket, or story point signal."
+        dimension={rankingDimension}
+        onDimensionChange={setRankingDimension}
+        rows={rankingRows}
+        title="All Team Member Rankings"
+      />
+
       <AddTeamMemberPanel
         creating={creating}
         form={newMember}
@@ -223,7 +252,9 @@ export function TeamManagementPage() {
             <section key={group.team} className="overflow-hidden rounded-lg border bg-card">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-secondary/50 px-3 py-2">
                 <div className="min-w-0">
-                  <h3 className="truncate text-base font-semibold text-foreground">{group.team}</h3>
+                  <Link className="truncate text-base font-semibold text-primary hover:underline" to={teamAnalyticsPath(group.team)}>
+                    {group.team}
+                  </Link>
                   <p className="text-xs text-muted-foreground">{teamMemberCountLabel(group.rows.length)}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -407,7 +438,7 @@ function TeamMemberField({ children, label }: { children: ReactNode; label: stri
 function groupTeamMemberRows(rows: Row<TeamMember>[]): TeamMemberRowGroup[] {
   const groups = new Map<string, Row<TeamMember>[]>();
   rows.forEach((row) => {
-    const team = cleanText(row.original.team) || "Unassigned";
+    const team = teamDisplayName(row.original.team);
     groups.set(team, [...(groups.get(team) ?? []), row]);
   });
 
@@ -587,91 +618,4 @@ function cleanText(value: string) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
-}
-
-type TeamActualSlice = {
-  team: string;
-  hours: number;
-};
-
-type TeamActualPeriod = {
-  label: string;
-  data: TeamActualSlice[];
-  total: number;
-};
-
-type TeamActualMonth = {
-  label: string;
-  hours: number;
-};
-
-function buildTeamActualAnalytics(rows: ReportedValueRow[], members: TeamMember[], fiscalYear: number) {
-  const teamByMemberId = new Map(members.map((member) => [member.id, member.team || "Unassigned"]));
-  const today = new Date();
-  const current = { year: today.getFullYear(), month: today.getMonth() + 1 };
-  const previousDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-  const previous = { year: previousDate.getFullYear(), month: previousDate.getMonth() + 1 };
-  const currentFiscalYear = current.month >= 7 ? current.year + 1 : current.year;
-  const fytdRows =
-    fiscalYear < currentFiscalYear
-      ? rows
-      : fiscalYear > currentFiscalYear
-        ? []
-        : rows.filter((row) => row.month_sequence <= fiscalSequenceForCalendarMonth(current.month));
-
-  return {
-    current: aggregateActualPeriod(
-      rows.filter((row) => row.calendar_year === current.year && row.calendar_month === current.month),
-      monthLabel(current.month),
-      teamByMemberId,
-    ),
-    previous: aggregateActualPeriod(
-      rows.filter((row) => row.calendar_year === previous.year && row.calendar_month === previous.month),
-      monthLabel(previous.month),
-      teamByMemberId,
-    ),
-    fytd: aggregateActualPeriod(fytdRows, "FYTD", teamByMemberId),
-    monthly: aggregateActualMonths(rows),
-  };
-}
-
-function aggregateActualPeriod(rows: ReportedValueRow[], label: string, teamByMemberId: Map<number, string>): TeamActualPeriod {
-  const hoursByTeam = new Map<string, number>();
-  for (const row of rows) {
-    const team = teamByMemberId.get(row.team_member_id) ?? "Unassigned";
-    hoursByTeam.set(team, (hoursByTeam.get(team) ?? 0) + row.actual_hours);
-  }
-  const data = Array.from(hoursByTeam, ([team, hours]) => ({ team, hours: roundHours(hours) }))
-    .filter((row) => row.hours > 0)
-    .sort((left, right) => right.hours - left.hours || left.team.localeCompare(right.team));
-  return {
-    label,
-    data,
-    total: roundHours(data.reduce((sum, row) => sum + row.hours, 0)),
-  };
-}
-
-function aggregateActualMonths(rows: ReportedValueRow[]): TeamActualMonth[] {
-  const hoursBySequence = new Map<number, number>();
-  for (const row of rows) {
-    hoursBySequence.set(row.month_sequence, (hoursBySequence.get(row.month_sequence) ?? 0) + row.actual_hours);
-  }
-  return FISCAL_MONTH_LABELS.map((label, index) => ({
-    label,
-    hours: roundHours(hoursBySequence.get(index + 1) ?? 0),
-  }));
-}
-
-function fiscalSequenceForCalendarMonth(calendarMonth: number) {
-  return calendarMonth >= 7 ? calendarMonth - 6 : calendarMonth + 6;
-}
-
-const FISCAL_MONTH_LABELS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-
-function monthLabel(calendarMonth: number) {
-  return new Intl.DateTimeFormat(undefined, { month: "short" }).format(new Date(2026, calendarMonth - 1, 1));
-}
-
-function roundHours(value: number) {
-  return Math.round(value * 10) / 10;
 }
