@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { productDetailPath } from "../lib/routes";
 import { formatHours } from "../lib/utils";
 import type { ReportedValueRow } from "../types/api";
 import { Badge } from "./ui/badge";
@@ -86,7 +87,7 @@ export function ReportedValuesTable({
                     <TableRow key={`${row.product_id}-${row.team_member_id}-${row.bucket_id}-${row.fiscal_month_id}`}>
                       {showProduct ? (
                         <TableCell>
-                          <Link className="font-medium text-primary hover:underline" to={`/products/${row.product_id}`}>
+                          <Link className="font-medium text-primary hover:underline" to={productDetailPath(row)}>
                             {row.product}
                           </Link>
                         </TableCell>

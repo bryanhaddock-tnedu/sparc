@@ -14,6 +14,7 @@ import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
+import { productDetailPath } from "../lib/routes";
 import { formatBillRate } from "../lib/teamMembers";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type { BucketTable, FiscalMonth, Product, ReportedValueRow, TeamMember, TeamMemberActualWorklog, TeamMemberProducts } from "../types/api";
@@ -467,7 +468,7 @@ export function TeamMemberDetailPage() {
                     <TableCell>{row.worked_on ? formatDateOnly(row.worked_on) : "-"}</TableCell>
                     <TableCell className="font-medium text-primary">{row.source_ticket_key ?? row.source_issue_id ?? "-"}</TableCell>
                     <TableCell>
-                      <Link className="font-medium text-primary hover:underline" to={`/products/${row.product_id}`}>
+                      <Link className="font-medium text-primary hover:underline" to={productDetailPath(row)}>
                         {row.product}
                       </Link>
                     </TableCell>
@@ -510,7 +511,7 @@ export function TeamMemberDetailPage() {
                 {data.products.map((row) => (
                   <TableRow key={`${row.product_id}-${row.bucket_id}`}>
                     <TableCell>
-                      <Link className="font-medium text-primary hover:underline" to={`/products/${row.product_id}`}>
+                      <Link className="font-medium text-primary hover:underline" to={productDetailPath(row)}>
                         {row.product}
                       </Link>
                     </TableCell>
@@ -788,7 +789,7 @@ function MemberForecastTable({
                   <Fragment key={`${line.product_id}-${line.bucket_id}`}>
                     <tr className="border-t align-middle">
                       <td rowSpan={4} className="sticky left-0 z-10 bg-card px-2 py-2 align-top">
-                        <Link className="block truncate font-medium text-primary hover:underline" to={`/products/${line.product_id}`}>
+                        <Link className="block truncate font-medium text-primary hover:underline" to={productDetailPath(line)}>
                           {line.product}
                         </Link>
                         <div className="mt-1 truncate text-[11px] text-muted-foreground">{line.bucket}</div>
@@ -1081,6 +1082,7 @@ type MemberForecastTotals = {
 type MemberForecastLine = {
   product_id: number;
   product: string;
+  product_slug: string;
   bucket_id: number;
   bucket: string;
   months: MemberForecastMonthCell[];
@@ -1111,11 +1113,12 @@ function buildMemberForecastLines(
   months: FiscalMonth[],
   billRate: number,
 ): MemberForecastLine[] {
-  const lineMap = new Map<string, { product_id: number; product: string; bucket_id: number; bucket: string }>();
+  const lineMap = new Map<string, { product_id: number; product: string; product_slug: string; bucket_id: number; bucket: string }>();
   for (const row of productRows) {
     lineMap.set(memberForecastLineKey(row.product_id, row.bucket_id), {
       product_id: row.product_id,
       product: row.product,
+      product_slug: row.product_slug,
       bucket_id: row.bucket_id,
       bucket: row.bucket,
     });
@@ -1124,6 +1127,7 @@ function buildMemberForecastLines(
     lineMap.set(memberForecastLineKey(row.product_id, row.bucket_id), {
       product_id: row.product_id,
       product: row.product,
+      product_slug: row.product_slug,
       bucket_id: row.bucket_id,
       bucket: row.bucket,
     });

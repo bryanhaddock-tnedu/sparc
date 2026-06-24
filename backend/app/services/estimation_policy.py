@@ -27,6 +27,7 @@ from app.models import (
 )
 from app.models.entities import utcnow
 from app.services.fiscal_year import ensure_fiscal_months, fiscal_sequence_for_date
+from app.services.slugs import product_url_slug
 
 METHOD_VERSION = "annual-hourly-report-v1"
 DEFAULT_MONTHLY_CAPACITY_HOURS = Decimal("120.00")
@@ -937,6 +938,7 @@ def reported_value_rows(
             {
                 "product_id": row_product_id,
                 "product": products_by_id[row_product_id].name,
+                "product_slug": product_url_slug(products_by_id[row_product_id]),
                 "team_member_id": row_member_id,
                 "team_member": members_by_id[row_member_id].name,
                 "bucket_id": row_bucket_id,

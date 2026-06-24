@@ -4,10 +4,13 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app.api.products import create_product as create_product_endpoint
 from app.api.products import delete_product as delete_product_endpoint
+from app.api.products import get_product as get_product_endpoint
 from app.api.products import remove_product_team_member as remove_product_team_member_endpoint
 from app.db.seed import _seed_buckets
 from app.models import ActualEntry, Base, Bucket, ForecastEntry, JiraProductMapping, JiraProjectCatalog, Product, ProductBudget, ProductTeamMember, TeamMember
+from app.schemas import ProductCreate
 from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_work_type_breakdown, product_bucket_tables, product_summary
 from app.services.costs import calculate_cost
 from app.services.fiscal_year import fiscal_sequence_for_date, fiscal_year_for_date, get_fiscal_month
@@ -126,6 +129,19 @@ def test_product_summary_includes_budget_tracker_metrics():
         assert summary["projected_spend"] == 1400.0
         assert summary["budget_remaining"] == 600.0
         assert summary["budget_utilization_percent"] == 70.0
+
+
+def test_product_slugs_are_generated_and_resolve_with_numeric_fallback():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        first = create_product_endpoint(ProductCreate(name="Core Infrastructure"), fiscal_year=2027, db=db)
+        second = create_product_endpoint(ProductCreate(name="Core Infrastructure!"), fiscal_year=2027, db=db)
+
+        assert first["slug"] == "core-infrastructure"
+        assert second["slug"] == "core-infrastructure-2"
+        assert get_product_endpoint("core-infrastructure", fiscal_year=2027, db=db)["id"] == first["id"]
+        assert get_product_endpoint(str(first["id"]), fiscal_year=2027, db=db)["slug"] == "core-infrastructure"
 
 
 def test_product_budget_is_fiscal_year_specific():

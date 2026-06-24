@@ -97,6 +97,7 @@ export interface SystemScanResult {
 export interface ProductSummaryRow {
   product_id: number;
   product: string;
+  product_slug: string;
   jira_space_key: string | null;
   team_members: number;
   budget_amount: number;
@@ -118,6 +119,7 @@ export interface ProductSummaryRow {
 export interface Product {
   id: number;
   name: string;
+  slug: string;
   jira_space_key: string | null;
   description: string | null;
   office: string | null;
@@ -311,6 +313,7 @@ export interface EstimationPreview {
 export interface ReportedValueRow {
   product_id: number;
   product: string;
+  product_slug: string;
   team_member_id: number;
   team_member: string;
   bucket_id: number;
@@ -378,6 +381,7 @@ export interface DeliveryFlowIssue {
   role: string;
   product_id: number | null;
   product: string | null;
+  product_slug: string | null;
   bucket_id: number | null;
   bucket: string | null;
   issue_key: string;
@@ -489,6 +493,7 @@ export interface TeamMemberCreatePayload {
 export interface TeamMemberProductRow {
   product_id: number;
   product: string;
+  product_slug: string;
   bucket_id: number;
   bucket: string;
   forecast_hours: number;
@@ -513,6 +518,7 @@ export interface TeamMemberActualWorklog {
   id: number;
   product_id: number;
   product: string;
+  product_slug: string;
   bucket_id: number;
   bucket: string;
   fiscal_month_id: number;

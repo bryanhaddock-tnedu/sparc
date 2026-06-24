@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, Plus, Trash2, UserPlus } from "lucide-react";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { BudgetTracker } from "../components/BudgetTracker";
 import { PageNav } from "../components/PageNav";
@@ -12,6 +12,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
+import { productDetailPath } from "../lib/routes";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type {
   BucketTable,
@@ -43,7 +44,8 @@ interface ProductRoleCostSummary {
 
 export function ProductDetailPage() {
   const params = useParams();
-  const productId = Number(params.productId);
+  const navigate = useNavigate();
+  const productRef = params.productRef ?? "";
   const { fiscalYear, fiscalYearLabel } = useFiscalYear();
   const [summary, setSummary] = useState<ProductSummary | null>(null);
   const [tables, setTables] = useState<ProductBucketTables | null>(null);
@@ -60,17 +62,22 @@ export function ProductDetailPage() {
   const [savingCells, setSavingCells] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const productId = summary?.product.id ?? null;
 
   async function loadData() {
-    const [summaryResult, distributionResult, tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = await Promise.all([
-      api.productSummary(productId, fiscalYear),
-      api.bucketDistribution(productId, fiscalYear),
-      api.productBucketTables(productId, fiscalYear),
-      api.productJiraSpaces(productId),
-      api.productTeamMembers(productId),
+    const summaryResult = await api.productSummary(productRef, fiscalYear);
+    const resolvedProductId = summaryResult.product.id;
+    const [distributionResult, tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = await Promise.all([
+      api.bucketDistribution(resolvedProductId, fiscalYear),
+      api.productBucketTables(resolvedProductId, fiscalYear),
+      api.productJiraSpaces(resolvedProductId),
+      api.productTeamMembers(resolvedProductId),
       api.teamMembers(),
-      api.reportedValues({ product_id: productId }, fiscalYear),
+      api.reportedValues({ product_id: resolvedProductId }, fiscalYear),
     ]);
+    if (productRef !== summaryResult.product.slug) {
+      navigate(productDetailPath(summaryResult.product), { replace: true });
+    }
     setSummary(summaryResult);
     setDistribution(distributionResult.map((row) => ({ bucket: row.bucket, hours: row.hours })));
     setTables(tablesResult);
@@ -82,12 +89,12 @@ export function ProductDetailPage() {
   }
 
   useEffect(() => {
-    if (!Number.isFinite(productId)) return;
+    if (!productRef) return;
     setLoading(true);
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load product"))
       .finally(() => setLoading(false));
-  }, [productId, fiscalYear]);
+  }, [productRef, fiscalYear]);
 
   useEffect(() => {
     if (!forecastLineBucketId && tables?.buckets[0]) {
@@ -109,6 +116,7 @@ export function ProductDetailPage() {
   }
 
   async function saveForecastCell(bucket: BucketTable, row: BucketTableRow, cell: MonthCell) {
+    if (productId === null) return;
     const key = draftKey(bucket, row, cell);
     const draft = drafts[key];
     if (draft === undefined) return;
@@ -153,6 +161,7 @@ export function ProductDetailPage() {
   }
 
   async function addProductTeamMember(teamMemberId: number) {
+    if (productId === null) return;
     await api.addProductTeamMember(productId, {
       team_member_id: teamMemberId,
       status: "active",
@@ -172,7 +181,7 @@ export function ProductDetailPage() {
   const roleCostSummary = useMemo(() => buildProductRoleCostSummary(productTeam, tables), [productTeam, tables]);
 
   async function addForecastLine(teamMemberId: number, bucketId: number) {
-    if (!tables) return;
+    if (!tables || productId === null) return;
     if (existingForecastLineKeys.has(forecastLineKey(teamMemberId, bucketId))) {
       setForecastLineMessage("That forecast line already exists.");
       return;
@@ -210,11 +219,13 @@ export function ProductDetailPage() {
   }
 
   async function updateProductTeamMember(assignmentId: number, payload: { status?: string }) {
+    if (productId === null) return;
     await api.updateProductTeamMember(productId, assignmentId, payload);
     await loadData();
   }
 
   async function removeProductTeamMember(assignmentId: number) {
+    if (productId === null) return;
     await api.removeProductTeamMember(productId, assignmentId);
     await loadData();
   }

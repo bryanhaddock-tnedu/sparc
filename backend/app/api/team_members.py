@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.models import ActualEntry, FiscalMonth, TeamMember
 from app.schemas import TeamImportResult, TeamMemberActualWorklogResponse, TeamMemberCreate, TeamMemberProductsResponse, TeamMemberResponse, TeamMemberUpdate
 from app.services.aggregations import serialize_team_member, team_member_products
+from app.services.slugs import product_url_slug
 from app.services.team_import import import_team_members
 from app.services.team_members import create_team_member as create_member_service
 from app.services.team_members import update_team_member as update_member_service
@@ -109,6 +110,7 @@ def get_team_member_actual_worklogs(
             "id": entry.id,
             "product_id": entry.product_id,
             "product": entry.product.name,
+            "product_slug": product_url_slug(entry.product),
             "bucket_id": entry.bucket_id,
             "bucket": entry.bucket.name,
             "fiscal_month_id": entry.fiscal_month_id,

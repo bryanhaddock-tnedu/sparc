@@ -28,6 +28,7 @@ class Product(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(160), unique=True, index=True, nullable=False)
+    slug: Mapped[str | None] = mapped_column(String(180), unique=True, index=True)
     jira_space_key: Mapped[str | None] = mapped_column(String(40), unique=True)
     description: Mapped[str | None] = mapped_column(Text)
     office: Mapped[str | None] = mapped_column(String(80))

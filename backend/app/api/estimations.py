@@ -20,6 +20,7 @@ from app.schemas import (
     TeamMemberStoryPointMetricResponse,
 )
 from app.services.estimation_policy import ensure_default_estimation_profile, preview_mock_estimation, reported_value_rows, run_mock_estimation
+from app.services.slugs import product_url_slug
 
 router = APIRouter(prefix="/estimations", tags=["estimations"])
 
@@ -310,6 +311,7 @@ def _serialize_delivery_flow_issues(estimation_run_id: int, allocations: list[Es
                 "role": allocation.team_member.role,
                 "product_id": allocation.product_id,
                 "product": allocation.product.name if allocation.product else None,
+                "product_slug": product_url_slug(allocation.product) if allocation.product else None,
                 "bucket_id": allocation.bucket_id,
                 "bucket": allocation.bucket.name if allocation.bucket else None,
                 "issue_key": allocation.issue_key,

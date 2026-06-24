@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import type { ProductSummaryRow } from "../types/api";
+import { productDetailPath } from "../lib/routes";
 import { cn, formatCurrency, formatHours } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
@@ -57,7 +58,7 @@ const columns: ColumnDef<ProductSummaryRow>[] = [
     header: "Product",
     sortDescFirst: false,
     cell: ({ row }) => (
-      <Link className="font-medium text-primary hover:underline" to={`/products/${row.original.product_id}`}>
+      <Link className="font-medium text-primary hover:underline" to={productDetailPath(row.original)}>
         {row.original.product}
       </Link>
     ),

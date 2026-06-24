@@ -45,6 +45,8 @@ import type {
   UnmappedProduct,
   UnmappedUser,
 } from "../types/api";
+
+type ProductRef = number | string;
 import { appConfig } from "./config";
 
 const API_BASE_URL = appConfig.apiBaseUrl;
@@ -159,12 +161,12 @@ export const api = {
     });
     return request<SystemScanResult>(`/api/system-scan?${search.toString()}`);
   },
-  productSummary: (productId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
-    request<ProductSummary>(`/api/products/${productId}/summary?fiscal_year=${fiscalYear}`),
-  bucketDistribution: (productId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
-    request<BucketDistributionRow[]>(`/api/products/${productId}/bucket-distribution?fiscal_year=${fiscalYear}`),
-  productBucketTables: (productId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
-    request<ProductBucketTables>(`/api/products/${productId}/bucket-tables?fiscal_year=${fiscalYear}`),
+  productSummary: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<ProductSummary>(`/api/products/${encodeURIComponent(String(productRef))}/summary?fiscal_year=${fiscalYear}`),
+  bucketDistribution: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<BucketDistributionRow[]>(`/api/products/${encodeURIComponent(String(productRef))}/bucket-distribution?fiscal_year=${fiscalYear}`),
+  productBucketTables: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<ProductBucketTables>(`/api/products/${encodeURIComponent(String(productRef))}/bucket-tables?fiscal_year=${fiscalYear}`),
   products: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<Product[]>(`/api/products?fiscal_year=${fiscalYear}`),
   createProduct: (payload: ProductCreatePayload, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<Product>(`/api/products?fiscal_year=${fiscalYear}`, {
@@ -172,50 +174,50 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   updateProduct: (
-    productId: number,
+    productId: ProductRef,
     payload: Partial<Pick<Product, "name" | "jira_space_key" | "description" | "office" | "division" | "budget_amount" | "is_active">>,
     fiscalYear = DEFAULT_FISCAL_YEAR,
   ) =>
-    request<Product>(`/api/products/${productId}?fiscal_year=${fiscalYear}`, {
+    request<Product>(`/api/products/${encodeURIComponent(String(productId))}?fiscal_year=${fiscalYear}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
-  deleteProduct: (productId: number) =>
-    request<{ message: string }>(`/api/products/${productId}`, {
+  deleteProduct: (productId: ProductRef) =>
+    request<{ message: string }>(`/api/products/${encodeURIComponent(String(productId))}`, {
       method: "DELETE",
     }),
-  productTeamMembers: (productId: number) => request<ProductTeamMember[]>(`/api/products/${productId}/team-members`),
-  addProductTeamMember: (productId: number, payload: ProductTeamMemberPayload) =>
-    request<ProductTeamMember>(`/api/products/${productId}/team-members`, {
+  productTeamMembers: (productId: ProductRef) => request<ProductTeamMember[]>(`/api/products/${encodeURIComponent(String(productId))}/team-members`),
+  addProductTeamMember: (productId: ProductRef, payload: ProductTeamMemberPayload) =>
+    request<ProductTeamMember>(`/api/products/${encodeURIComponent(String(productId))}/team-members`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  updateProductTeamMember: (productId: number, assignmentId: number, payload: ProductTeamMemberUpdatePayload) =>
-    request<ProductTeamMember>(`/api/products/${productId}/team-members/${assignmentId}`, {
+  updateProductTeamMember: (productId: ProductRef, assignmentId: number, payload: ProductTeamMemberUpdatePayload) =>
+    request<ProductTeamMember>(`/api/products/${encodeURIComponent(String(productId))}/team-members/${assignmentId}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
-  removeProductTeamMember: (productId: number, assignmentId: number) =>
-    request<{ message: string }>(`/api/products/${productId}/team-members/${assignmentId}`, {
+  removeProductTeamMember: (productId: ProductRef, assignmentId: number) =>
+    request<{ message: string }>(`/api/products/${encodeURIComponent(String(productId))}/team-members/${assignmentId}`, {
       method: "DELETE",
     }),
-  productJiraSpaces: (productId: number) => request<ProductJiraSpace[]>(`/api/products/${productId}/jira-spaces`),
-  addProductJiraSpace: (productId: number, payload: ProductJiraSpacePayload) =>
-    request<ProductJiraSpace>(`/api/products/${productId}/jira-spaces`, {
+  productJiraSpaces: (productId: ProductRef) => request<ProductJiraSpace[]>(`/api/products/${encodeURIComponent(String(productId))}/jira-spaces`),
+  addProductJiraSpace: (productId: ProductRef, payload: ProductJiraSpacePayload) =>
+    request<ProductJiraSpace>(`/api/products/${encodeURIComponent(String(productId))}/jira-spaces`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  updateProductJiraSpace: (productId: number, spaceId: number, payload: ProductJiraSpaceUpdatePayload) =>
-    request<ProductJiraSpace>(`/api/products/${productId}/jira-spaces/${spaceId}`, {
+  updateProductJiraSpace: (productId: ProductRef, spaceId: number, payload: ProductJiraSpaceUpdatePayload) =>
+    request<ProductJiraSpace>(`/api/products/${encodeURIComponent(String(productId))}/jira-spaces/${spaceId}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
-  removeProductJiraSpace: (productId: number, spaceId: number) =>
-    request<{ message: string }>(`/api/products/${productId}/jira-spaces/${spaceId}`, {
+  removeProductJiraSpace: (productId: ProductRef, spaceId: number) =>
+    request<{ message: string }>(`/api/products/${encodeURIComponent(String(productId))}/jira-spaces/${spaceId}`, {
       method: "DELETE",
     }),
-  validateProductJiraSpace: (productId: number, spaceId: number) =>
-    request<ProductJiraSpace>(`/api/products/${productId}/jira-spaces/${spaceId}/validate`, {
+  validateProductJiraSpace: (productId: ProductRef, spaceId: number) =>
+    request<ProductJiraSpace>(`/api/products/${encodeURIComponent(String(productId))}/jira-spaces/${spaceId}/validate`, {
       method: "POST",
     }),
   teamMembers: () => request<TeamMember[]>("/api/team-members"),

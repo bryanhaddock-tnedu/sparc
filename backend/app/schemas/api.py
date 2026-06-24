@@ -46,6 +46,7 @@ class AdminDataImportResult(BaseModel):
 class ProductResponse(BaseModel):
     id: int
     name: str
+    slug: str
     jira_space_key: str | None
     description: str | None
     office: str | None
@@ -345,6 +346,7 @@ class DeliveryFlowIssueResponse(BaseModel):
     role: str
     product_id: int | None
     product: str | None
+    product_slug: str | None
     bucket_id: int | None
     bucket: str | None
     issue_key: str
@@ -361,6 +363,7 @@ class DeliveryFlowIssueResponse(BaseModel):
 class ReportedValueRowResponse(BaseModel):
     product_id: int
     product: str
+    product_slug: str
     team_member_id: int
     team_member: str
     bucket_id: int
@@ -498,6 +501,7 @@ class SystemScanResponse(BaseModel):
 class ProductSummaryRowResponse(BaseModel):
     product_id: int
     product: str
+    product_slug: str
     jira_space_key: str | None
     team_members: int
     budget_amount: float
@@ -600,6 +604,7 @@ class ProductBucketTablesResponse(BaseModel):
 class TeamMemberProductRowResponse(BaseModel):
     product_id: int
     product: str
+    product_slug: str
     bucket_id: int
     bucket: str
     forecast_hours: float
@@ -624,6 +629,7 @@ class TeamMemberActualWorklogResponse(BaseModel):
     id: int
     product_id: int
     product: str
+    product_slug: str
     bucket_id: int
     bucket: str
     fiscal_month_id: int

@@ -31,6 +31,7 @@ from app.services.jira_projects import (
     validate_product_jira_space,
 )
 from app.services.product_org import product_org_pair_error
+from app.services.slugs import resolve_product_ref, unique_product_slug
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -49,6 +50,7 @@ def create_product(payload: ProductCreate, fiscal_year: int = 2027, db: Session 
     values = payload.model_dump()
     budget_amount = values.pop("budget_amount", Decimal("0.00"))
     product = Product(**values)
+    product.slug = unique_product_slug(db, product.name)
     db.add(product)
     try:
         db.flush()
@@ -61,19 +63,21 @@ def create_product(payload: ProductCreate, fiscal_year: int = 2027, db: Session 
     return serialize_product(product, budget_amount)
 
 
-@router.get("/{product_id}", response_model=ProductResponse)
-def get_product(product_id: int, fiscal_year: int = 2027, db: Session = Depends(get_db)) -> dict[str, object]:
-    product = db.get(Product, product_id)
-    if product is None:
-        raise not_found("Product")
+@router.get("/{product_ref}", response_model=ProductResponse)
+def get_product(product_ref: str, fiscal_year: int = 2027, db: Session = Depends(get_db)) -> dict[str, object]:
+    product = _resolve_product_or_404(db, product_ref)
+    product_id = product.id
+    if product.slug is None:
+        product.slug = unique_product_slug(db, product.name, product.id)
+        db.commit()
+        db.refresh(product)
     return serialize_product(product, product_budget_amount(db, product_id, fiscal_year))
 
 
-@router.put("/{product_id}", response_model=ProductResponse)
-def update_product(product_id: int, payload: ProductUpdate, fiscal_year: int = 2027, db: Session = Depends(get_db)) -> dict[str, object]:
-    product = db.get(Product, product_id)
-    if product is None:
-        raise not_found("Product")
+@router.put("/{product_ref}", response_model=ProductResponse)
+def update_product(product_ref: str, payload: ProductUpdate, fiscal_year: int = 2027, db: Session = Depends(get_db)) -> dict[str, object]:
+    product = _resolve_product_or_404(db, product_ref)
+    product_id = product.id
     updates = payload.model_dump(exclude_unset=True)
     if "office" in updates or "division" in updates:
         next_office = updates.get("office", product.office)
@@ -81,6 +85,8 @@ def update_product(product_id: int, payload: ProductUpdate, fiscal_year: int = 2
         if error := product_org_pair_error(next_office, next_division):
             raise bad_request(error)
     budget_amount = updates.pop("budget_amount", None)
+    if "name" in updates and updates["name"] != product.name:
+        product.slug = unique_product_slug(db, updates["name"], product.id)
     for key, value in updates.items():
         setattr(product, key, value)
     if budget_amount is not None:
@@ -94,11 +100,10 @@ def update_product(product_id: int, payload: ProductUpdate, fiscal_year: int = 2
     return serialize_product(product, product_budget_amount(db, product_id, fiscal_year))
 
 
-@router.delete("/{product_id}", response_model=dict[str, str])
-def delete_product(product_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
-    product = db.get(Product, product_id)
-    if product is None:
-        raise not_found("Product")
+@router.delete("/{product_ref}", response_model=dict[str, str])
+def delete_product(product_ref: str, db: Session = Depends(get_db)) -> dict[str, str]:
+    product = _resolve_product_or_404(db, product_ref)
+    product_id = product.id
     jira_space_count = db.scalar(
         select(func.count()).select_from(ProductJiraSpace).where(ProductJiraSpace.product_id == product_id)
     )
@@ -109,11 +114,10 @@ def delete_product(product_id: int, db: Session = Depends(get_db)) -> dict[str, 
     return {"message": "Product deleted"}
 
 
-@router.get("/{product_id}/team-members", response_model=list[ProductTeamMemberResponse])
-def list_product_team_members(product_id: int, db: Session = Depends(get_db)) -> list[dict[str, object]]:
-    product = db.get(Product, product_id)
-    if product is None:
-        raise not_found("Product")
+@router.get("/{product_ref}/team-members", response_model=list[ProductTeamMemberResponse])
+def list_product_team_members(product_ref: str, db: Session = Depends(get_db)) -> list[dict[str, object]]:
+    product = _resolve_product_or_404(db, product_ref)
+    product_id = product.id
     assignments = db.scalars(
         select(ProductTeamMember)
         .options(
@@ -127,15 +131,14 @@ def list_product_team_members(product_id: int, db: Session = Depends(get_db)) ->
     return [_serialize_product_team_member(db, assignment) for assignment in assignments]
 
 
-@router.post("/{product_id}/team-members", response_model=ProductTeamMemberResponse)
+@router.post("/{product_ref}/team-members", response_model=ProductTeamMemberResponse)
 def add_product_team_member(
-    product_id: int,
+    product_ref: str,
     payload: ProductTeamMemberCreate,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    product = db.get(Product, product_id)
-    if product is None:
-        raise not_found("Product")
+    product = _resolve_product_or_404(db, product_ref)
+    product_id = product.id
     member = db.get(TeamMember, payload.team_member_id)
     if member is None:
         raise not_found("Team member")
@@ -162,13 +165,15 @@ def add_product_team_member(
     return _serialize_product_team_member(db, assignment)
 
 
-@router.put("/{product_id}/team-members/{assignment_id}", response_model=ProductTeamMemberResponse)
+@router.put("/{product_ref}/team-members/{assignment_id}", response_model=ProductTeamMemberResponse)
 def update_product_team_member(
-    product_id: int,
+    product_ref: str,
     assignment_id: int,
     payload: ProductTeamMemberUpdate,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    product = _resolve_product_or_404(db, product_ref)
+    product_id = product.id
     assignment = db.get(ProductTeamMember, assignment_id)
     if assignment is None or assignment.product_id != product_id:
         raise not_found("Product team member")
@@ -184,8 +189,10 @@ def update_product_team_member(
     return _serialize_product_team_member(db, assignment)
 
 
-@router.delete("/{product_id}/team-members/{assignment_id}", response_model=dict[str, str])
-def remove_product_team_member(product_id: int, assignment_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+@router.delete("/{product_ref}/team-members/{assignment_id}", response_model=dict[str, str])
+def remove_product_team_member(product_ref: str, assignment_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+    product = _resolve_product_or_404(db, product_ref)
+    product_id = product.id
     assignment = db.get(ProductTeamMember, assignment_id)
     if assignment is None or assignment.product_id != product_id:
         raise not_found("Product team member")
@@ -202,22 +209,24 @@ def remove_product_team_member(product_id: int, assignment_id: int, db: Session 
     return {"message": "Team member removed from product and forecast lines cleared"}
 
 
-@router.get("/{product_id}/jira-spaces", response_model=list[ProductJiraSpaceResponse])
-def get_product_jira_spaces(product_id: int, db: Session = Depends(get_db)) -> list[dict[str, object]]:
+@router.get("/{product_ref}/jira-spaces", response_model=list[ProductJiraSpaceResponse])
+def get_product_jira_spaces(product_ref: str, db: Session = Depends(get_db)) -> list[dict[str, object]]:
+    product = _resolve_product_or_404(db, product_ref)
     try:
-        return list_product_jira_spaces(db, product_id)
+        return list_product_jira_spaces(db, product.id)
     except ValueError as exc:
         raise not_found(str(exc).replace(" not found", "")) from exc
 
 
-@router.post("/{product_id}/jira-spaces", response_model=ProductJiraSpaceResponse)
+@router.post("/{product_ref}/jira-spaces", response_model=ProductJiraSpaceResponse)
 def create_product_jira_space(
-    product_id: int,
+    product_ref: str,
     payload: ProductJiraSpaceCreate,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    product = _resolve_product_or_404(db, product_ref)
     try:
-        space = add_product_jira_space(db, product_id, **payload.model_dump())
+        space = add_product_jira_space(db, product.id, **payload.model_dump())
         db.commit()
         db.refresh(space)
         return serialize_product_jira_space(space)
@@ -226,15 +235,16 @@ def create_product_jira_space(
         raise bad_request(str(exc)) from exc
 
 
-@router.put("/{product_id}/jira-spaces/{space_id}", response_model=ProductJiraSpaceResponse)
+@router.put("/{product_ref}/jira-spaces/{space_id}", response_model=ProductJiraSpaceResponse)
 def edit_product_jira_space(
-    product_id: int,
+    product_ref: str,
     space_id: int,
     payload: ProductJiraSpaceUpdate,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    product = _resolve_product_or_404(db, product_ref)
     try:
-        space = update_product_jira_space(db, product_id, space_id, payload.model_dump(exclude_unset=True))
+        space = update_product_jira_space(db, product.id, space_id, payload.model_dump(exclude_unset=True))
         db.commit()
         db.refresh(space)
         return serialize_product_jira_space(space)
@@ -243,10 +253,11 @@ def edit_product_jira_space(
         raise not_found(str(exc).replace(" not found", "")) from exc
 
 
-@router.delete("/{product_id}/jira-spaces/{space_id}", response_model=dict[str, str])
-def delete_product_jira_space(product_id: int, space_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+@router.delete("/{product_ref}/jira-spaces/{space_id}", response_model=dict[str, str])
+def delete_product_jira_space(product_ref: str, space_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+    product = _resolve_product_or_404(db, product_ref)
     try:
-        remove_product_jira_space(db, product_id, space_id)
+        remove_product_jira_space(db, product.id, space_id)
         db.commit()
         return {"message": "Jira project removed from product"}
     except ValueError as exc:
@@ -254,10 +265,11 @@ def delete_product_jira_space(product_id: int, space_id: int, db: Session = Depe
         raise not_found(str(exc).replace(" not found", "")) from exc
 
 
-@router.post("/{product_id}/jira-spaces/{space_id}/validate", response_model=ProductJiraSpaceResponse)
-def validate_product_jira_space_endpoint(product_id: int, space_id: int, db: Session = Depends(get_db)) -> dict[str, object]:
+@router.post("/{product_ref}/jira-spaces/{space_id}/validate", response_model=ProductJiraSpaceResponse)
+def validate_product_jira_space_endpoint(product_ref: str, space_id: int, db: Session = Depends(get_db)) -> dict[str, object]:
+    product = _resolve_product_or_404(db, product_ref)
     try:
-        space = validate_product_jira_space(db, product_id, space_id)
+        space = validate_product_jira_space(db, product.id, space_id)
         db.commit()
         db.refresh(space)
         return serialize_product_jira_space(space)
@@ -266,36 +278,46 @@ def validate_product_jira_space_endpoint(product_id: int, space_id: int, db: Ses
         raise bad_request(str(exc)) from exc
 
 
-@router.get("/{product_id}/summary", response_model=ProductSummaryResponse)
-def get_product_summary(product_id: int, fiscal_year: int = 2027, db: Session = Depends(get_db)) -> dict[str, object]:
+@router.get("/{product_ref}/summary", response_model=ProductSummaryResponse)
+def get_product_summary(product_ref: str, fiscal_year: int = 2027, db: Session = Depends(get_db)) -> dict[str, object]:
+    product = _resolve_product_or_404(db, product_ref)
     try:
-        return product_summary(db, product_id, fiscal_year)
+        return product_summary(db, product.id, fiscal_year)
     except ValueError as exc:
         raise not_found(str(exc).replace(" not found", "")) from exc
 
 
-@router.get("/{product_id}/bucket-distribution", response_model=list[BucketDistributionResponse])
+@router.get("/{product_ref}/bucket-distribution", response_model=list[BucketDistributionResponse])
 def get_bucket_distribution(
-    product_id: int,
+    product_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
 ) -> list[dict[str, object]]:
-    return bucket_distribution(db, product_id, fiscal_year)
+    product = _resolve_product_or_404(db, product_ref)
+    return bucket_distribution(db, product.id, fiscal_year)
 
 
-@router.get("/{product_id}/bucket-tables", response_model=ProductBucketTablesResponse)
+@router.get("/{product_ref}/bucket-tables", response_model=ProductBucketTablesResponse)
 def get_bucket_tables(
-    product_id: int,
+    product_ref: str,
     fiscal_year: int = 2027,
     metric: str = "hours",
     data_type: str = "forecast",
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     _ = metric, data_type
+    product = _resolve_product_or_404(db, product_ref)
     try:
-        return product_bucket_tables(db, product_id, fiscal_year)
+        return product_bucket_tables(db, product.id, fiscal_year)
     except ValueError as exc:
         raise bad_request(str(exc)) from exc
+
+
+def _resolve_product_or_404(db: Session, product_ref: str) -> Product:
+    product = resolve_product_ref(db, product_ref)
+    if product is None:
+        raise not_found("Product")
+    return product
 
 
 def _validate_assignment_status(status: str | None) -> None:

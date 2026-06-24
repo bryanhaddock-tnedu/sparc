@@ -10,6 +10,7 @@ import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { OFFICE_OPTIONS, divisionBelongsToOffice, divisionOptionsForOffice } from "../lib/productOrg";
+import { productDetailPath } from "../lib/routes";
 import { formatCurrency } from "../lib/utils";
 import type { JiraProjectCatalog, Product, ProductJiraSpace, ProductJiraSpacePayload } from "../types/api";
 
@@ -598,7 +599,7 @@ function ProductSettingsCard({
           </div>
           <Link
             className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-1 text-sm font-medium text-primary hover:underline"
-            to={`/products/${product.id}`}
+            to={productDetailPath(product)}
           >
             Detail
             <ExternalLink className="h-3.5 w-3.5" />

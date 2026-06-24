@@ -79,6 +79,7 @@ Use a monorepo:
 - Team Member ID is optional and system-generated if not provided.
 - Team Members default to active.
 - Products may be tagged with Office and Division for organizational reporting. Office options are Academics, Operations, Programs, Deputy Commissioner, Commissioners Office, and General Counsel; Division options are constrained by the selected Office.
+- Product detail URLs use lowercase dash slugs derived from Product names, for example `/products/core-infrastructure`; numeric Product IDs remain accepted only as backwards-compatible references.
 - Created date and last updated date are required.
 
 ## Product Buckets

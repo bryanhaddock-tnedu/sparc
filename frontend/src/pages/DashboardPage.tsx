@@ -9,6 +9,7 @@ import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { Button } from "../components/ui/button";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
+import { productDetailPath } from "../lib/routes";
 import { cn, formatCurrency, formatHours } from "../lib/utils";
 import type { DashboardLaborMix, DashboardSummary, DashboardWorkTypeRow, ProductSummaryRow } from "../types/api";
 
@@ -322,7 +323,7 @@ function TopProductsCard({
             const forecastValue = productMetricValue(row, "forecast", metric);
             const actualValue = productMetricValue(row, "actual", metric);
             return (
-              <Link key={row.product_id} className="block rounded-md px-2 py-2 hover:bg-secondary/60" to={`/products/${row.product_id}`}>
+              <Link key={row.product_id} className="block rounded-md px-2 py-2 hover:bg-secondary/60" to={productDetailPath(row)}>
                 <div className="mb-1 flex items-baseline justify-between gap-2">
                   <div className="min-w-0 truncate text-xs font-medium">
                     <span className="mr-1.5 inline-block w-4 text-right text-muted-foreground">{index + 1}</span>

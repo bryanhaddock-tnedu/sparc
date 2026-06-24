@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
 from app.models.entities import Base
+from app.services.slugs import slugify
 
 settings = get_settings()
 
@@ -50,6 +51,16 @@ def ensure_database_compatibility() -> None:
             if column_name in product_columns:
                 continue
             connection.execute(text(statements[dialect]))
+            product_columns.add(column_name)
+        if "slug" not in product_columns:
+            product_slug_sql = {
+                "postgresql": "ALTER TABLE products ADD COLUMN IF NOT EXISTS slug VARCHAR(180)",
+                "sqlite": "ALTER TABLE products ADD COLUMN slug VARCHAR(180)",
+            }
+            connection.execute(text(product_slug_sql[dialect]))
+            product_columns.add("slug")
+        _backfill_product_slugs(connection)
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_products_slug ON products (slug)"))
 
     inspector = inspect(engine)
     table_names = inspector.get_table_names()
@@ -107,6 +118,22 @@ def ensure_database_compatibility() -> None:
             if column_name in existing_columns:
                 continue
             connection.execute(text(statements[dialect]))
+
+
+def _backfill_product_slugs(connection) -> None:
+    products = connection.execute(text("SELECT id, name, slug FROM products ORDER BY id")).mappings().all()
+    used: set[str] = set()
+    for product in products:
+        current_slug = product["slug"]
+        slug = current_slug.strip() if isinstance(current_slug, str) and current_slug.strip() else slugify(product["name"], fallback="product")
+        base_slug = slug
+        suffix = 2
+        while slug in used:
+            slug = f"{base_slug}-{suffix}"
+            suffix += 1
+        used.add(slug)
+        if slug != current_slug:
+            connection.execute(text("UPDATE products SET slug = :slug WHERE id = :id"), {"slug": slug, "id": product["id"]})
 
 
 def get_db() -> Generator[Session, None, None]:
