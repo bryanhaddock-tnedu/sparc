@@ -26,7 +26,7 @@ export default function App() {
               <Route path="/products/settings" element={<ProductSettingsPage />} />
               <Route path="/products/:productRef" element={<ProductDetailPage />} />
               <Route path="/team-members/:teamMemberId" element={<TeamMemberDetailPage />} />
-              <Route path="/teams/:teamName" element={<TeamAnalyticsPage />} />
+              <Route path="/teams/:teamSlug" element={<TeamAnalyticsPage />} />
               <Route path="/team" element={<TeamManagementPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/integrations" element={<Navigate to="/admin?tab=jira" replace />} />

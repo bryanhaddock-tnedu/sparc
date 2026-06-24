@@ -99,7 +99,7 @@ Build these primary routes:
 - `/` — Dashboard
 - `/products/:productId` — Product Detail
 - `/products/settings` — Product Settings
-- `/teams/:teamName` — Team Analytics
+- `/teams/:teamSlug` — Team Analytics
 - `/team-members/:teamMemberId` — Team Member Detail
 - `/team` — Team Management
 
@@ -282,6 +282,7 @@ Rules:
 - Active status defaults to active.
 - Team appears as the group heading instead of a repeated table column.
 - Team headings link to Team Analytics pages.
+- Team Analytics URLs use lowercase dash slugs derived from Team names, for example `/teams/agency-technology`; encoded spaces or capitalized Team names are not used in generated links.
 - Roster tables can be sorted by clicking column headers.
 - Name search should match typed prefixes for first or last names.
 - Bill Rate is read-only on the Team Management table.

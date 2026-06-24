@@ -1,6 +1,6 @@
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { MetricCard } from "../components/MetricCard";
@@ -18,7 +18,8 @@ import {
   buildTeamDeliveryFlowAnalytics,
   buildSingleTeamAnalytics,
   buildTeamMemberRankingRows,
-  teamDisplayName,
+  teamDisplayNameFromRef,
+  teamAnalyticsPath,
   type TeamAnalytics,
   type TeamAnalyticsBreakdownRow,
   type TeamDeliveryFlowAnalytics,
@@ -30,7 +31,8 @@ import type { DeliveryFlowIssue, ReportedValueRow, TeamMember, TeamMemberStoryPo
 
 export function TeamAnalyticsPage() {
   const params = useParams();
-  const teamName = teamDisplayName(safeDecodeURIComponent(params.teamName ?? ""));
+  const navigate = useNavigate();
+  const teamRef = safeDecodeURIComponent(params.teamSlug ?? "");
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
@@ -54,12 +56,21 @@ export function TeamAnalyticsPage() {
       .finally(() => setLoading(false));
   }, [fiscalYear]);
 
+  const teamName = useMemo(() => teamDisplayNameFromRef(teamRef, members), [members, teamRef]);
   const analytics = useMemo(() => buildSingleTeamAnalytics(teamName, members, reportedRows, fiscalYear), [fiscalYear, members, reportedRows, teamName]);
   const rankingRows = useMemo(
     () => buildTeamMemberRankingRows(reportedRows, members, fiscalYear, storyMetrics, teamName),
     [fiscalYear, members, reportedRows, storyMetrics, teamName],
   );
   const deliveryFlow = useMemo(() => buildTeamDeliveryFlowAnalytics(teamName, deliveryIssues), [deliveryIssues, teamName]);
+
+  useEffect(() => {
+    if (loading || !teamName) return;
+    const cleanPath = teamAnalyticsPath(teamName);
+    if (window.location.pathname !== cleanPath) {
+      navigate(cleanPath, { replace: true });
+    }
+  }, [loading, navigate, teamName]);
 
   if (loading) return <LoadingBlock />;
   if (error) return <ErrorBlock message={error} />;

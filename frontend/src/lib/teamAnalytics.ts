@@ -163,8 +163,30 @@ export function teamDisplayName(team: string | null | undefined) {
   return team?.trim() || UNASSIGNED_TEAM;
 }
 
+export function teamSlug(team: string | null | undefined) {
+  const normalized = teamDisplayName(team)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "team";
+}
+
 export function teamAnalyticsPath(team: string) {
-  return `/teams/${encodeURIComponent(teamDisplayName(team))}`;
+  return `/teams/${teamSlug(team)}`;
+}
+
+export function teamDisplayNameFromRef(teamRef: string, members: TeamMember[]) {
+  const refSlug = teamSlug(teamRef);
+  const matchedMember = members.find((member) => teamSlug(member.team) === refSlug);
+  if (matchedMember) return teamDisplayName(matchedMember.team);
+  return teamDisplayName(
+    teamRef
+      .replace(/-/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
 }
 
 export function buildTeamActualAnalytics(rows: ReportedValueRow[], members: TeamMember[], fiscalYear: number) {
