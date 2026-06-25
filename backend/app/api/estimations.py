@@ -20,7 +20,7 @@ from app.schemas import (
     TeamMemberStoryPointMetricResponse,
 )
 from app.services.estimation_policy import ensure_default_estimation_profile, preview_mock_estimation, reported_value_rows, run_mock_estimation
-from app.services.slugs import product_url_slug
+from app.services.slugs import product_url_slug, team_member_url_slug
 
 router = APIRouter(prefix="/estimations", tags=["estimations"])
 
@@ -307,6 +307,7 @@ def _serialize_delivery_flow_issues(estimation_run_id: int, allocations: list[Es
                 "estimation_run_id": estimation_run_id,
                 "team_member_id": allocation.team_member_id,
                 "team_member": allocation.team_member.name,
+                "team_member_slug": team_member_url_slug(allocation.team_member),
                 "team": allocation.team_member.team,
                 "role": allocation.team_member.role,
                 "product_id": allocation.product_id,
@@ -367,6 +368,7 @@ def _serialize_allocation(allocation: EstimatedIssueAllocation) -> dict[str, obj
         "estimation_run_id": allocation.estimation_run_id,
         "team_member_id": allocation.team_member_id,
         "team_member": allocation.team_member.name,
+        "team_member_slug": team_member_url_slug(allocation.team_member),
         "issue_id": allocation.issue_id,
         "issue_key": allocation.issue_key,
         "issue_summary": allocation.issue_summary,

@@ -28,6 +28,7 @@ from app.models import (
 )
 from app.services.fiscal_year import ensure_fiscal_months
 from app.services.forecasting import upsert_forecast_entry
+from app.services.slugs import unique_team_member_slug
 
 
 @dataclass(frozen=True)
@@ -681,6 +682,8 @@ def _import_team_members(db: Session, workbook, result: dict[str, int | str], er
         member.employment_type = _text(row, "employment_type") or "Employee"
         member.contracting_company = _text(row, "contracting_company")
         member.status = _text(row, "status") or "active"
+        if created or member.slug is None:
+            member.slug = unique_team_member_slug(db, member.name, member.id)
         result["created" if created else "updated"] += 1
 
 

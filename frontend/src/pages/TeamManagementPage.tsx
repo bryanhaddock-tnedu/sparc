@@ -21,6 +21,7 @@ import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
+import { teamMemberDetailPath } from "../lib/routes";
 import {
   buildTeamActualAnalytics,
   buildTeamMemberRankingRows,
@@ -135,7 +136,7 @@ export function TeamManagementPage() {
         accessorKey: "name",
         header: "Name",
         cell: ({ row }) => (
-          <Link className="font-medium text-primary hover:underline" to={`/team-members/${row.original.id}`}>
+          <Link className="font-medium text-primary hover:underline" to={teamMemberDetailPath(row.original)}>
             {row.original.name}
           </Link>
         ),

@@ -63,6 +63,7 @@ class TeamMember(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     staff_id: Mapped[str | None] = mapped_column(String(60), unique=True)
     name: Mapped[str] = mapped_column(String(160), index=True, nullable=False)
+    slug: Mapped[str | None] = mapped_column(String(180), unique=True, index=True)
     role: Mapped[str] = mapped_column(String(120), nullable=False)
     team: Mapped[str] = mapped_column(String(120), nullable=False)
     bill_rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)

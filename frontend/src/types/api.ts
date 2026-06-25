@@ -145,6 +145,7 @@ export interface ProductTeamMember {
   product_id: number;
   team_member_id: number;
   team_member: string;
+  team_member_slug: string;
   role: string;
   team: string;
   bill_rate: number;
@@ -316,6 +317,7 @@ export interface ReportedValueRow {
   product_slug: string;
   team_member_id: number;
   team_member: string;
+  team_member_slug: string;
   bucket_id: number;
   bucket: string;
   bucket_code: string;
@@ -338,6 +340,7 @@ export interface EstimatedIssueAllocation {
   estimation_run_id: number;
   team_member_id: number;
   team_member: string;
+  team_member_slug: string;
   issue_id: string;
   issue_key: string;
   issue_summary: string | null;
@@ -377,6 +380,7 @@ export interface DeliveryFlowIssue {
   estimation_run_id: number;
   team_member_id: number;
   team_member: string;
+  team_member_slug: string;
   team: string;
   role: string;
   product_id: number | null;
@@ -445,6 +449,7 @@ export interface MonthCell {
 export interface BucketTableRow {
   team_member_id: number;
   team_member: string;
+  team_member_slug: string;
   bill_rate: number;
   months: MonthCell[];
   totals: Omit<MonthCell, "fiscal_month_id" | "sequence" | "label">;
@@ -469,6 +474,7 @@ export interface TeamMember {
   id: number;
   staff_id: string | null;
   name: string;
+  slug: string;
   role: string;
   team: string;
   bill_rate: number;

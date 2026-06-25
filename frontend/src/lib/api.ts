@@ -47,6 +47,7 @@ import type {
 } from "../types/api";
 
 type ProductRef = number | string;
+type TeamMemberRef = number | string;
 import { appConfig } from "./config";
 
 const API_BASE_URL = appConfig.apiBaseUrl;
@@ -226,15 +227,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  updateTeamMember: (teamMemberId: number, payload: Partial<TeamMember>) =>
-    request<TeamMember>(`/api/team-members/${teamMemberId}`, {
+  updateTeamMember: (teamMemberId: TeamMemberRef, payload: Partial<TeamMember>) =>
+    request<TeamMember>(`/api/team-members/${encodeURIComponent(String(teamMemberId))}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
-  teamMemberProducts: (teamMemberId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
-    request<TeamMemberProducts>(`/api/team-members/${teamMemberId}/products?fiscal_year=${fiscalYear}`),
-  teamMemberActualWorklogs: (teamMemberId: number, fiscalYear = DEFAULT_FISCAL_YEAR) =>
-    request<TeamMemberActualWorklog[]>(`/api/team-members/${teamMemberId}/actual-worklogs?fiscal_year=${fiscalYear}`),
+  teamMemberProducts: (teamMemberId: TeamMemberRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<TeamMemberProducts>(`/api/team-members/${encodeURIComponent(String(teamMemberId))}/products?fiscal_year=${fiscalYear}`),
+  teamMemberActualWorklogs: (teamMemberId: TeamMemberRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<TeamMemberActualWorklog[]>(`/api/team-members/${encodeURIComponent(String(teamMemberId))}/actual-worklogs?fiscal_year=${fiscalYear}`),
   upsertForecast: (payload: ForecastUpsertPayload) =>
     request<ForecastResponse>("/api/forecasts", {
       method: "PUT",

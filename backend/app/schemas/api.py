@@ -61,6 +61,7 @@ class TeamMemberResponse(BaseModel):
     id: int
     staff_id: str | None
     name: str
+    slug: str
     role: str
     team: str
     bill_rate: float
@@ -137,6 +138,7 @@ class ProductTeamMemberResponse(BaseModel):
     product_id: int
     team_member_id: int
     team_member: str
+    team_member_slug: str
     role: str
     team: str
     bill_rate: float
@@ -303,6 +305,7 @@ class EstimatedIssueAllocationResponse(BaseModel):
     estimation_run_id: int
     team_member_id: int
     team_member: str
+    team_member_slug: str
     issue_id: str
     issue_key: str
     issue_summary: str | None
@@ -342,6 +345,7 @@ class DeliveryFlowIssueResponse(BaseModel):
     estimation_run_id: int
     team_member_id: int
     team_member: str
+    team_member_slug: str
     team: str
     role: str
     product_id: int | None
@@ -366,6 +370,7 @@ class ReportedValueRowResponse(BaseModel):
     product_slug: str
     team_member_id: int
     team_member: str
+    team_member_slug: str
     bucket_id: int
     bucket: str
     bucket_code: str
@@ -581,6 +586,7 @@ class TotalsResponse(BaseModel):
 class BucketTableRowResponse(BaseModel):
     team_member_id: int
     team_member: str
+    team_member_slug: str
     bill_rate: float
     months: list[MonthCellResponse]
     totals: TotalsResponse

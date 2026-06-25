@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models import ActualEntry, Bucket, FiscalMonth, ForecastEntry, Product, ProductBudget, ProductTeamMember, TeamMember
 from app.services.costs import calculate_cost, round_hours
 from app.services.fiscal_year import ensure_fiscal_months
-from app.services.slugs import product_url_slug
+from app.services.slugs import product_url_slug, team_member_url_slug
 
 
 def serialize_product(product: Product, budget_amount: Decimal | float | None = None) -> dict[str, object]:
@@ -51,6 +51,7 @@ def serialize_team_member(member: TeamMember) -> dict[str, object]:
         "id": member.id,
         "staff_id": member.staff_id,
         "name": member.name,
+        "slug": team_member_url_slug(member),
         "role": member.role,
         "team": member.team,
         "bill_rate": round_hours(member.bill_rate),
@@ -362,6 +363,7 @@ def product_bucket_tables(db: Session, product_id: int, fiscal_year: int) -> dic
                 {
                     "team_member_id": member.id,
                     "team_member": member.name,
+                    "team_member_slug": team_member_url_slug(member),
                     "bill_rate": round_hours(member.bill_rate),
                     "months": month_cells,
                     "totals": _rounded_totals(row_totals),

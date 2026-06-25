@@ -80,6 +80,7 @@ Use a monorepo:
 - Team Members default to active.
 - Products may be tagged with Office and Division for organizational reporting. Office options are Academics, Operations, Programs, Deputy Commissioner, Commissioners Office, and General Counsel; Division options are constrained by the selected Office.
 - Product detail URLs use lowercase dash slugs derived from Product names, for example `/products/core-infrastructure`; numeric Product IDs remain accepted only as backwards-compatible references.
+- Team Member detail URLs use lowercase dash slugs derived from Team Member names, for example `/team-members/avery-johnson`; numeric Team Member IDs remain accepted only as backwards-compatible references.
 - Created date and last updated date are required.
 
 ## Product Buckets
@@ -97,10 +98,10 @@ Product Detail pages must organize detailed labor data by these buckets.
 Build these primary routes:
 
 - `/` — Dashboard
-- `/products/:productId` — Product Detail
+- `/products/:productSlug` — Product Detail
 - `/products/settings` — Product Settings
 - `/teams/:teamSlug` — Team Analytics
-- `/team-members/:teamMemberId` — Team Member Detail
+- `/team-members/:teamMemberSlug` — Team Member Detail
 - `/team` — Team Management
 
 ## Dashboard Requirements
@@ -279,6 +280,7 @@ Columns:
 Rules:
 
 - Name links to Team Member Detail page.
+- Team Member Detail links use lowercase dash slugs derived from Team Member names.
 - Active status defaults to active.
 - Team appears as the group heading instead of a repeated table column.
 - Team headings link to Team Analytics pages.
@@ -386,9 +388,9 @@ Team Members:
 
 - `GET /api/team-members`
 - `POST /api/team-members`
-- `GET /api/team-members/{team_member_id}`
-- `PUT /api/team-members/{team_member_id}`
-- `GET /api/team-members/{team_member_id}/products?fiscal_year=2026`
+- `GET /api/team-members/{team_member_ref}`
+- `PUT /api/team-members/{team_member_ref}`
+- `GET /api/team-members/{team_member_ref}/products?fiscal_year=2026`
 
 Forecasts:
 

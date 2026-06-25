@@ -8,9 +8,11 @@ from app.api.products import create_product as create_product_endpoint
 from app.api.products import delete_product as delete_product_endpoint
 from app.api.products import get_product as get_product_endpoint
 from app.api.products import remove_product_team_member as remove_product_team_member_endpoint
+from app.api.team_members import create_team_member as create_team_member_endpoint
+from app.api.team_members import get_team_member as get_team_member_endpoint
 from app.db.seed import _seed_buckets
 from app.models import ActualEntry, Base, Bucket, ForecastEntry, JiraProductMapping, JiraProjectCatalog, Product, ProductBudget, ProductTeamMember, TeamMember
-from app.schemas import ProductCreate
+from app.schemas import ProductCreate, TeamMemberCreate
 from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_work_type_breakdown, product_bucket_tables, product_summary
 from app.services.costs import calculate_cost
 from app.services.fiscal_year import fiscal_sequence_for_date, fiscal_year_for_date, get_fiscal_month
@@ -142,6 +144,19 @@ def test_product_slugs_are_generated_and_resolve_with_numeric_fallback():
         assert second["slug"] == "core-infrastructure-2"
         assert get_product_endpoint("core-infrastructure", fiscal_year=2027, db=db)["id"] == first["id"]
         assert get_product_endpoint(str(first["id"]), fiscal_year=2027, db=db)["slug"] == "core-infrastructure"
+
+
+def test_team_member_slugs_are_generated_and_resolve_with_numeric_fallback():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        first = create_team_member_endpoint(TeamMemberCreate(name="Avery Johnson", role="Dev", team="Agency Technology"), db=db)
+        second = create_team_member_endpoint(TeamMemberCreate(name="Avery Johnson!", role="QA", team="Agency Technology"), db=db)
+
+        assert first["slug"] == "avery-johnson"
+        assert second["slug"] == "avery-johnson-2"
+        assert get_team_member_endpoint("avery-johnson", db=db)["id"] == first["id"]
+        assert get_team_member_endpoint(str(first["id"]), db=db)["slug"] == "avery-johnson"
 
 
 def test_product_budget_is_fiscal_year_specific():

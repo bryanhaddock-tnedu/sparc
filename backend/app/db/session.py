@@ -83,6 +83,19 @@ def ensure_database_compatibility() -> None:
                 )
             )
 
+    if "team_members" in table_names:
+        inspector = inspect(engine)
+        team_member_columns = {column["name"] for column in inspector.get_columns("team_members")}
+        with engine.begin() as connection:
+            if "slug" not in team_member_columns:
+                team_member_slug_sql = {
+                    "postgresql": "ALTER TABLE team_members ADD COLUMN IF NOT EXISTS slug VARCHAR(180)",
+                    "sqlite": "ALTER TABLE team_members ADD COLUMN slug VARCHAR(180)",
+                }
+                connection.execute(text(team_member_slug_sql[dialect]))
+            _backfill_team_member_slugs(connection)
+            connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_team_members_slug ON team_members (slug)"))
+
     if "actual_entries" not in table_names:
         return
 
@@ -134,6 +147,22 @@ def _backfill_product_slugs(connection) -> None:
         used.add(slug)
         if slug != current_slug:
             connection.execute(text("UPDATE products SET slug = :slug WHERE id = :id"), {"slug": slug, "id": product["id"]})
+
+
+def _backfill_team_member_slugs(connection) -> None:
+    members = connection.execute(text("SELECT id, name, slug FROM team_members ORDER BY id")).mappings().all()
+    used: set[str] = set()
+    for member in members:
+        current_slug = member["slug"]
+        slug = current_slug.strip() if isinstance(current_slug, str) and current_slug.strip() else slugify(member["name"], fallback="team-member")
+        base_slug = slug
+        suffix = 2
+        while slug in used:
+            slug = f"{base_slug}-{suffix}"
+            suffix += 1
+        used.add(slug)
+        if slug != current_slug:
+            connection.execute(text("UPDATE team_members SET slug = :slug WHERE id = :id"), {"slug": slug, "id": member["id"]})
 
 
 def get_db() -> Generator[Session, None, None]:

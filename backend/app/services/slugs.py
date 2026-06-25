@@ -4,7 +4,7 @@ import unicodedata
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Product
+from app.models import Product, TeamMember
 
 
 def slugify(value: str | None, fallback: str = "item") -> str:
@@ -40,3 +40,31 @@ def resolve_product_ref(db: Session, product_ref: str | int) -> Product | None:
         if product is not None:
             return product
     return db.scalar(select(Product).where(Product.slug == text_ref))
+
+
+def team_member_url_slug(member: TeamMember) -> str:
+    return member.slug or slugify(member.name, fallback=f"team-member-{member.id}")
+
+
+def unique_team_member_slug(db: Session, name: str, team_member_id: int | None = None) -> str:
+    base_slug = slugify(name, fallback="team-member")
+    existing = {
+        row.slug
+        for row in db.scalars(select(TeamMember).where(TeamMember.slug.is_not(None))).all()
+        if row.slug and (team_member_id is None or row.id != team_member_id)
+    }
+    slug = base_slug
+    suffix = 2
+    while slug in existing:
+        slug = f"{base_slug}-{suffix}"
+        suffix += 1
+    return slug
+
+
+def resolve_team_member_ref(db: Session, team_member_ref: str | int) -> TeamMember | None:
+    text_ref = str(team_member_ref).strip()
+    if text_ref.isdigit():
+        member = db.get(TeamMember, int(text_ref))
+        if member is not None:
+            return member
+    return db.scalar(select(TeamMember).where(TeamMember.slug == text_ref))

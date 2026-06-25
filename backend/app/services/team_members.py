@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import TeamMember
+from app.services.slugs import unique_team_member_slug
 
 STAFF_ID_PREFIX = "SPARC"
 
@@ -43,6 +44,7 @@ def create_team_member(db: Session, payload: dict[str, object]) -> TeamMember:
     if not data.get("staff_id"):
         data["staff_id"] = generate_staff_id(db)
     member = TeamMember(**data)
+    member.slug = unique_team_member_slug(db, member.name)
     db.add(member)
     try:
         db.flush()
@@ -59,6 +61,8 @@ def update_team_member(db: Session, member: TeamMember, payload: dict[str, objec
         data["status"] = normalize_status(str(data["status"]))
     if "bill_rate" in data and data["bill_rate"] is not None:
         data["bill_rate"] = Decimal(str(data["bill_rate"]))
+    if "name" in data and data["name"] is not None and data["name"] != member.name:
+        member.slug = unique_team_member_slug(db, str(data["name"]), member.id)
     for key, value in data.items():
         setattr(member, key, value)
     try:

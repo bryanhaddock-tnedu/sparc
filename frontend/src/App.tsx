@@ -25,7 +25,7 @@ export default function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/products/settings" element={<ProductSettingsPage />} />
               <Route path="/products/:productRef" element={<ProductDetailPage />} />
-              <Route path="/team-members/:teamMemberId" element={<TeamMemberDetailPage />} />
+              <Route path="/team-members/:teamMemberRef" element={<TeamMemberDetailPage />} />
               <Route path="/teams/:teamSlug" element={<TeamAnalyticsPage />} />
               <Route path="/team" element={<TeamManagementPage />} />
               <Route path="/admin" element={<AdminPage />} />

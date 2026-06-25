@@ -12,7 +12,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
-import { productDetailPath } from "../lib/routes";
+import { productDetailPath, teamMemberDetailPath } from "../lib/routes";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type {
   BucketTable,
@@ -536,7 +536,7 @@ function ProductTeamSection({
                     assignments.map((assignment) => (
                       <tr key={assignment.id} className="border-b last:border-0">
                         <td className="px-3 py-3">
-                          <Link className="font-medium text-primary hover:underline" to={`/team-members/${assignment.team_member_id}`}>
+                          <Link className="font-medium text-primary hover:underline" to={teamMemberDetailPath(assignment)}>
                             {assignment.team_member}
                           </Link>
                         </td>
@@ -764,7 +764,7 @@ function BucketSection({
                 <Fragment key={row.team_member_id}>
                   <tr className="border-t align-middle">
                     <td rowSpan={4} className="sticky left-0 z-10 bg-card px-2 py-2 align-top">
-                      <Link className="block truncate font-medium text-primary hover:underline" to={`/team-members/${row.team_member_id}`}>
+                      <Link className="block truncate font-medium text-primary hover:underline" to={teamMemberDetailPath(row)}>
                         {row.team_member}
                       </Link>
                       <div className="numeric-cell mt-1 truncate text-[11px] text-muted-foreground">{formatCurrency(row.bill_rate)}/hr</div>

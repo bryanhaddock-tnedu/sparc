@@ -31,7 +31,7 @@ from app.services.jira_projects import (
     validate_product_jira_space,
 )
 from app.services.product_org import product_org_pair_error
-from app.services.slugs import resolve_product_ref, unique_product_slug
+from app.services.slugs import resolve_product_ref, team_member_url_slug, unique_product_slug
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -364,6 +364,7 @@ def _serialize_product_team_member(db: Session, assignment: ProductTeamMember) -
         "product_id": assignment.product_id,
         "team_member_id": assignment.team_member_id,
         "team_member": member.name,
+        "team_member_slug": team_member_url_slug(member),
         "role": member.role,
         "team": member.team,
         "bill_rate": round(float(member.bill_rate or 0), 2),

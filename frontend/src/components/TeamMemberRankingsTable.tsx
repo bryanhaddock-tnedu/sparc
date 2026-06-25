@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { teamMemberDetailPath } from "../lib/routes";
 import { TEAM_RANKING_DIMENSIONS, type TeamMemberRankingRow, type TeamRankingDimension } from "../lib/teamAnalytics";
 import { formatHours } from "../lib/utils";
 import { Badge } from "./ui/badge";
@@ -74,7 +75,7 @@ export function TeamMemberRankingsTable({
                 <TableRow key={row.memberId}>
                   <TableCell className="numeric-cell text-muted-foreground">{index + 1}</TableCell>
                   <TableCell>
-                    <Link className="font-medium text-primary hover:underline" to={`/team-members/${row.memberId}`}>
+                    <Link className="font-medium text-primary hover:underline" to={teamMemberDetailPath(row)}>
                       {row.name}
                     </Link>
                     {row.status !== "active" ? <Badge className="ml-2 border-muted text-muted-foreground">{row.status}</Badge> : null}

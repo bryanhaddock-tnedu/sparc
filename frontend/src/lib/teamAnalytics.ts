@@ -76,6 +76,7 @@ export type TeamMemberRanking = {
 
 export type TeamMemberRankingRow = {
   memberId: number;
+  memberSlug: string;
   name: string;
   role: string;
   team: string;
@@ -248,6 +249,7 @@ export function buildTeamMemberRankingRows(
     const ticketsTouched = storyMetric?.issue_count ?? 0;
     return {
       memberId: member.id,
+      memberSlug: member.slug,
       name: member.name,
       role: member.role,
       team: teamDisplayName(member.team),

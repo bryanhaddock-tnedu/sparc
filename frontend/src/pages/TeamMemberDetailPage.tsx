@@ -1,6 +1,6 @@
 import { Pencil, Plus, Save, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { MetricCard } from "../components/MetricCard";
@@ -14,7 +14,7 @@ import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
-import { productDetailPath } from "../lib/routes";
+import { productDetailPath, teamMemberDetailPath } from "../lib/routes";
 import { formatBillRate } from "../lib/teamMembers";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type { BucketTable, FiscalMonth, Product, ReportedValueRow, TeamMember, TeamMemberActualWorklog, TeamMemberProducts } from "../types/api";
@@ -35,7 +35,8 @@ type ProfileFormState = {
 
 export function TeamMemberDetailPage() {
   const params = useParams();
-  const teamMemberId = Number(params.teamMemberId);
+  const navigate = useNavigate();
+  const teamMemberRef = params.teamMemberRef ?? "";
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [data, setData] = useState<TeamMemberProducts | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -57,12 +58,16 @@ export function TeamMemberDetailPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   async function loadData() {
-    const [productsResult, allProductsResult, reportedRowsResult, actualWorklogsResult] = await Promise.all([
-      api.teamMemberProducts(teamMemberId, fiscalYear),
+    const productsResult = await api.teamMemberProducts(teamMemberRef, fiscalYear);
+    const resolvedTeamMemberId = productsResult.team_member.id;
+    const [allProductsResult, reportedRowsResult, actualWorklogsResult] = await Promise.all([
       api.products(fiscalYear),
-      api.reportedValues({ team_member_id: teamMemberId }, fiscalYear),
-      api.teamMemberActualWorklogs(teamMemberId, fiscalYear),
+      api.reportedValues({ team_member_id: resolvedTeamMemberId }, fiscalYear),
+      api.teamMemberActualWorklogs(resolvedTeamMemberId, fiscalYear),
     ]);
+    if (teamMemberRef !== productsResult.team_member.slug) {
+      navigate(teamMemberDetailPath(productsResult.team_member), { replace: true });
+    }
     setData(productsResult);
     setProducts(allProductsResult);
     setReportedRows(reportedRowsResult);
@@ -85,7 +90,7 @@ export function TeamMemberDetailPage() {
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load team member"))
       .finally(() => setLoading(false));
-  }, [teamMemberId, fiscalYear]);
+  }, [teamMemberRef, fiscalYear]);
 
   useEffect(() => {
     if (forecastLineProductId || products.length === 0) return;
@@ -275,7 +280,7 @@ export function TeamMemberDetailPage() {
     setSaving(true);
     setFormError(null);
     try {
-      await api.updateTeamMember(member.id, {
+      const updatedMember = await api.updateTeamMember(member.id, {
         name: form.name.trim(),
         role: form.role.trim(),
         team: form.team.trim(),
@@ -284,7 +289,11 @@ export function TeamMemberDetailPage() {
         contracting_company: form.contractingCompany.trim() || null,
         status: form.status,
       });
-      await loadData();
+      if (teamMemberRef !== updatedMember.slug) {
+        navigate(teamMemberDetailPath(updatedMember), { replace: true });
+      } else {
+        await loadData();
+      }
       setEditing(false);
       setForm(null);
     } catch (err) {
