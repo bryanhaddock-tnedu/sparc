@@ -34,23 +34,52 @@ jobs:
         if: ${{ github.ref == 'refs/heads/develop' }}
         run: |
           if [ -z "$STAGE_DEPLOY_HOOK_URL" ]; then
-            echo "::error::STAGE_DEPLOY_HOOK_URL is not configured, so the stage image was built but UAT was not rolled."
-            exit 1
+            echo "STAGE_DEPLOY_HOOK_STATUS=missing" >> "$GITHUB_ENV"
+            echo "::warning::STAGE_DEPLOY_HOOK_URL is not configured, so the stage image was built but UAT cannot be rolled from this workflow."
+            exit 0
           fi
-          curl -fsS -X POST "$STAGE_DEPLOY_HOOK_URL"
+          if curl -fsS -X POST "$STAGE_DEPLOY_HOOK_URL"; then
+            echo "STAGE_DEPLOY_HOOK_STATUS=posted" >> "$GITHUB_ENV"
+          else
+            echo "STAGE_DEPLOY_HOOK_STATUS=failed" >> "$GITHUB_ENV"
+            echo "::warning::Stage deploy hook request failed."
+          fi
       - name: Verify Stage Deployment
         if: ${{ github.ref == 'refs/heads/develop' }}
         run: |
           echo "Waiting for $STAGE_APP_URL to report build $GITHUB_SHA"
-          for attempt in $(seq 1 30); do
+          attempts=30
+          if [ "${STAGE_DEPLOY_HOOK_STATUS:-unknown}" != "posted" ]; then
+            attempts=1
+          fi
+          for attempt in $(seq 1 "$attempts"); do
             response="$(curl -fsS "$STAGE_APP_URL/api/app-version" || true)"
             version="$(RESPONSE="$response" python3 -c 'import json, os; print(json.loads(os.environ["RESPONSE"]).get("version", ""))' 2>/dev/null || true)"
-            echo "Attempt $attempt/30: reported '${version:-unavailable}'"
+            echo "Attempt $attempt/$attempts: reported '${version:-unavailable}'"
             if [ "$version" = "$GITHUB_SHA" ]; then
               echo "Stage is running $GITHUB_SHA"
+              {
+                echo "## UAT deploy verification"
+                echo "- Expected commit: \`$GITHUB_SHA\`"
+                echo "- Hook status: \`${STAGE_DEPLOY_HOOK_STATUS:-unknown}\`"
+                echo "- UAT reported version: \`$version\`"
+              } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 10
           done
-          echo "::error::Stage deploy did not reach $GITHUB_SHA. Last response: $response"
+          {
+            echo "## UAT deploy verification"
+            echo "- Expected commit: \`$GITHUB_SHA\`"
+            echo "- Hook status: \`${STAGE_DEPLOY_HOOK_STATUS:-unknown}\`"
+            echo "- UAT reported version: \`${version:-unavailable}\`"
+            echo "- Last response: \`$response\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${STAGE_DEPLOY_HOOK_STATUS:-unknown}" = "missing" ]; then
+            echo "::error::STAGE_DEPLOY_HOOK_URL is not configured, so UAT cannot roll from this workflow."
+          elif [ "${STAGE_DEPLOY_HOOK_STATUS:-unknown}" = "failed" ]; then
+            echo "::error::Stage deploy hook request failed before UAT could roll."
+          else
+            echo "::error::Stage deploy hook completed but UAT did not reach $GITHUB_SHA. Last response: $response"
+          fi
           exit 1
