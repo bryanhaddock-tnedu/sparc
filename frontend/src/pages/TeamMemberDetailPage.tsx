@@ -6,6 +6,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
 import { MetricCard } from "../components/MetricCard";
 import { PageNav } from "../components/PageNav";
 import { ReportedValuesTable } from "../components/ReportedValuesTable";
+import { RoadmapActualsTable } from "../components/RoadmapActualsTable";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -17,7 +18,7 @@ import { useFiscalYear } from "../lib/fiscalYear";
 import { productDetailPath, teamMemberDetailPath } from "../lib/routes";
 import { formatBillRate } from "../lib/teamMembers";
 import { formatCurrency, formatHours } from "../lib/utils";
-import type { BucketTable, FiscalMonth, Product, ReportedValueRow, TeamMember, TeamMemberActualWorklog, TeamMemberProducts } from "../types/api";
+import type { BucketTable, FiscalMonth, Product, ReportedValueRow, RoadmapActualRow, TeamMember, TeamMemberActualWorklog, TeamMemberProducts } from "../types/api";
 
 const CHART_COLORS = ["var(--spark-cyan)", "var(--spark-orange)", "var(--spark-navy)", "var(--spark-red)", "#8fb3d9", "#d6d94f", "#7a86a8"];
 const COST_VARIANCE_HELP =
@@ -42,6 +43,7 @@ export function TeamMemberDetailPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [bucketOptions, setBucketOptions] = useState<BucketTable[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
+  const [roadmapActualRows, setRoadmapActualRows] = useState<RoadmapActualRow[]>([]);
   const [actualWorklogs, setActualWorklogs] = useState<TeamMemberActualWorklog[]>([]);
   const [worklogMonthId, setWorklogMonthId] = useState("");
   const [forecastLineProductId, setForecastLineProductId] = useState("");
@@ -60,10 +62,11 @@ export function TeamMemberDetailPage() {
   async function loadData() {
     const productsResult = await api.teamMemberProducts(teamMemberRef, fiscalYear);
     const resolvedTeamMemberId = productsResult.team_member.id;
-    const [allProductsResult, reportedRowsResult, actualWorklogsResult] = await Promise.all([
+    const [allProductsResult, reportedRowsResult, actualWorklogsResult, roadmapActualsResult] = await Promise.all([
       api.products(fiscalYear),
       api.reportedValues({ team_member_id: resolvedTeamMemberId }, fiscalYear),
       api.teamMemberActualWorklogs(resolvedTeamMemberId, fiscalYear),
+      api.teamMemberRoadmapActuals(resolvedTeamMemberId, fiscalYear),
     ]);
     if (teamMemberRef !== productsResult.team_member.slug) {
       navigate(teamMemberDetailPath(productsResult.team_member), { replace: true });
@@ -71,6 +74,7 @@ export function TeamMemberDetailPage() {
     setData(productsResult);
     setProducts(allProductsResult);
     setReportedRows(reportedRowsResult);
+    setRoadmapActualRows(roadmapActualsResult);
     setActualWorklogs(actualWorklogsResult);
     setForecastDrafts({});
     setWorklogMonthId((current) => {
@@ -428,6 +432,8 @@ export function TeamMemberDetailPage() {
       />
 
       <ReportedValuesTable rows={reportedRows} showProduct />
+
+      <RoadmapActualsTable rows={roadmapActualRows} showProduct title="Roadmap Work For Billing" />
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-3">

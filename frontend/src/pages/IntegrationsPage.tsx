@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
-import type { JiraIntegrationStatus, JiraProductMapping, JiraProjectCatalog, JiraUserMapping, Product, SyncRun, TeamMember } from "../types/api";
+import type { JiraIntegrationStatus, JiraProductMapping, JiraProjectCatalog, JiraUserMapping, Product, RoadmapItem, SyncRun, TeamMember } from "../types/api";
 
 export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
@@ -19,21 +19,24 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [userMappings, setUserMappings] = useState<JiraUserMapping[]>([]);
   const [productMappings, setProductMappings] = useState<JiraProductMapping[]>([]);
   const [jiraCatalog, setJiraCatalog] = useState<JiraProjectCatalog[]>([]);
+  const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([]);
   const [syncRuns, setSyncRuns] = useState<SyncRun[]>([]);
   const [jiraStatus, setJiraStatus] = useState<JiraIntegrationStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [liveSyncing, setLiveSyncing] = useState(false);
+  const [roadmapSyncing, setRoadmapSyncing] = useState(false);
   const [catalogRefreshing, setCatalogRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   async function loadData() {
-    const [members, productRows, users, jiraProducts, catalogRows, runs, status] = await Promise.all([
+    const [members, productRows, users, jiraProducts, catalogRows, roadmapRows, runs, status] = await Promise.all([
       api.teamMembers(),
       api.products(),
       api.userMappings(),
       api.productMappings(),
       api.jiraProjectCatalog(),
+      api.roadmapItems(),
       api.syncRuns(),
       api.jiraIntegrationStatus(),
     ]);
@@ -42,6 +45,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     setUserMappings(users);
     setProductMappings(jiraProducts);
     setJiraCatalog(catalogRows);
+    setRoadmapItems(roadmapRows);
     setSyncRuns(runs);
     setJiraStatus(status);
   }
@@ -81,6 +85,21 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     }
   }
 
+  async function runRoadmapSync() {
+    setRoadmapSyncing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.syncRoadmap();
+      await loadData();
+      setNotice(`Roadmap synced: ${result.roadmap_items} items and ${result.linked_issues} linked delivery tickets.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sync Jira roadmap");
+    } finally {
+      setRoadmapSyncing(false);
+    }
+  }
+
   async function updateUserMapping(mappingId: number, teamMemberId: number | null) {
     await api.updateUserMapping(mappingId, teamMemberId);
     await loadData();
@@ -110,17 +129,23 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
           {embedded ? null : <PageNav current="admin" />}
-          <Button onClick={runLiveSync} disabled={liveSyncing || !jiraStatus?.configured}>
-            <DatabaseZap className={`h-4 w-4 ${liveSyncing ? "animate-pulse" : ""}`} />
-            {liveSyncing ? "Syncing Jira" : "Sync Jira Actuals"}
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button onClick={runRoadmapSync} disabled={roadmapSyncing || !jiraStatus?.configured} variant="outline">
+              <RefreshCw className={`h-4 w-4 ${roadmapSyncing ? "animate-spin" : ""}`} />
+              {roadmapSyncing ? "Syncing Roadmap" : "Sync Roadmap"}
+            </Button>
+            <Button onClick={runLiveSync} disabled={liveSyncing || !jiraStatus?.configured}>
+              <DatabaseZap className={`h-4 w-4 ${liveSyncing ? "animate-pulse" : ""}`} />
+              {liveSyncing ? "Syncing Jira" : "Sync Jira Actuals"}
+            </Button>
+          </div>
         </div>
       </section>
 
       {notice ? <div className="rounded-md border border-[color:var(--spark-cyan)] bg-accent/10 px-3 py-2 text-sm text-primary">{notice}</div> : null}
       {error ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div> : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
         <StatusCard label="Jira config" value={jiraStatus?.configured ? "Ready" : "Missing"} tone={jiraStatus?.configured ? "good" : "warn"} />
         <ProjectListStatusCard
           count={jiraCatalog.length}
@@ -131,6 +156,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         />
         <StatusCard label="User mappings" value={`${userMappings.length - unmappedUserCount}/${userMappings.length}`} />
         <StatusCard label="Product mappings" value={`${productMappings.length - unmappedProductCount}/${productMappings.length}`} />
+        <StatusCard label="Roadmap Items" value={`${roadmapItems.length}`} />
         <StatusCard label="Latest sync" value={syncRuns[0]?.status ?? "No runs"} />
       </section>
 

@@ -11,7 +11,20 @@ from app.api.products import remove_product_team_member as remove_product_team_m
 from app.api.team_members import create_team_member as create_team_member_endpoint
 from app.api.team_members import get_team_member as get_team_member_endpoint
 from app.db.seed import _seed_buckets
-from app.models import ActualEntry, Base, Bucket, ForecastEntry, JiraProductMapping, JiraProjectCatalog, Product, ProductBudget, ProductTeamMember, TeamMember
+from app.models import (
+    ActualEntry,
+    Base,
+    Bucket,
+    ForecastEntry,
+    JiraProductMapping,
+    JiraProjectCatalog,
+    Product,
+    ProductBudget,
+    ProductTeamMember,
+    RoadmapItem,
+    RoadmapItemIssueLink,
+    TeamMember,
+)
 from app.schemas import ProductCreate, TeamMemberCreate
 from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_work_type_breakdown, product_bucket_tables, product_summary
 from app.services.costs import calculate_cost
@@ -26,6 +39,7 @@ from app.services.jira_projects import (
     update_product_jira_space,
 )
 from app.services import jira_projects
+from app.services.roadmap import roadmap_actual_rows
 
 
 def test_fiscal_year_mapping():
@@ -157,6 +171,83 @@ def test_team_member_slugs_are_generated_and_resolve_with_numeric_fallback():
         assert second["slug"] == "avery-johnson-2"
         assert get_team_member_endpoint("avery-johnson", db=db)["id"] == first["id"]
         assert get_team_member_endpoint(str(first["id"]), db=db)["slug"] == "avery-johnson"
+
+
+def test_roadmap_actual_rows_join_worklogs_without_double_counting_ambiguous_links():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", slug="student-information")
+        member = TeamMember(name="Avery Johnson", slug="avery-johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "NET_NEW"))
+        month = get_fiscal_month(db, 2027, 1)
+        mapped_item = RoadmapItem(
+            source="jira_product_discovery",
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="Program billing feature",
+            status="In Progress",
+        )
+        ambiguous_item = RoadmapItem(
+            source="jira_product_discovery",
+            jira_issue_id="10002",
+            jira_issue_key="ROADMAP-2",
+            title="Ambiguous program feature",
+            status="In Progress",
+        )
+        other_ambiguous_item = RoadmapItem(
+            source="jira_product_discovery",
+            jira_issue_id="10003",
+            jira_issue_key="ROADMAP-3",
+            title="Second ambiguous feature",
+            status="In Progress",
+        )
+        db.add_all([mapped_item, ambiguous_item, other_ambiguous_item])
+        db.flush()
+        db.add_all(
+            [
+                RoadmapItemIssueLink(roadmap_item_id=mapped_item.id, jira_issue_key="SIS-1"),
+                RoadmapItemIssueLink(roadmap_item_id=ambiguous_item.id, jira_issue_key="SIS-2"),
+                RoadmapItemIssueLink(roadmap_item_id=other_ambiguous_item.id, jira_issue_key="SIS-2"),
+                ActualEntry(
+                    product_id=product.id,
+                    team_member_id=member.id,
+                    bucket_id=bucket.id,
+                    fiscal_month_id=month.id,
+                    hours=Decimal("4"),
+                    source="jira",
+                    source_ticket_key="SIS-1",
+                    source_worklog_id="1",
+                ),
+                ActualEntry(
+                    product_id=product.id,
+                    team_member_id=member.id,
+                    bucket_id=bucket.id,
+                    fiscal_month_id=month.id,
+                    hours=Decimal("2"),
+                    source="jira",
+                    source_ticket_key="SIS-2",
+                    source_worklog_id="2",
+                ),
+            ]
+        )
+        db.flush()
+
+        rows = roadmap_actual_rows(db, 2027, product_id=product.id)
+
+        mapped = next(row for row in rows if row["mapping_status"] == "mapped")
+        ambiguous = next(row for row in rows if row["mapping_status"] == "ambiguous")
+        assert mapped["roadmap_item_key"] == "ROADMAP-1"
+        assert mapped["actual_hours"] == 4
+        assert mapped["actual_cost"] == 400
+        assert mapped["ticket_keys"] == ["SIS-1"]
+        assert ambiguous["roadmap_item_key"] is None
+        assert ambiguous["actual_hours"] == 2
+        assert ambiguous["actual_cost"] == 200
+        assert ambiguous["ticket_keys"] == ["SIS-2"]
 
 
 def test_product_budget_is_fiscal_year_specific():

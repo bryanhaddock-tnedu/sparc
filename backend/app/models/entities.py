@@ -43,6 +43,7 @@ class Product(TimestampMixin, Base):
     team_members: Mapped[list["ProductTeamMember"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     jira_spaces: Mapped[list["ProductJiraSpace"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     budgets: Mapped[list["ProductBudget"]] = relationship(back_populates="product", cascade="all, delete-orphan")
+    roadmap_items: Mapped[list["RoadmapItem"]] = relationship(back_populates="product")
 
 
 class ProductBudget(TimestampMixin, Base):
@@ -90,6 +91,7 @@ class Bucket(Base):
     estimates: Mapped[list["EstimatedEntry"]] = relationship(back_populates="bucket")
     estimated_issue_allocations: Mapped[list["EstimatedIssueAllocation"]] = relationship(back_populates="bucket")
     product_team_members: Mapped[list["ProductTeamMember"]] = relationship(back_populates="default_bucket")
+    roadmap_items: Mapped[list["RoadmapItem"]] = relationship(back_populates="bucket")
 
 
 class ProductTeamMember(TimestampMixin, Base):
@@ -144,6 +146,50 @@ class ProductJiraSpace(TimestampMixin, Base):
 
     product: Mapped[Product] = relationship(back_populates="jira_spaces")
     catalog_entry: Mapped[JiraProjectCatalog | None] = relationship(back_populates="product_spaces")
+
+
+class RoadmapItem(TimestampMixin, Base):
+    __tablename__ = "roadmap_items"
+    __table_args__ = (
+        UniqueConstraint("source", "jira_issue_id", name="uq_roadmap_item_source_issue_id"),
+        UniqueConstraint("source", "jira_issue_key", name="uq_roadmap_item_source_issue_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(80), default="jira_product_discovery", nullable=False)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
+    bucket_id: Mapped[int | None] = mapped_column(ForeignKey("buckets.id"))
+    jira_issue_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    jira_issue_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str | None] = mapped_column(String(120))
+    status_category: Mapped[str | None] = mapped_column(String(80))
+    issue_type: Mapped[str | None] = mapped_column(String(120))
+    program_area: Mapped[str | None] = mapped_column(String(160))
+    source_url: Mapped[str | None] = mapped_column(Text)
+    source_payload_hash: Mapped[str | None] = mapped_column(String(128))
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    product: Mapped[Product | None] = relationship(back_populates="roadmap_items")
+    bucket: Mapped[Bucket | None] = relationship(back_populates="roadmap_items")
+    issue_links: Mapped[list["RoadmapItemIssueLink"]] = relationship(back_populates="roadmap_item", cascade="all, delete-orphan")
+
+
+class RoadmapItemIssueLink(TimestampMixin, Base):
+    __tablename__ = "roadmap_item_issue_links"
+    __table_args__ = (UniqueConstraint("roadmap_item_id", "jira_issue_key", name="uq_roadmap_item_issue_link"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    roadmap_item_id: Mapped[int] = mapped_column(ForeignKey("roadmap_items.id"), nullable=False)
+    jira_issue_id: Mapped[str | None] = mapped_column(String(120))
+    jira_issue_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    jira_issue_summary: Mapped[str | None] = mapped_column(Text)
+    jira_project_key: Mapped[str | None] = mapped_column(String(80))
+    relationship_type: Mapped[str | None] = mapped_column(String(120))
+    source: Mapped[str] = mapped_column(String(80), default="jira_issue_link", nullable=False)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    roadmap_item: Mapped[RoadmapItem] = relationship(back_populates="issue_links")
 
 
 class FiscalMonth(Base):

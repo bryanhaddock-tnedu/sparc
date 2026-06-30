@@ -16,6 +16,7 @@ This is not a project management tool. Do not add task boards, sprint planning, 
 - Use Bucket for work type: Net New, Enhance, Maintenance.
 - Forecast hours are manually entered in this app.
 - Actual hours come from Jira/Rovo API.
+- Roadmap Items are read-only Jira roadmap records used to attribute actual hours to product roadmap entries for billing and program-area reporting.
 - Estimated hours are model-generated from Jira issue/activity evidence when actual time logging is incomplete.
 - Reported/Effective hours are derived by policy and must never overwrite Forecast, Actual, or Estimated source values.
 - Cost is calculated as hours multiplied by bill rate.
@@ -81,6 +82,7 @@ Use a monorepo:
 - Products may be tagged with Office and Division for organizational reporting. Office options are Academics, Operations, Programs, Deputy Commissioner, Commissioners Office, and General Counsel; Division options are constrained by the selected Office.
 - Product detail URLs use lowercase dash slugs derived from Product names, for example `/products/core-infrastructure`; numeric Product IDs remain accepted only as backwards-compatible references.
 - Team Member detail URLs use lowercase dash slugs derived from Team Member names, for example `/team-members/avery-johnson`; numeric Team Member IDs remain accepted only as backwards-compatible references.
+- Roadmap sync and worklog sync are separate pipelines. Worklog sync owns actual hours; roadmap sync owns Roadmap Items and ticket relationships; SPARC reporting joins them by Jira ticket key.
 - Created date and last updated date are required.
 
 ## Product Buckets
@@ -168,13 +170,18 @@ Each Product Detail page should include:
 5. Budget Tracker
    - Shows Product Budgeted, Forecast, and Actuals for the selected Fiscal Year
 
-6. Product Team
+6. Roadmap Actuals
+   - Shows actual hours and calculated cost grouped by Roadmap Item, Team Member, and Bucket
+   - Flags actuals with no Roadmap Item mapping as unmapped
+   - Flags tickets linked to multiple Roadmap Items as ambiguous
+
+7. Product Team
    - Shows manager-curated team members assigned to the Product
    - Allows adding rostered Team Members to the Product before forecast/actual hours exist
    - Allows editing default bucket and product assignment status
    - Allows removing a Team Member from the Product assignment list without deleting historical forecast/actual rows
 
-7. Three Product-specific data sections:
+8. Three Product-specific data sections:
    - Net New
    - Enhance
    - Maintenance
@@ -245,6 +252,11 @@ Each Team Member Detail page should include:
 
 3. Budget Tracker
    - Shows Team Member forecast and actuals for the selected Fiscal Year
+
+4. Roadmap Actuals
+   - Shows actual hours and calculated cost grouped by Roadmap Item, Product, and Bucket
+   - Preserves Jira ticket evidence for billing review
+   - Flags unmapped or ambiguous Roadmap Item attribution
 
 Columns:
 
@@ -345,6 +357,8 @@ Implement:
 - FiscalMonth
 - ForecastEntry
 - ActualEntry
+- RoadmapItem
+- RoadmapItemIssueLink
 - JiraUserMapping
 - JiraProductMapping
 - JiraProjectCatalog
@@ -383,6 +397,7 @@ Products:
 - `PUT /api/products/{product_id}/jira-spaces/{space_id}`
 - `DELETE /api/products/{product_id}/jira-spaces/{space_id}`
 - `POST /api/products/{product_id}/jira-spaces/{space_id}/validate`
+- `GET /api/products/{product_ref}/roadmap-actuals?fiscal_year=2026`
 
 Team Members:
 
@@ -391,6 +406,7 @@ Team Members:
 - `GET /api/team-members/{team_member_ref}`
 - `PUT /api/team-members/{team_member_ref}`
 - `GET /api/team-members/{team_member_ref}/products?fiscal_year=2026`
+- `GET /api/team-members/{team_member_ref}/roadmap-actuals?fiscal_year=2026`
 
 Forecasts:
 
@@ -402,6 +418,8 @@ Jira/Rovo:
 - `GET /api/integrations/jira-rovo/status`
 - `POST /api/integrations/jira-rovo/sync`
 - `POST /api/integrations/jira-rovo/sync-live`
+- `POST /api/integrations/jira-rovo/roadmap/sync`
+- `GET /api/integrations/jira-rovo/roadmap/items`
 - `GET /api/integrations/jira-rovo/unmapped-users`
 - `GET /api/integrations/jira-rovo/unmapped-products`
 - `GET /api/integrations/jira-rovo/project-catalog`
@@ -424,6 +442,8 @@ Estimations:
 Actual hours come from Jira through app-owned backend integration code.
 
 Local/demo environments may use the mock sync, but real environments should use the live Jira sync endpoint with credentials supplied only through server-side environment variables or Key Vault.
+
+Roadmap Items come from a separate roadmap sync. That sync must never create or overwrite ActualEntry rows. It only stores Roadmap Items and their relationships to Jira delivery tickets so Product and Team Member pages can attribute actual hours for billing review.
 
 The app should:
 

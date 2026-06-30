@@ -15,6 +15,8 @@ from app.models.entities import (
     ProductBudget,
     ProductJiraSpace,
     ProductTeamMember,
+    RoadmapItem,
+    RoadmapItemIssueLink,
     SyncRun,
     TeamMember,
 )
@@ -36,6 +38,8 @@ __all__ = [
     "ProductBudget",
     "ProductJiraSpace",
     "ProductTeamMember",
+    "RoadmapItem",
+    "RoadmapItemIssueLink",
     "SyncRun",
     "TeamMember",
 ]

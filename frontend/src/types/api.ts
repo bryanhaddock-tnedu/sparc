@@ -159,6 +159,59 @@ export interface ProductTeamMember {
   updated_at: string;
 }
 
+export interface RoadmapItem {
+  id: number;
+  source: string;
+  product_id: number | null;
+  product: string | null;
+  product_slug: string | null;
+  bucket_id: number | null;
+  bucket: string | null;
+  jira_issue_id: string;
+  jira_issue_key: string;
+  title: string;
+  status: string | null;
+  status_category: string | null;
+  issue_type: string | null;
+  program_area: string | null;
+  source_url: string | null;
+  linked_issue_count: number;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoadmapActualRow {
+  roadmap_item_id: number | null;
+  roadmap_item_key: string | null;
+  roadmap_item_title: string | null;
+  roadmap_item_status: string | null;
+  program_area: string | null;
+  product_id: number;
+  product: string;
+  product_slug: string;
+  team_member_id: number;
+  team_member: string;
+  team_member_slug: string;
+  bucket_id: number;
+  bucket: string;
+  bucket_code: string;
+  fiscal_year: number;
+  actual_hours: number;
+  actual_cost: number;
+  worklog_count: number;
+  ticket_count: number;
+  ticket_keys: string[];
+  mapping_status: string;
+}
+
+export interface RoadmapSyncResult {
+  source: string;
+  sync_run: SyncRun;
+  roadmap_items: number;
+  linked_issues: number;
+}
+
 export interface ProductTeamMemberPayload {
   team_member_id: number;
   default_bucket_id?: number | null;

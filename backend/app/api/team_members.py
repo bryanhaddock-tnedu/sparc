@@ -5,8 +5,17 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.errors import bad_request, not_found
 from app.db.session import get_db
 from app.models import ActualEntry, FiscalMonth, TeamMember
-from app.schemas import TeamImportResult, TeamMemberActualWorklogResponse, TeamMemberCreate, TeamMemberProductsResponse, TeamMemberResponse, TeamMemberUpdate
+from app.schemas import (
+    RoadmapActualRowResponse,
+    TeamImportResult,
+    TeamMemberActualWorklogResponse,
+    TeamMemberCreate,
+    TeamMemberProductsResponse,
+    TeamMemberResponse,
+    TeamMemberUpdate,
+)
 from app.services.aggregations import serialize_team_member, team_member_products
+from app.services.roadmap import roadmap_actual_rows
 from app.services.slugs import product_url_slug, resolve_team_member_ref, unique_team_member_slug
 from app.services.team_import import import_team_members
 from app.services.team_members import create_team_member as create_member_service
@@ -127,6 +136,16 @@ def get_team_member_actual_worklogs(
         }
         for entry in entries
     ]
+
+
+@router.get("/{team_member_ref}/roadmap-actuals", response_model=list[RoadmapActualRowResponse])
+def get_team_member_roadmap_actuals(
+    team_member_ref: str,
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    member = _resolve_team_member_or_404(db, team_member_ref)
+    return roadmap_actual_rows(db, fiscal_year, team_member_id=member.id)
 
 
 def _resolve_team_member_or_404(db: Session, team_member_ref: str) -> TeamMember:

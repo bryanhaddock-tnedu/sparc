@@ -34,6 +34,9 @@ import type {
   ProductTeamMemberPayload,
   ProductTeamMemberUpdatePayload,
   ReportedValueRow,
+  RoadmapActualRow,
+  RoadmapItem,
+  RoadmapSyncResult,
   SyncRun,
   SystemScanResult,
   TeamImportResult,
@@ -168,6 +171,8 @@ export const api = {
     request<BucketDistributionRow[]>(`/api/products/${encodeURIComponent(String(productRef))}/bucket-distribution?fiscal_year=${fiscalYear}`),
   productBucketTables: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<ProductBucketTables>(`/api/products/${encodeURIComponent(String(productRef))}/bucket-tables?fiscal_year=${fiscalYear}`),
+  productRoadmapActuals: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<RoadmapActualRow[]>(`/api/products/${encodeURIComponent(String(productRef))}/roadmap-actuals?fiscal_year=${fiscalYear}`),
   products: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<Product[]>(`/api/products?fiscal_year=${fiscalYear}`),
   createProduct: (payload: ProductCreatePayload, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<Product>(`/api/products?fiscal_year=${fiscalYear}`, {
@@ -236,6 +241,8 @@ export const api = {
     request<TeamMemberProducts>(`/api/team-members/${encodeURIComponent(String(teamMemberId))}/products?fiscal_year=${fiscalYear}`),
   teamMemberActualWorklogs: (teamMemberId: TeamMemberRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<TeamMemberActualWorklog[]>(`/api/team-members/${encodeURIComponent(String(teamMemberId))}/actual-worklogs?fiscal_year=${fiscalYear}`),
+  teamMemberRoadmapActuals: (teamMemberId: TeamMemberRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<RoadmapActualRow[]>(`/api/team-members/${encodeURIComponent(String(teamMemberId))}/roadmap-actuals?fiscal_year=${fiscalYear}`),
   upsertForecast: (payload: ForecastUpsertPayload) =>
     request<ForecastResponse>("/api/forecasts", {
       method: "PUT",
@@ -260,6 +267,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ fiscal_year: fiscalYear }),
     }),
+  syncRoadmap: (roadmapProjectKey = "ROADMAP") =>
+    request<RoadmapSyncResult>(`/api/integrations/jira-rovo/roadmap/sync?roadmap_project_key=${encodeURIComponent(roadmapProjectKey)}`, {
+      method: "POST",
+    }),
+  roadmapItems: () => request<RoadmapItem[]>("/api/integrations/jira-rovo/roadmap/items"),
   jiraIntegrationStatus: () => request<JiraIntegrationStatus>("/api/integrations/jira-rovo/status"),
   unmappedUsers: () => request<UnmappedUser[]>("/api/integrations/jira-rovo/unmapped-users"),
   unmappedProducts: () => request<UnmappedProduct[]>("/api/integrations/jira-rovo/unmapped-products"),

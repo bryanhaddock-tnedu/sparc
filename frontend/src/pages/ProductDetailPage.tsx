@@ -6,6 +6,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { BudgetTracker } from "../components/BudgetTracker";
 import { PageNav } from "../components/PageNav";
 import { ReportedValuesTable } from "../components/ReportedValuesTable";
+import { RoadmapActualsTable } from "../components/RoadmapActualsTable";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -23,6 +24,7 @@ import type {
   ProductSummary,
   ProductTeamMember,
   ReportedValueRow,
+  RoadmapActualRow,
   TeamMember,
 } from "../types/api";
 
@@ -53,6 +55,7 @@ export function ProductDetailPage() {
   const [productTeam, setProductTeam] = useState<ProductTeamMember[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
+  const [roadmapActualRows, setRoadmapActualRows] = useState<RoadmapActualRow[]>([]);
   const [distribution, setDistribution] = useState<{ bucket: string; hours: number }[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [forecastLineMemberId, setForecastLineMemberId] = useState("");
@@ -67,13 +70,14 @@ export function ProductDetailPage() {
   async function loadData() {
     const summaryResult = await api.productSummary(productRef, fiscalYear);
     const resolvedProductId = summaryResult.product.id;
-    const [distributionResult, tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = await Promise.all([
+    const [distributionResult, tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult, roadmapActualsResult] = await Promise.all([
       api.bucketDistribution(resolvedProductId, fiscalYear),
       api.productBucketTables(resolvedProductId, fiscalYear),
       api.productJiraSpaces(resolvedProductId),
       api.productTeamMembers(resolvedProductId),
       api.teamMembers(),
       api.reportedValues({ product_id: resolvedProductId }, fiscalYear),
+      api.productRoadmapActuals(resolvedProductId, fiscalYear),
     ]);
     if (productRef !== summaryResult.product.slug) {
       navigate(productDetailPath(summaryResult.product), { replace: true });
@@ -85,6 +89,7 @@ export function ProductDetailPage() {
     setProductTeam(productTeamResult);
     setTeamMembers(teamMembersResult);
     setReportedRows(reportedRowsResult);
+    setRoadmapActualRows(roadmapActualsResult);
     setDrafts({});
   }
 
@@ -311,6 +316,8 @@ export function ProductDetailPage() {
           <ProductSnapshotPanel summary={summary} />
         </div>
       </section>
+
+      <RoadmapActualsTable rows={roadmapActualRows} showTeamMember title="Roadmap Actuals For Billing" />
 
       <ProductTeamSection
         assignments={productTeam}

@@ -710,6 +710,59 @@ class SyncRunResponse(BaseModel):
     error_summary: str | None
 
 
+class RoadmapItemResponse(BaseModel):
+    id: int
+    source: str
+    product_id: int | None
+    product: str | None
+    product_slug: str | None
+    bucket_id: int | None
+    bucket: str | None
+    jira_issue_id: str
+    jira_issue_key: str
+    title: str
+    status: str | None
+    status_category: str | None
+    issue_type: str | None
+    program_area: str | None
+    source_url: str | None
+    linked_issue_count: int
+    last_synced_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RoadmapActualRowResponse(BaseModel):
+    roadmap_item_id: int | None
+    roadmap_item_key: str | None
+    roadmap_item_title: str | None
+    roadmap_item_status: str | None
+    program_area: str | None
+    product_id: int
+    product: str
+    product_slug: str
+    team_member_id: int
+    team_member: str
+    team_member_slug: str
+    bucket_id: int
+    bucket: str
+    bucket_code: str
+    fiscal_year: int
+    actual_hours: float
+    actual_cost: float
+    worklog_count: int
+    ticket_count: int
+    ticket_keys: list[str]
+    mapping_status: str
+
+
+class RoadmapSyncResponse(BaseModel):
+    source: str
+    sync_run: SyncRunResponse
+    roadmap_items: int
+    linked_issues: int
+
+
 class JiraRovoSyncResponse(BaseModel):
     source: str
     sync_run: SyncRunResponse

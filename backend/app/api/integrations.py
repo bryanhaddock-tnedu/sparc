@@ -14,6 +14,8 @@ from app.schemas import (
     JiraRovoSyncResponse,
     JiraUserMapRequest,
     JiraUserMappingResponse,
+    RoadmapItemResponse,
+    RoadmapSyncResponse,
     SyncRunResponse,
 )
 from app.services.jira_projects import list_jira_project_catalog, refresh_jira_project_catalog, update_jira_project_catalog_visibility
@@ -29,6 +31,7 @@ from app.services.jira_rovo import (
     run_live_jira_rovo_sync,
     run_mock_jira_rovo_sync,
 )
+from app.services.roadmap import DEFAULT_ROADMAP_PROJECT_KEY, list_roadmap_items, run_live_roadmap_sync
 
 router = APIRouter(prefix="/integrations/jira-rovo", tags=["jira-rovo"])
 
@@ -80,6 +83,22 @@ def sync_mock_jira_rovo(db: Session = Depends(get_db)) -> dict[str, object]:
 def sync_live_jira_rovo(payload: JiraLiveSyncRequest, db: Session = Depends(get_db)) -> dict[str, object]:
     try:
         result = run_live_jira_rovo_sync(db, payload.fiscal_year)
+        db.commit()
+        return result
+    except ValueError as exc:
+        db.rollback()
+        raise bad_request(str(exc)) from exc
+
+
+@router.get("/roadmap/items", response_model=list[RoadmapItemResponse])
+def get_roadmap_items(db: Session = Depends(get_db)) -> list[dict[str, object]]:
+    return list_roadmap_items(db)
+
+
+@router.post("/roadmap/sync", response_model=RoadmapSyncResponse)
+def sync_live_roadmap(roadmap_project_key: str = DEFAULT_ROADMAP_PROJECT_KEY, db: Session = Depends(get_db)) -> dict[str, object]:
+    try:
+        result = run_live_roadmap_sync(db, roadmap_project_key)
         db.commit()
         return result
     except ValueError as exc:
