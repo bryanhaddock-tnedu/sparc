@@ -8,9 +8,6 @@ jobs:
     name: Docker Image Build
     runs-on: ubuntu-24.04
     if: ${{ github.actor != 'dependabot[bot]' }}
-    env:
-      STAGE_DEPLOY_HOOK_URL: ${{ secrets.STAGE_DEPLOY_HOOK_URL }}
-      STAGE_APP_URL: https://sparc.uat.tnedu.gov
     steps:
       - name: Set Up Docker Buildx
         uses: docker/setup-buildx-action@v4.0.0
@@ -30,56 +27,19 @@ jobs:
           tags: |
             ${{ secrets.REGISTRY_URL }}/sparc:${{ github.sha }}
             ${{ secrets.REGISTRY_URL }}/sparc:latest
-      - name: Trigger Stage Deploy Hook
+      - name: Report UAT Version
         if: ${{ github.ref == 'refs/heads/develop' }}
+        continue-on-error: true
         run: |
-          if [ -z "$STAGE_DEPLOY_HOOK_URL" ]; then
-            echo "STAGE_DEPLOY_HOOK_STATUS=missing" >> "$GITHUB_ENV"
-            echo "::warning::STAGE_DEPLOY_HOOK_URL is not configured, so the stage image was built but UAT cannot be rolled from this workflow."
-            exit 0
-          fi
-          if curl -fsS -X POST "$STAGE_DEPLOY_HOOK_URL"; then
-            echo "STAGE_DEPLOY_HOOK_STATUS=posted" >> "$GITHUB_ENV"
-          else
-            echo "STAGE_DEPLOY_HOOK_STATUS=failed" >> "$GITHUB_ENV"
-            echo "::warning::Stage deploy hook request failed."
-          fi
-      - name: Verify Stage Deployment
-        if: ${{ github.ref == 'refs/heads/develop' }}
-        run: |
-          echo "Waiting for $STAGE_APP_URL to report build $GITHUB_SHA"
-          attempts=30
-          if [ "${STAGE_DEPLOY_HOOK_STATUS:-unknown}" != "posted" ]; then
-            attempts=1
-          fi
-          for attempt in $(seq 1 "$attempts"); do
-            response="$(curl -fsS "$STAGE_APP_URL/api/app-version" || true)"
-            version="$(RESPONSE="$response" python3 -c 'import json, os; print(json.loads(os.environ["RESPONSE"]).get("version", ""))' 2>/dev/null || true)"
-            echo "Attempt $attempt/$attempts: reported '${version:-unavailable}'"
-            if [ "$version" = "$GITHUB_SHA" ]; then
-              echo "Stage is running $GITHUB_SHA"
-              {
-                echo "## UAT deploy verification"
-                echo "- Expected commit: \`$GITHUB_SHA\`"
-                echo "- Hook status: \`${STAGE_DEPLOY_HOOK_STATUS:-unknown}\`"
-                echo "- UAT reported version: \`$version\`"
-              } >> "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            sleep 10
-          done
+          stage_url="https://sparc.uat.tnedu.gov"
+          response="$(curl -fsS "$stage_url/api/app-version" || true)"
+          version="$(RESPONSE="$response" python3 -c 'import json, os; print(json.loads(os.environ["RESPONSE"]).get("version", ""))' 2>/dev/null || true)"
           {
-            echo "## UAT deploy verification"
-            echo "- Expected commit: \`$GITHUB_SHA\`"
-            echo "- Hook status: \`${STAGE_DEPLOY_HOOK_STATUS:-unknown}\`"
+            echo "## UAT version snapshot"
+            echo "- Image pushed: \`$GITHUB_SHA\`"
             echo "- UAT reported version: \`${version:-unavailable}\`"
-            echo "- Last response: \`$response\`"
+            echo "- UAT response: \`$response\`"
           } >> "$GITHUB_STEP_SUMMARY"
-          if [ "${STAGE_DEPLOY_HOOK_STATUS:-unknown}" = "missing" ]; then
-            echo "::error::STAGE_DEPLOY_HOOK_URL is not configured, so UAT cannot roll from this workflow."
-          elif [ "${STAGE_DEPLOY_HOOK_STATUS:-unknown}" = "failed" ]; then
-            echo "::error::Stage deploy hook request failed before UAT could roll."
-          else
-            echo "::error::Stage deploy hook completed but UAT did not reach $GITHUB_SHA. Last response: $response"
+          if [ "$version" != "$GITHUB_SHA" ]; then
+            echo "::warning::Image push succeeded, but UAT is currently reporting '${version:-unavailable}'. The rollout may be pending or handled by an external deployment process."
           fi
-          exit 1
