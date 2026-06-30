@@ -30,5 +30,10 @@ jobs:
             ${{ secrets.REGISTRY_URL }}/sparc:${{ github.sha }}
             ${{ secrets.REGISTRY_URL }}/sparc:latest
       - name: Trigger Stage Deploy Hook
-        if: ${{ github.ref == 'refs/heads/develop' && env.STAGE_DEPLOY_HOOK_URL != '' }}
-        run: curl -fsS -X POST "$STAGE_DEPLOY_HOOK_URL"
+        if: ${{ github.ref == 'refs/heads/develop' }}
+        run: |
+          if [ -z "$STAGE_DEPLOY_HOOK_URL" ]; then
+            echo "::error::STAGE_DEPLOY_HOOK_URL is not configured, so the stage image was built but UAT was not rolled."
+            exit 1
+          fi
+          curl -fsS -X POST "$STAGE_DEPLOY_HOOK_URL"
