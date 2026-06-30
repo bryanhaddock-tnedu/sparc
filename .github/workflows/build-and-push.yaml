@@ -8,6 +8,8 @@ jobs:
     name: Docker Image Build
     runs-on: ubuntu-24.04
     if: ${{ github.actor != 'dependabot[bot]' }}
+    env:
+      STAGE_DEPLOY_HOOK_URL: ${{ secrets.STAGE_DEPLOY_HOOK_URL }}
     steps:
       - name: Set Up Docker Buildx
         uses: docker/setup-buildx-action@v4.0.0
@@ -27,3 +29,6 @@ jobs:
           tags: |
             ${{ secrets.REGISTRY_URL }}/sparc:${{ github.sha }}
             ${{ secrets.REGISTRY_URL }}/sparc:latest
+      - name: Trigger Stage Deploy Hook
+        if: ${{ github.ref == 'refs/heads/develop' && env.STAGE_DEPLOY_HOOK_URL != '' }}
+        run: curl -fsS -X POST "$STAGE_DEPLOY_HOOK_URL"
