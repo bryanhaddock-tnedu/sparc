@@ -10,6 +10,7 @@ jobs:
     if: ${{ github.actor != 'dependabot[bot]' }}
     env:
       STAGE_DEPLOY_HOOK_URL: ${{ secrets.STAGE_DEPLOY_HOOK_URL }}
+      STAGE_APP_URL: https://sparc.uat.tnedu.gov
     steps:
       - name: Set Up Docker Buildx
         uses: docker/setup-buildx-action@v4.0.0
@@ -37,3 +38,19 @@ jobs:
             exit 1
           fi
           curl -fsS -X POST "$STAGE_DEPLOY_HOOK_URL"
+      - name: Verify Stage Deployment
+        if: ${{ github.ref == 'refs/heads/develop' }}
+        run: |
+          echo "Waiting for $STAGE_APP_URL to report build $GITHUB_SHA"
+          for attempt in $(seq 1 30); do
+            response="$(curl -fsS "$STAGE_APP_URL/api/app-version" || true)"
+            version="$(RESPONSE="$response" python3 -c 'import json, os; print(json.loads(os.environ["RESPONSE"]).get("version", ""))' 2>/dev/null || true)"
+            echo "Attempt $attempt/30: reported '${version:-unavailable}'"
+            if [ "$version" = "$GITHUB_SHA" ]; then
+              echo "Stage is running $GITHUB_SHA"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Stage deploy did not reach $GITHUB_SHA. Last response: $response"
+          exit 1
