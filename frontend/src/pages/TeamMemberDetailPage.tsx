@@ -433,6 +433,7 @@ export function TeamMemberDetailPage() {
 
       <ReportedValuesTable rows={reportedRows} showProduct />
 
+      <MemberRoadmapBillingSummary rows={roadmapActualRows} />
       <RoadmapActualsTable rows={roadmapActualRows} showProduct title="Roadmap Work For Billing" />
 
       <section className="space-y-3">
@@ -673,6 +674,135 @@ function MemberProductMixCard({ data }: { data: MemberProductHours[] }) {
       </div>
     </div>
   );
+}
+
+function MemberRoadmapBillingSummary({ rows }: { rows: RoadmapActualRow[] }) {
+  const summaryRows = buildMemberRoadmapBillingRows(rows);
+  const products = new Set(summaryRows.map((row) => row.product));
+  const gapTickets = new Set<string>();
+  rows.forEach((row) => {
+    if (row.mapping_status !== "mapped") {
+      row.ticket_keys.forEach((ticketKey) => gapTickets.add(ticketKey));
+    }
+  });
+  const totalHours = summaryRows.reduce((total, row) => total + row.actualHours, 0);
+  const totalCost = summaryRows.reduce((total, row) => total + row.actualCost, 0);
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
+        <div>
+          <h2 className="text-lg font-semibold">Roadmap Billing Summary</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Mapped roadmap work grouped for this team member.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <RoadmapBillingMetric label="Items" value={String(summaryRows.length)} />
+          <RoadmapBillingMetric label="Products" value={String(products.size)} />
+          <RoadmapBillingMetric label="Hours" value={formatHours(totalHours)} />
+          <RoadmapBillingMetric label="Cost" value={formatCurrency(totalCost)} />
+          <RoadmapBillingMetric label="Gaps" value={String(gapTickets.size)} tone={gapTickets.size ? "warn" : "default"} />
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Roadmap Item</TableHead>
+                <TableHead>Product</TableHead>
+                <TableHead>Program Area</TableHead>
+                <TableHead>Bucket</TableHead>
+                <TableHead className="text-right">Tickets</TableHead>
+                <TableHead className="text-right">Hours</TableHead>
+                <TableHead className="text-right">Cost</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {summaryRows.length ? (
+                summaryRows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>
+                      <div className="font-medium text-primary">{row.roadmapItemKey}</div>
+                      <div className="max-w-[28rem] truncate text-sm text-foreground" title={row.roadmapItemTitle}>
+                        {row.roadmapItemTitle}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Link className="font-medium text-primary hover:underline" to={productDetailPath({ product_id: row.product_id, product_slug: row.product_slug })}>
+                        {row.product}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{row.programArea}</TableCell>
+                    <TableCell>{row.bucket}</TableCell>
+                    <TableCell className="numeric-cell text-right">{row.tickets.size}</TableCell>
+                    <TableCell className="numeric-cell text-right font-semibold">{formatHours(row.actualHours)}</TableCell>
+                    <TableCell className="numeric-cell text-right font-semibold text-primary">{formatCurrency(row.actualCost)}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell className="py-6 text-sm text-muted-foreground" colSpan={7}>
+                    No mapped roadmap work exists for this team member in this fiscal year yet.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RoadmapBillingMetric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warn" }) {
+  return (
+    <div className="rounded-md bg-secondary px-3 py-2">
+      <div className="text-xs font-semibold uppercase text-muted-foreground">{label}</div>
+      <div className={`numeric-cell text-right text-base font-semibold ${tone === "warn" ? "text-warning" : "text-primary"}`}>{value}</div>
+    </div>
+  );
+}
+
+type MemberRoadmapBillingRow = {
+  id: string;
+  roadmapItemKey: string;
+  roadmapItemTitle: string;
+  product_id: number;
+  product_slug: string;
+  product: string;
+  programArea: string;
+  bucket: string;
+  tickets: Set<string>;
+  actualHours: number;
+  actualCost: number;
+};
+
+function buildMemberRoadmapBillingRows(rows: RoadmapActualRow[]) {
+  const grouped = new Map<string, MemberRoadmapBillingRow>();
+  rows.forEach((row) => {
+    if (row.roadmap_item_id === null || row.mapping_status !== "mapped") return;
+    const id = `${row.roadmap_item_id}:${row.product_id}:${row.bucket_id}`;
+    const existing =
+      grouped.get(id) ??
+      ({
+        id,
+        roadmapItemKey: row.roadmap_item_key ?? "Roadmap Item",
+        roadmapItemTitle: row.roadmap_item_title ?? "Untitled",
+        product_id: row.product_id,
+        product_slug: row.product_slug,
+        product: row.product,
+        programArea: row.program_area || "Unassigned",
+        bucket: row.bucket,
+        tickets: new Set<string>(),
+        actualHours: 0,
+        actualCost: 0,
+      } satisfies MemberRoadmapBillingRow);
+    row.ticket_keys.forEach((ticketKey) => existing.tickets.add(ticketKey));
+    existing.actualHours += row.actual_hours;
+    existing.actualCost += row.actual_cost;
+    grouped.set(id, existing);
+  });
+  return Array.from(grouped.values()).sort((left, right) => right.actualCost - left.actualCost || left.roadmapItemKey.localeCompare(right.roadmapItemKey));
 }
 
 function MemberForecastTable({
