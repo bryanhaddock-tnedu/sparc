@@ -330,7 +330,7 @@ export function ProductDetailPage() {
         </div>
       </section>
 
-      <ProductRoadmapItemsSection items={roadmapItems} />
+      <ProductRoadmapItemsSection actualRows={roadmapActualRows} items={roadmapItems} />
       <RoadmapActualsTable rows={roadmapActualRows} showTeamMember title="Roadmap Actuals For Billing" />
 
       <ProductTeamSection
@@ -451,10 +451,18 @@ function SnapshotRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ProductRoadmapItemsSection({ items }: { items: RoadmapItem[] }) {
+function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: RoadmapActualRow[]; items: RoadmapItem[] }) {
+  const actualsByRoadmapItem = buildRoadmapItemActualSummaries(actualRows);
   const linkedTickets = items.reduce((total, item) => total + item.linked_issue_count, 0);
-  const buckets = new Set(items.map((item) => item.bucket).filter(Boolean));
   const programAreas = new Set(items.map((item) => item.program_area || "Unassigned"));
+  const mappedActualHours = Array.from(actualsByRoadmapItem.values()).reduce((total, row) => total + row.actualHours, 0);
+  const mappedActualCost = Array.from(actualsByRoadmapItem.values()).reduce((total, row) => total + row.actualCost, 0);
+  const gapTickets = new Set<string>();
+  actualRows.forEach((row) => {
+    if (row.mapping_status !== "mapped") {
+      row.ticket_keys.forEach((ticketKey) => gapTickets.add(ticketKey));
+    }
+  });
 
   return (
     <section className="space-y-3">
@@ -465,16 +473,18 @@ function ProductRoadmapItemsSection({ items }: { items: RoadmapItem[] }) {
             Roadmap Items mapped to this product. Actual billing appears separately after Jira worklogs are synced.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           <RoadmapItemMetric label="Items" value={String(items.length)} />
           <RoadmapItemMetric label="Tickets" value={String(linkedTickets)} />
-          <RoadmapItemMetric label="Buckets" value={String(buckets.size)} />
+          <RoadmapItemMetric label="Actual Hrs" value={formatHours(mappedActualHours)} />
+          <RoadmapItemMetric label="Actual Cost" value={formatCurrency(mappedActualCost)} />
+          <RoadmapItemMetric label="Gaps" value={String(gapTickets.size)} tone={gapTickets.size ? "warn" : "default"} />
           <RoadmapItemMetric label="Programs" value={String(programAreas.size)} />
         </div>
       </div>
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-sm">
+          <table className="w-full min-w-[1080px] text-sm">
             <thead>
               <tr className="border-b bg-secondary/60">
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Roadmap Item</th>
@@ -482,36 +492,45 @@ function ProductRoadmapItemsSection({ items }: { items: RoadmapItem[] }) {
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bucket</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Program Area</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Linked Tickets</th>
+                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actual Hrs</th>
+                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actual Cost</th>
+                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Team Members</th>
               </tr>
             </thead>
             <tbody>
               {items.length ? (
-                items.map((item) => (
-                  <tr key={item.id} className="border-b last:border-0">
-                    <td className="px-3 py-3">
-                      <div className="font-medium text-primary">
-                        {item.source_url ? (
-                          <a href={item.source_url} target="_blank" rel="noreferrer">
-                            {item.jira_issue_key}
-                          </a>
-                        ) : (
-                          item.jira_issue_key
-                        )}
-                      </div>
-                      <div className="max-w-[36rem] truncate text-sm text-foreground" title={item.title}>
-                        {item.title}
-                      </div>
-                      <div className="text-xs text-muted-foreground">{item.issue_type ?? "Roadmap Item"}</div>
-                    </td>
-                    <td className="px-3 py-3">{item.status ?? "No status"}</td>
-                    <td className="px-3 py-3">{item.bucket ?? "Unmapped"}</td>
-                    <td className="px-3 py-3">{item.program_area || "Unassigned"}</td>
-                    <td className="numeric-cell px-3 py-3 text-right font-semibold">{item.linked_issue_count}</td>
-                  </tr>
-                ))
+                items.map((item) => {
+                  const actualSummary = actualsByRoadmapItem.get(item.id);
+                  return (
+                    <tr key={item.id} className="border-b last:border-0">
+                      <td className="px-3 py-3">
+                        <div className="font-medium text-primary">
+                          {item.source_url ? (
+                            <a href={item.source_url} target="_blank" rel="noreferrer">
+                              {item.jira_issue_key}
+                            </a>
+                          ) : (
+                            item.jira_issue_key
+                          )}
+                        </div>
+                        <div className="max-w-[36rem] truncate text-sm text-foreground" title={item.title}>
+                          {item.title}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{item.issue_type ?? "Roadmap Item"}</div>
+                      </td>
+                      <td className="px-3 py-3">{item.status ?? "No status"}</td>
+                      <td className="px-3 py-3">{item.bucket ?? "Unmapped"}</td>
+                      <td className="px-3 py-3">{item.program_area || "Unassigned"}</td>
+                      <td className="numeric-cell px-3 py-3 text-right font-semibold">{item.linked_issue_count}</td>
+                      <td className="numeric-cell px-3 py-3 text-right font-semibold">{formatHours(actualSummary?.actualHours ?? 0)}</td>
+                      <td className="numeric-cell px-3 py-3 text-right font-semibold text-primary">{formatCurrency(actualSummary?.actualCost ?? 0)}</td>
+                      <td className="numeric-cell px-3 py-3 text-right">{actualSummary?.teamMembers.size ?? 0}</td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
-                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={5}>
+                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={8}>
                     No Roadmap Items are mapped to this product yet. Use Admin / Jira / Roadmap Item Mapping to attach Roadmap Items to this product.
                   </td>
                 </tr>
@@ -524,13 +543,41 @@ function ProductRoadmapItemsSection({ items }: { items: RoadmapItem[] }) {
   );
 }
 
-function RoadmapItemMetric({ label, value }: { label: string; value: string }) {
+function RoadmapItemMetric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warn" }) {
   return (
     <div className="rounded-md bg-secondary px-3 py-2">
       <div className="text-xs font-semibold uppercase text-muted-foreground">{label}</div>
-      <div className="numeric-cell text-right text-base font-semibold text-primary">{value}</div>
+      <div className={`numeric-cell text-right text-base font-semibold ${tone === "warn" ? "text-warning" : "text-primary"}`}>{value}</div>
     </div>
   );
+}
+
+type RoadmapItemActualSummary = {
+  actualHours: number;
+  actualCost: number;
+  tickets: Set<string>;
+  teamMembers: Set<number>;
+};
+
+function buildRoadmapItemActualSummaries(rows: RoadmapActualRow[]) {
+  const summaries = new Map<number, RoadmapItemActualSummary>();
+  rows.forEach((row) => {
+    if (row.roadmap_item_id === null) return;
+    const summary =
+      summaries.get(row.roadmap_item_id) ??
+      ({
+        actualHours: 0,
+        actualCost: 0,
+        tickets: new Set<string>(),
+        teamMembers: new Set<number>(),
+      } satisfies RoadmapItemActualSummary);
+    summary.actualHours += row.actual_hours;
+    summary.actualCost += row.actual_cost;
+    summary.teamMembers.add(row.team_member_id);
+    row.ticket_keys.forEach((ticketKey) => summary.tickets.add(ticketKey));
+    summaries.set(row.roadmap_item_id, summary);
+  });
+  return summaries;
 }
 
 function ProductTeamSection({
