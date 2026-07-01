@@ -517,7 +517,7 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
                         <div className="max-w-[36rem] truncate text-sm text-foreground" title={item.title}>
                           {item.title}
                         </div>
-                        <div className="text-xs text-muted-foreground">{item.issue_type ?? "Roadmap Item"}</div>
+                        <div className="text-xs text-muted-foreground">{roadmapItemLinkContext(item)}</div>
                       </td>
                       <td className="px-3 py-3">{item.status ?? "No status"}</td>
                       <td className="px-3 py-3">{item.bucket ?? "Unmapped"}</td>
@@ -580,6 +580,14 @@ function buildRoadmapItemActualSummaries(rows: RoadmapActualRow[]) {
     summaries.set(row.roadmap_item_id, summary);
   });
   return summaries;
+}
+
+function roadmapItemLinkContext(item: RoadmapItem) {
+  const deliverables = (item.linked_issues ?? []).filter((link) => (link.issue_type ?? "").toLowerCase() === "deliverable");
+  if (!deliverables.length) return item.issue_type ?? "Roadmap Item";
+  const visibleKeys = deliverables.slice(0, 3).map((link) => link.jira_issue_key);
+  const hiddenCount = deliverables.length - visibleKeys.length;
+  return `Deliverables: ${visibleKeys.join(", ")}${hiddenCount > 0 ? ` +${hiddenCount}` : ""}`;
 }
 
 function ProductTeamSection({

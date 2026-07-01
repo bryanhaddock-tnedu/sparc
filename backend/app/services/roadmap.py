@@ -21,6 +21,7 @@ ROADMAP_LINK_SOURCE = "jira_issue_link"
 MANUAL_ROADMAP_LINK_SOURCE = "manual"
 DEFAULT_ROADMAP_PROJECT_KEY = "ROADMAP"
 ROADMAP_ITEM_ISSUE_TYPES = {"idea"}
+ROADMAP_DELIVERABLE_ISSUE_TYPES = {"deliverable"}
 AGENCY_OFFICE_FIELD_NAMES = {"agency office"}
 CATEGORY_FIELD_NAMES = {"category"}
 ROADMAP_CATEGORY_ALIASES = {
@@ -39,6 +40,10 @@ class RoadmapIssueLinkPayload:
     issue_summary: str | None
     jira_project_key: str | None
     relationship_type: str | None
+    issue_type: str | None = None
+    status: str | None = None
+    status_category: str | None = None
+    category: str | None = None
 
 
 @dataclass(frozen=True)
@@ -56,7 +61,8 @@ class RoadmapIssuePayload:
     links: tuple[RoadmapIssueLinkPayload, ...]
 
 
-def serialize_roadmap_item(item: RoadmapItem) -> dict[str, object]:
+def serialize_roadmap_item(item: RoadmapItem, *, product_id: int | None = None) -> dict[str, object]:
+    scoped_links = _scoped_roadmap_issue_links(item, product_id)
     return {
         "id": item.id,
         "source": item.source,
@@ -75,7 +81,8 @@ def serialize_roadmap_item(item: RoadmapItem) -> dict[str, object]:
         "program_area": item.program_area,
         "source_category": item.source_category,
         "source_url": item.source_url,
-        "linked_issue_count": len(item.issue_links),
+        "linked_issue_count": len(scoped_links),
+        "linked_issues": [_serialize_roadmap_issue_link(link) for link in scoped_links],
         "last_synced_at": item.last_synced_at,
         "created_at": item.created_at,
         "updated_at": item.updated_at,
@@ -97,13 +104,27 @@ def list_roadmap_items(db: Session, fiscal_year: int | None = None) -> list[dict
 
 
 def product_roadmap_items(db: Session, product_id: int, fiscal_year: int) -> list[dict[str, object]]:
-    items = db.scalars(
+    direct_items = db.scalars(
         select(RoadmapItem)
         .options(joinedload(RoadmapItem.product), joinedload(RoadmapItem.bucket), joinedload(RoadmapItem.issue_links))
         .where(RoadmapItem.product_id == product_id, RoadmapItem.fiscal_year == fiscal_year)
         .order_by(RoadmapItem.jira_issue_key)
     ).unique().all()
-    return [serialize_roadmap_item(item) for item in items if _is_roadmap_item_issue_type(item.issue_type)]
+    deliverable_parent_items = db.scalars(
+        select(RoadmapItem)
+        .join(RoadmapItem.issue_links)
+        .options(joinedload(RoadmapItem.product), joinedload(RoadmapItem.bucket), joinedload(RoadmapItem.issue_links))
+        .where(RoadmapItemIssueLink.product_id == product_id, RoadmapItem.fiscal_year == fiscal_year)
+        .order_by(RoadmapItem.jira_issue_key)
+    ).unique().all()
+    deliverable_parent_items = [
+        item
+        for item in deliverable_parent_items
+        if any(link.product_id == product_id and _is_roadmap_deliverable_issue_type(link.issue_type) for link in item.issue_links)
+    ]
+    items_by_id = {item.id: item for item in [*direct_items, *deliverable_parent_items]}
+    items = sorted(items_by_id.values(), key=lambda item: item.jira_issue_key)
+    return [serialize_roadmap_item(item, product_id=product_id) for item in items if _is_roadmap_item_issue_type(item.issue_type)]
 
 
 def update_roadmap_item_mapping(
@@ -167,7 +188,9 @@ def map_roadmap_ticket(db: Session, ticket_key: str, roadmap_item_id: int | None
 
     link = RoadmapItemIssueLink(
         roadmap_item_id=item.id,
+        product_id=_product_id_from_project_key(db, _project_key_from_issue_key(normalized_ticket_key)),
         jira_issue_key=normalized_ticket_key,
+        jira_project_key=_project_key_from_issue_key(normalized_ticket_key),
         source=MANUAL_ROADMAP_LINK_SOURCE,
         last_synced_at=utcnow(),
     )
@@ -236,7 +259,7 @@ def fetch_live_roadmap_items(roadmap_project_key: str, fiscal_year: int) -> list
             labels = _labels_from_issue(issue)
             if _is_roadmap_item_issue_type(_issue_type_name(issue)) and _has_fiscal_year_label(labels, fiscal_year):
                 payloads.append(_normalize_roadmap_issue(site_url, issue, field_ids["agency_office"], field_ids["category"]))
-        return payloads
+        return _enrich_roadmap_payload_links(client, site_url, payloads, field_ids["category"])
 
 
 def roadmap_actual_rows(
@@ -389,6 +412,12 @@ def _replace_roadmap_issue_links(db: Session, item: RoadmapItem, links: tuple[Ro
         link.jira_issue_key = issue_key
         link.jira_issue_summary = payload.issue_summary
         link.jira_project_key = payload.jira_project_key
+        link.product_id = _product_id_from_project_key(db, payload.jira_project_key)
+        link.issue_type = payload.issue_type
+        link.status = payload.status
+        link.status_category = payload.status_category
+        link.source_category = payload.category
+        link.bucket_id = _bucket_id_from_category(db, payload.category) or item.bucket_id
         link.relationship_type = payload.relationship_type
         link.source = ROADMAP_LINK_SOURCE
         link.last_synced_at = now
@@ -476,6 +505,17 @@ def _infer_product_id_from_links(db: Session, links: tuple[RoadmapIssueLinkPaylo
     return next(iter(product_ids)) if len(product_ids) == 1 else None
 
 
+def _product_id_from_project_key(db: Session, project_key: str | None) -> int | None:
+    if not project_key:
+        return None
+    return db.scalar(
+        select(ProductJiraSpace.product_id).where(
+            ProductJiraSpace.jira_project_key == project_key.strip().upper(),
+            ProductJiraSpace.is_active.is_(True),
+        )
+    )
+
+
 def _normalize_roadmap_issue(
     site_url: str,
     issue: dict[str, object],
@@ -487,7 +527,7 @@ def _normalize_roadmap_issue(
     status_category = status.get("statusCategory") if isinstance(status.get("statusCategory"), dict) else {}
     issue_type = fields.get("issuetype") if isinstance(fields.get("issuetype"), dict) else {}
     issue_key = _normalize_issue_key(str(issue.get("key") or ""))
-    links = tuple(_extract_issue_links(fields, issue_key))
+    links = tuple(_extract_issue_links(fields, issue_key, category_field_ids))
     labels = _labels_from_issue(issue)
     return RoadmapIssuePayload(
         issue_id=str(issue.get("id") or issue_key),
@@ -517,7 +557,49 @@ def _is_roadmap_item_issue_type(issue_type: str | None) -> bool:
     return issue_type.strip().lower() in ROADMAP_ITEM_ISSUE_TYPES
 
 
-def _extract_issue_links(fields: dict[str, object], roadmap_issue_key: str) -> list[RoadmapIssueLinkPayload]:
+def _is_roadmap_deliverable_issue_type(issue_type: str | None) -> bool:
+    if issue_type is None:
+        return False
+    return issue_type.strip().lower() in ROADMAP_DELIVERABLE_ISSUE_TYPES
+
+
+def _scoped_roadmap_issue_links(item: RoadmapItem, product_id: int | None) -> list[RoadmapItemIssueLink]:
+    links = sorted(item.issue_links, key=lambda link: link.jira_issue_key)
+    if product_id is None:
+        return links
+    deliverable_links = [
+        link
+        for link in links
+        if link.product_id == product_id and _is_roadmap_deliverable_issue_type(link.issue_type)
+    ]
+    if deliverable_links:
+        return deliverable_links
+    return links if item.product_id == product_id else []
+
+
+def _serialize_roadmap_issue_link(link: RoadmapItemIssueLink) -> dict[str, object]:
+    return {
+        "id": link.id,
+        "jira_issue_id": link.jira_issue_id,
+        "jira_issue_key": link.jira_issue_key,
+        "jira_issue_summary": link.jira_issue_summary,
+        "jira_project_key": link.jira_project_key,
+        "product_id": link.product_id,
+        "product": link.product.name if link.product else None,
+        "product_slug": product_url_slug(link.product) if link.product else None,
+        "bucket_id": link.bucket_id,
+        "bucket": link.bucket.name if link.bucket else None,
+        "issue_type": link.issue_type,
+        "status": link.status,
+        "status_category": link.status_category,
+        "source_category": link.source_category,
+        "relationship_type": link.relationship_type,
+        "source": link.source,
+        "last_synced_at": link.last_synced_at,
+    }
+
+
+def _extract_issue_links(fields: dict[str, object], roadmap_issue_key: str, category_field_ids: list[str]) -> list[RoadmapIssueLinkPayload]:
     raw_links = fields.get("issuelinks") if isinstance(fields, dict) else []
     if not isinstance(raw_links, list):
         return []
@@ -532,18 +614,98 @@ def _extract_issue_links(fields: dict[str, object], roadmap_issue_key: str) -> l
         if not issue_key or issue_key == roadmap_issue_key:
             continue
         link_type = raw_link.get("type") if isinstance(raw_link.get("type"), dict) else {}
-        issue_fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
-        project = issue_fields.get("project") if isinstance(issue_fields.get("project"), dict) else {}
         links.append(
-            RoadmapIssueLinkPayload(
-                issue_id=str(issue.get("id") or "") or None,
-                issue_key=issue_key,
-                issue_summary=str(issue_fields.get("summary") or "") or None,
-                jira_project_key=str(project.get("key") or "").upper() or _project_key_from_issue_key(issue_key),
+            _roadmap_issue_link_payload_from_issue(
+                issue,
+                category_field_ids=category_field_ids,
                 relationship_type=str(link_type.get("name") or "") or None,
             )
         )
     return links
+
+
+def _enrich_roadmap_payload_links(
+    client: httpx.Client,
+    site_url: str,
+    payloads: list[RoadmapIssuePayload],
+    category_field_ids: list[str],
+) -> list[RoadmapIssuePayload]:
+    linked_issue_keys = sorted({link.issue_key for payload in payloads for link in payload.links if link.issue_key})
+    if not linked_issue_keys:
+        return payloads
+
+    issue_details: dict[str, RoadmapIssueLinkPayload] = {}
+    fields = ["summary", "status", "issuetype", "project", *category_field_ids]
+    for key_chunk in _chunks(linked_issue_keys, 50):
+        jql = f"issuekey in ({', '.join(key_chunk)})"
+        for issue in _search_jira_issues(client, site_url, jql, fields):
+            detail = _roadmap_issue_link_payload_from_issue(issue, category_field_ids=category_field_ids)
+            issue_details[detail.issue_key] = detail
+
+    enriched_payloads: list[RoadmapIssuePayload] = []
+    for payload in payloads:
+        enriched_links = tuple(_merge_link_details(link, issue_details.get(link.issue_key)) for link in payload.links)
+        enriched_payloads.append(
+            RoadmapIssuePayload(
+                issue_id=payload.issue_id,
+                issue_key=payload.issue_key,
+                title=payload.title,
+                status=payload.status,
+                status_category=payload.status_category,
+                issue_type=payload.issue_type,
+                labels=payload.labels,
+                program_area=payload.program_area,
+                category=payload.category,
+                source_url=payload.source_url,
+                links=enriched_links,
+            )
+        )
+    return enriched_payloads
+
+
+def _roadmap_issue_link_payload_from_issue(
+    issue: dict[str, object],
+    *,
+    category_field_ids: list[str],
+    relationship_type: str | None = None,
+) -> RoadmapIssueLinkPayload:
+    issue_key = _normalize_issue_key(str(issue.get("key") or ""))
+    issue_fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
+    project = issue_fields.get("project") if isinstance(issue_fields.get("project"), dict) else {}
+    status = issue_fields.get("status") if isinstance(issue_fields.get("status"), dict) else {}
+    status_category = status.get("statusCategory") if isinstance(status.get("statusCategory"), dict) else {}
+    issue_type = issue_fields.get("issuetype") if isinstance(issue_fields.get("issuetype"), dict) else {}
+    return RoadmapIssueLinkPayload(
+        issue_id=str(issue.get("id") or "") or None,
+        issue_key=issue_key,
+        issue_summary=str(issue_fields.get("summary") or "") or None,
+        jira_project_key=str(project.get("key") or "").upper() or _project_key_from_issue_key(issue_key),
+        relationship_type=relationship_type,
+        issue_type=str(issue_type.get("name") or "") or None,
+        status=str(status.get("name") or "") or None,
+        status_category=str(status_category.get("name") or "") or None,
+        category=_category_from_issue_fields(issue_fields, category_field_ids),
+    )
+
+
+def _merge_link_details(base: RoadmapIssueLinkPayload, enriched: RoadmapIssueLinkPayload | None) -> RoadmapIssueLinkPayload:
+    if enriched is None:
+        return base
+    return RoadmapIssueLinkPayload(
+        issue_id=enriched.issue_id or base.issue_id,
+        issue_key=base.issue_key,
+        issue_summary=enriched.issue_summary or base.issue_summary,
+        jira_project_key=enriched.jira_project_key or base.jira_project_key,
+        relationship_type=base.relationship_type or enriched.relationship_type,
+        issue_type=enriched.issue_type or base.issue_type,
+        status=enriched.status or base.status,
+        status_category=enriched.status_category or base.status_category,
+        category=enriched.category or base.category,
+    )
+
+
+def _chunks(values: list[str], size: int) -> list[list[str]]:
+    return [values[index : index + size] for index in range(0, len(values), size)]
 
 
 def _fetch_roadmap_field_ids(client: httpx.Client, site_url: str) -> dict[str, list[str]]:
@@ -621,7 +783,20 @@ def _roadmap_payload_hash(payload: RoadmapIssuePayload) -> str:
             ",".join(sorted(payload.labels)),
             payload.program_area or "",
             payload.category or "",
-            ",".join(sorted(link.issue_key for link in payload.links)),
+            ",".join(
+                sorted(
+                    "|".join(
+                        [
+                            link.issue_key,
+                            link.jira_project_key or "",
+                            link.issue_type or "",
+                            link.status or "",
+                            link.category or "",
+                        ]
+                    )
+                    for link in payload.links
+                )
+            ),
         ]
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()

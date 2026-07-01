@@ -193,15 +193,23 @@ class RoadmapItemIssueLink(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     roadmap_item_id: Mapped[int] = mapped_column(ForeignKey("roadmap_items.id"), nullable=False)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
+    bucket_id: Mapped[int | None] = mapped_column(ForeignKey("buckets.id"))
     jira_issue_id: Mapped[str | None] = mapped_column(String(120))
     jira_issue_key: Mapped[str] = mapped_column(String(80), nullable=False)
     jira_issue_summary: Mapped[str | None] = mapped_column(Text)
     jira_project_key: Mapped[str | None] = mapped_column(String(80))
+    issue_type: Mapped[str | None] = mapped_column(String(120))
+    status: Mapped[str | None] = mapped_column(String(120))
+    status_category: Mapped[str | None] = mapped_column(String(80))
+    source_category: Mapped[str | None] = mapped_column(String(160))
     relationship_type: Mapped[str | None] = mapped_column(String(120))
     source: Mapped[str] = mapped_column(String(80), default="jira_issue_link", nullable=False)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     roadmap_item: Mapped[RoadmapItem] = relationship(back_populates="issue_links")
+    product: Mapped[Product | None] = relationship()
+    bucket: Mapped[Bucket | None] = relationship()
 
 
 class FiscalMonth(Base):

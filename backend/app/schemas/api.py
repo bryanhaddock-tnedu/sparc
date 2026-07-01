@@ -717,6 +717,26 @@ class SyncRunResponse(BaseModel):
     error_summary: str | None
 
 
+class RoadmapItemLinkedIssueResponse(BaseModel):
+    id: int
+    jira_issue_id: str | None
+    jira_issue_key: str
+    jira_issue_summary: str | None
+    jira_project_key: str | None
+    product_id: int | None
+    product: str | None
+    product_slug: str | None
+    bucket_id: int | None
+    bucket: str | None
+    issue_type: str | None
+    status: str | None
+    status_category: str | None
+    source_category: str | None
+    relationship_type: str | None
+    source: str
+    last_synced_at: datetime | None
+
+
 class RoadmapItemResponse(BaseModel):
     id: int
     source: str
@@ -736,6 +756,7 @@ class RoadmapItemResponse(BaseModel):
     source_category: str | None = None
     source_url: str | None
     linked_issue_count: int
+    linked_issues: list[RoadmapItemLinkedIssueResponse] = Field(default_factory=list)
     last_synced_at: datetime | None
     created_at: datetime
     updated_at: datetime

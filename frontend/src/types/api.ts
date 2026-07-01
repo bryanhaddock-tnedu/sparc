@@ -184,9 +184,30 @@ export interface RoadmapItem {
   source_category: string | null;
   source_url: string | null;
   linked_issue_count: number;
+  linked_issues: RoadmapItemLinkedIssue[];
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RoadmapItemLinkedIssue {
+  id: number;
+  jira_issue_id: string | null;
+  jira_issue_key: string;
+  jira_issue_summary: string | null;
+  jira_project_key: string | null;
+  product_id: number | null;
+  product: string | null;
+  product_slug: string | null;
+  bucket_id: number | null;
+  bucket: string | null;
+  issue_type: string | null;
+  status: string | null;
+  status_category: string | null;
+  source_category: string | null;
+  relationship_type: string | null;
+  source: string;
+  last_synced_at: string | null;
 }
 
 export interface RoadmapItemMapPayload {

@@ -20,6 +20,7 @@ from app.models import (
     JiraProjectCatalog,
     Product,
     ProductBudget,
+    ProductJiraSpace,
     ProductTeamMember,
     RoadmapItem,
     RoadmapItemIssueLink,
@@ -44,6 +45,7 @@ from app.services.jira_projects import (
 )
 from app.services import jira_projects
 from app.services.roadmap import (
+    RoadmapIssueLinkPayload,
     RoadmapIssuePayload,
     UNSCOPED_ROADMAP_FISCAL_YEAR,
     _has_fiscal_year_label,
@@ -465,6 +467,143 @@ def test_product_roadmap_items_show_mapped_items_without_actuals_and_exclude_del
         assert {row["jira_issue_key"] for row in all_rows} == {"ROADMAP-1"}
 
 
+def test_product_roadmap_items_include_parent_ideas_through_product_deliverables():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        eceds = Product(name="ECEDS", slug="eceds")
+        urs = Product(name="URS", slug="urs")
+        sword = Product(name="SWORD", slug="sword")
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        db.add_all([eceds, urs, sword])
+        db.flush()
+        parent = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            bucket_id=bucket.id,
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-180",
+            title="TDOE Application Portfolio Annual Maintenance",
+            issue_type="Idea",
+            program_area="Programs",
+        )
+        db.add(parent)
+        db.flush()
+        db.add_all(
+            [
+                RoadmapItemIssueLink(
+                    roadmap_item_id=parent.id,
+                    product_id=eceds.id,
+                    bucket_id=bucket.id,
+                    jira_issue_key="ECEDS-169",
+                    jira_issue_summary="ECEDS continuous maintenance",
+                    jira_project_key="ECEDS",
+                    issue_type="Deliverable",
+                    status="Not Started",
+                ),
+                RoadmapItemIssueLink(
+                    roadmap_item_id=parent.id,
+                    product_id=urs.id,
+                    bucket_id=bucket.id,
+                    jira_issue_key="SCREEN-470",
+                    jira_issue_summary="URS SY 2026 maintenance",
+                    jira_project_key="SCREEN",
+                    issue_type="Deliverable",
+                    status="Not Started",
+                ),
+                RoadmapItemIssueLink(
+                    roadmap_item_id=parent.id,
+                    product_id=urs.id,
+                    bucket_id=bucket.id,
+                    jira_issue_key="SCREEN-346",
+                    jira_issue_summary="URS SY 2025 maintenance",
+                    jira_project_key="SCREEN",
+                    issue_type="Deliverable",
+                    status="In Progress",
+                ),
+                RoadmapItemIssueLink(
+                    roadmap_item_id=parent.id,
+                    product_id=sword.id,
+                    bucket_id=bucket.id,
+                    jira_issue_key="SWORD-974",
+                    jira_issue_summary="SWORD continuous maintenance",
+                    jira_project_key="SWORD",
+                    issue_type="Deliverable",
+                    status="In Progress",
+                ),
+            ]
+        )
+        db.flush()
+
+        eceds_rows = product_roadmap_items(db, eceds.id, 2027)
+        urs_rows = product_roadmap_items(db, urs.id, 2027)
+
+        assert [row["jira_issue_key"] for row in eceds_rows] == ["ROADMAP-180"]
+        assert eceds_rows[0]["linked_issue_count"] == 1
+        assert [link["jira_issue_key"] for link in eceds_rows[0]["linked_issues"]] == ["ECEDS-169"]
+        assert [row["jira_issue_key"] for row in urs_rows] == ["ROADMAP-180"]
+        assert urs_rows[0]["linked_issue_count"] == 2
+        assert [link["jira_issue_key"] for link in urs_rows[0]["linked_issues"]] == ["SCREEN-346", "SCREEN-470"]
+
+
+def test_deliverable_actuals_roll_up_to_parent_idea_for_product():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="ECEDS", slug="eceds")
+        member = TeamMember(name="Avery Johnson", slug="avery-johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        month = get_fiscal_month(db, 2027, 1)
+        parent = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            bucket_id=bucket.id,
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-180",
+            title="TDOE Application Portfolio Annual Maintenance",
+            issue_type="Idea",
+        )
+        db.add(parent)
+        db.flush()
+        db.add_all(
+            [
+                RoadmapItemIssueLink(
+                    roadmap_item_id=parent.id,
+                    product_id=product.id,
+                    bucket_id=bucket.id,
+                    jira_issue_key="ECEDS-169",
+                    jira_issue_summary="ECEDS continuous maintenance",
+                    jira_project_key="ECEDS",
+                    issue_type="Deliverable",
+                ),
+                ActualEntry(
+                    product_id=product.id,
+                    team_member_id=member.id,
+                    bucket_id=bucket.id,
+                    fiscal_month_id=month.id,
+                    hours=Decimal("4"),
+                    source="jira",
+                    source_ticket_key="ECEDS-169",
+                    source_worklog_id="1",
+                ),
+            ]
+        )
+        db.flush()
+
+        rows = roadmap_actual_rows(db, 2027, product_id=product.id)
+
+        assert len(rows) == 1
+        assert rows[0]["mapping_status"] == "mapped"
+        assert rows[0]["roadmap_item_key"] == "ROADMAP-180"
+        assert rows[0]["product"] == "ECEDS"
+        assert rows[0]["ticket_keys"] == ["ECEDS-169"]
+        assert rows[0]["actual_hours"] == 4
+
+
 def test_roadmap_actual_rows_ignore_links_to_delivery_tickets():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -788,6 +927,56 @@ def test_roadmap_sync_preserves_manual_ticket_links():
         assert linked == 0
         assert len(links) == 1
         assert links[0].source == "manual"
+
+
+def test_roadmap_sync_stores_product_scoped_deliverable_metadata():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="ECEDS", slug="eceds")
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        db.add(product)
+        db.flush()
+        db.add(ProductJiraSpace(product_id=product.id, jira_project_key="ECEDS", is_active=True))
+        item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            bucket_id=bucket.id,
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-180",
+            title="TDOE Application Portfolio Annual Maintenance",
+            issue_type="Idea",
+        )
+        db.add(item)
+        db.flush()
+
+        linked = _replace_roadmap_issue_links(
+            db,
+            item,
+            (
+                RoadmapIssueLinkPayload(
+                    issue_id="20001",
+                    issue_key="ECEDS-169",
+                    issue_summary="ECEDS continuous maintenance",
+                    jira_project_key="ECEDS",
+                    relationship_type="Delivery",
+                    issue_type="Deliverable",
+                    status="Not Started",
+                    status_category="To Do",
+                    category="Maintenance",
+                ),
+            ),
+        )
+
+        link = db.scalar(select(RoadmapItemIssueLink).where(RoadmapItemIssueLink.jira_issue_key == "ECEDS-169"))
+        assert linked == 1
+        assert link.product_id == product.id
+        assert link.bucket_id == bucket.id
+        assert link.issue_type == "Deliverable"
+        assert link.status == "Not Started"
+        assert link.status_category == "To Do"
+        assert link.source_category == "Maintenance"
 
 
 def test_product_budget_is_fiscal_year_specific():
