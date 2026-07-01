@@ -31,6 +31,7 @@ export function RoadmapActualsTable({
   );
   const mappedCount = rows.filter((row) => row.mapping_status === "mapped").length;
   const gapCount = rows.length - mappedCount;
+  const programAreaRows = buildProgramAreaSummaryRows(rows);
 
   return (
     <section className="space-y-3">
@@ -46,12 +47,14 @@ export function RoadmapActualsTable({
           <SummaryPill label="Gaps" value={String(gapCount)} tone={gapCount ? "warn" : "default"} />
         </div>
       </div>
+      {programAreaRows.length ? <ProgramAreaSummary rows={programAreaRows} /> : null}
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Roadmap Item</TableHead>
+                <TableHead>Program Area</TableHead>
                 {showProduct ? <TableHead>Product</TableHead> : null}
                 {showTeamMember ? <TableHead>Team Member</TableHead> : null}
                 <TableHead>Bucket</TableHead>
@@ -68,6 +71,7 @@ export function RoadmapActualsTable({
                     <TableCell>
                       <RoadmapItemCell row={row} />
                     </TableCell>
+                    <TableCell>{row.program_area || "Unassigned"}</TableCell>
                     {showProduct ? (
                       <TableCell>
                         <Link className="font-medium text-primary hover:underline" to={productDetailPath(row)}>
@@ -100,7 +104,7 @@ export function RoadmapActualsTable({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell className="py-6 text-sm text-muted-foreground" colSpan={6 + Number(showProduct) + Number(showTeamMember)}>
+                  <TableCell className="py-6 text-sm text-muted-foreground" colSpan={7 + Number(showProduct) + Number(showTeamMember)}>
                     No roadmap-attributed actuals exist for this fiscal year yet.
                   </TableCell>
                 </TableRow>
@@ -110,6 +114,54 @@ export function RoadmapActualsTable({
         </div>
       </div>
     </section>
+  );
+}
+
+type ProgramAreaSummaryRow = {
+  id: string;
+  label: string;
+  roadmapItems: number;
+  tickets: number;
+  gapTickets: number;
+  worklogs: number;
+  actualHours: number;
+  actualCost: number;
+};
+
+function ProgramAreaSummary({ rows }: { rows: ProgramAreaSummaryRow[] }) {
+  return (
+    <div className="overflow-hidden rounded-lg border bg-card">
+      <div className="border-b bg-secondary/50 px-3 py-2 text-sm font-semibold">Program Area Billing</div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Program Area</TableHead>
+              <TableHead className="text-right">Roadmap Items</TableHead>
+              <TableHead className="text-right">Tickets</TableHead>
+              <TableHead className="text-right">Worklogs</TableHead>
+              <TableHead className="text-right">Hours</TableHead>
+              <TableHead className="text-right">Cost</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell className="font-medium">{row.label}</TableCell>
+                <TableCell className="numeric-cell text-right">{row.roadmapItems}</TableCell>
+                <TableCell className="numeric-cell text-right">
+                  {row.tickets}
+                  {row.gapTickets ? <span className="ml-1 text-warning">({row.gapTickets} gaps)</span> : null}
+                </TableCell>
+                <TableCell className="numeric-cell text-right">{row.worklogs}</TableCell>
+                <TableCell className="numeric-cell text-right font-semibold">{formatHours(row.actualHours)}</TableCell>
+                <TableCell className="numeric-cell text-right font-semibold text-primary">{formatCurrency(row.actualCost)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
 }
 
@@ -158,4 +210,59 @@ function SummaryPill({ label, value, tone = "default" }: { label: string; value:
 
 function rowKey(row: RoadmapActualRow) {
   return [row.mapping_status, row.roadmap_item_id ?? "none", row.product_id, row.team_member_id, row.bucket_id, row.ticket_keys.join("|")].join(":");
+}
+
+function buildProgramAreaSummaryRows(rows: RoadmapActualRow[]) {
+  const summaries = new Map<string, ProgramAreaSummaryAccumulator>();
+  rows.forEach((row) => {
+    const label = row.program_area || "Unassigned";
+    const summary = ensureProgramAreaSummary(summaries, label);
+    if (row.roadmap_item_id !== null) summary.roadmapItems.add(String(row.roadmap_item_id));
+    row.ticket_keys.forEach((ticketKey) => {
+      summary.tickets.add(ticketKey);
+      if (row.mapping_status !== "mapped") summary.gapTickets.add(ticketKey);
+    });
+    summary.worklogs += row.worklog_count;
+    summary.actualHours += row.actual_hours;
+    summary.actualCost += row.actual_cost;
+  });
+
+  return Array.from(summaries.values())
+    .map((summary) => ({
+      id: summary.label,
+      label: summary.label,
+      roadmapItems: summary.roadmapItems.size,
+      tickets: summary.tickets.size,
+      gapTickets: summary.gapTickets.size,
+      worklogs: summary.worklogs,
+      actualHours: summary.actualHours,
+      actualCost: summary.actualCost,
+    }))
+    .sort((left, right) => right.actualCost - left.actualCost || left.label.localeCompare(right.label));
+}
+
+type ProgramAreaSummaryAccumulator = {
+  label: string;
+  roadmapItems: Set<string>;
+  tickets: Set<string>;
+  gapTickets: Set<string>;
+  worklogs: number;
+  actualHours: number;
+  actualCost: number;
+};
+
+function ensureProgramAreaSummary(map: Map<string, ProgramAreaSummaryAccumulator>, label: string) {
+  const existing = map.get(label);
+  if (existing) return existing;
+  const created = {
+    label,
+    roadmapItems: new Set<string>(),
+    tickets: new Set<string>(),
+    gapTickets: new Set<string>(),
+    worklogs: 0,
+    actualHours: 0,
+    actualCost: 0,
+  };
+  map.set(label, created);
+  return created;
 }
