@@ -46,6 +46,7 @@ def serialize_roadmap_item(item: RoadmapItem) -> dict[str, object]:
     return {
         "id": item.id,
         "source": item.source,
+        "fiscal_year": item.fiscal_year,
         "product_id": item.product_id,
         "product": item.product.name if item.product else None,
         "product_slug": product_url_slug(item.product) if item.product else None,
@@ -66,20 +67,25 @@ def serialize_roadmap_item(item: RoadmapItem) -> dict[str, object]:
     }
 
 
-def list_roadmap_items(db: Session) -> list[dict[str, object]]:
-    items = db.scalars(
+def list_roadmap_items(db: Session, fiscal_year: int | None = None) -> list[dict[str, object]]:
+    statement = (
         select(RoadmapItem)
         .options(joinedload(RoadmapItem.product), joinedload(RoadmapItem.bucket), joinedload(RoadmapItem.issue_links))
         .order_by(RoadmapItem.jira_issue_key)
+    )
+    if fiscal_year is not None:
+        statement = statement.where(RoadmapItem.fiscal_year == fiscal_year)
+    items = db.scalars(
+        statement
     ).unique().all()
     return [serialize_roadmap_item(item) for item in items if _is_roadmap_item_issue_type(item.issue_type)]
 
 
-def product_roadmap_items(db: Session, product_id: int) -> list[dict[str, object]]:
+def product_roadmap_items(db: Session, product_id: int, fiscal_year: int) -> list[dict[str, object]]:
     items = db.scalars(
         select(RoadmapItem)
         .options(joinedload(RoadmapItem.product), joinedload(RoadmapItem.bucket), joinedload(RoadmapItem.issue_links))
-        .where(RoadmapItem.product_id == product_id)
+        .where(RoadmapItem.product_id == product_id, RoadmapItem.fiscal_year == fiscal_year)
         .order_by(RoadmapItem.jira_issue_key)
     ).unique().all()
     return [serialize_roadmap_item(item) for item in items if _is_roadmap_item_issue_type(item.issue_type)]
@@ -160,7 +166,7 @@ def map_roadmap_ticket(db: Session, ticket_key: str, roadmap_item_id: int | None
     }
 
 
-def run_live_roadmap_sync(db: Session, roadmap_project_key: str = DEFAULT_ROADMAP_PROJECT_KEY) -> dict[str, object]:
+def run_live_roadmap_sync(db: Session, fiscal_year: int, roadmap_project_key: str = DEFAULT_ROADMAP_PROJECT_KEY) -> dict[str, object]:
     project_key = (roadmap_project_key or DEFAULT_ROADMAP_PROJECT_KEY).strip().upper()
     sync_run = SyncRun(source="jira_roadmap", mode="live", status="running")
     db.add(sync_run)
@@ -170,7 +176,7 @@ def run_live_roadmap_sync(db: Session, roadmap_project_key: str = DEFAULT_ROADMA
 
     try:
         for payload in fetch_live_roadmap_items(project_key):
-            item = _upsert_roadmap_item(db, payload)
+            item = _upsert_roadmap_item(db, payload, fiscal_year)
             imported += 1
             linked += _replace_roadmap_issue_links(db, item, payload.links)
 
@@ -288,7 +294,7 @@ def roadmap_actual_rows(
     return sorted(rows, key=_roadmap_actual_sort_key)
 
 
-def _upsert_roadmap_item(db: Session, payload: RoadmapIssuePayload) -> RoadmapItem:
+def _upsert_roadmap_item(db: Session, payload: RoadmapIssuePayload, fiscal_year: int) -> RoadmapItem:
     item = db.scalar(select(RoadmapItem).where(RoadmapItem.source == ROADMAP_SOURCE, RoadmapItem.jira_issue_id == payload.issue_id))
     if item is None:
         item = db.scalar(select(RoadmapItem).where(RoadmapItem.source == ROADMAP_SOURCE, RoadmapItem.jira_issue_key == payload.issue_key))
@@ -297,6 +303,7 @@ def _upsert_roadmap_item(db: Session, payload: RoadmapIssuePayload) -> RoadmapIt
         db.add(item)
     item.jira_issue_id = payload.issue_id
     item.jira_issue_key = payload.issue_key
+    item.fiscal_year = fiscal_year
     item.title = payload.title
     item.status = payload.status
     item.status_category = payload.status_category
@@ -391,6 +398,8 @@ def _roadmap_links_by_ticket(db: Session, entries: list[ActualEntry]) -> dict[st
     ).all()
     by_ticket: dict[str, list[RoadmapItemIssueLink]] = defaultdict(list)
     for link in links:
+        if not _is_roadmap_item_issue_type(link.roadmap_item.issue_type):
+            continue
         by_ticket[_normalize_issue_key(link.jira_issue_key)].append(link)
     return by_ticket
 

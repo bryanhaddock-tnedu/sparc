@@ -88,7 +88,7 @@ export function ProductDetailPage() {
       api.productTeamMembers(resolvedProductId),
       api.teamMembers(),
       api.reportedValues({ product_id: resolvedProductId }, fiscalYear),
-      api.productRoadmapItems(resolvedProductId),
+      api.productRoadmapItems(resolvedProductId, fiscalYear),
       api.productRoadmapActuals(resolvedProductId, fiscalYear),
     ]);
     if (productRef !== summaryResult.product.slug) {

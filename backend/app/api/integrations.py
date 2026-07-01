@@ -103,8 +103,8 @@ def sync_live_jira_rovo(payload: JiraLiveSyncRequest, db: Session = Depends(get_
 
 
 @router.get("/roadmap/items", response_model=list[RoadmapItemResponse])
-def get_roadmap_items(db: Session = Depends(get_db)) -> list[dict[str, object]]:
-    return list_roadmap_items(db)
+def get_roadmap_items(fiscal_year: int = 2027, db: Session = Depends(get_db)) -> list[dict[str, object]]:
+    return list_roadmap_items(db, fiscal_year)
 
 
 @router.put("/roadmap/items/{item_id}", response_model=RoadmapItemResponse)
@@ -162,9 +162,13 @@ def update_roadmap_ticket_mapping(
 
 
 @router.post("/roadmap/sync", response_model=RoadmapSyncResponse)
-def sync_live_roadmap(roadmap_project_key: str = DEFAULT_ROADMAP_PROJECT_KEY, db: Session = Depends(get_db)) -> dict[str, object]:
+def sync_live_roadmap(
+    fiscal_year: int = 2027,
+    roadmap_project_key: str = DEFAULT_ROADMAP_PROJECT_KEY,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
     try:
-        result = run_live_roadmap_sync(db, roadmap_project_key)
+        result = run_live_roadmap_sync(db, fiscal_year, roadmap_project_key)
         db.commit()
         return result
     except ValueError as exc:

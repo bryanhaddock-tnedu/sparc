@@ -168,6 +168,7 @@ export interface ProductTeamMember {
 export interface RoadmapItem {
   id: number;
   source: string;
+  fiscal_year: number;
   product_id: number | null;
   product: string | null;
   product_slug: string | null;

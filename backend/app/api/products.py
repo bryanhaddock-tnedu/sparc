@@ -338,10 +338,11 @@ def get_product_roadmap_actuals(
 @router.get("/{product_ref}/roadmap-items", response_model=list[RoadmapItemResponse])
 def get_product_roadmap_items(
     product_ref: str,
+    fiscal_year: int = 2027,
     db: Session = Depends(get_db),
 ) -> list[dict[str, object]]:
     product = _resolve_product_or_404(db, product_ref)
-    return product_roadmap_items(db, product.id)
+    return product_roadmap_items(db, product.id, fiscal_year)
 
 
 def _resolve_product_or_404(db: Session, product_ref: str) -> Product:

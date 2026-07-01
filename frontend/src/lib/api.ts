@@ -187,7 +187,8 @@ export const api = {
     request<ProductBucketTables>(`/api/products/${encodeURIComponent(String(productRef))}/bucket-tables?fiscal_year=${fiscalYear}`),
   productRoadmapActuals: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<RoadmapActualRow[]>(`/api/products/${encodeURIComponent(String(productRef))}/roadmap-actuals?fiscal_year=${fiscalYear}`),
-  productRoadmapItems: (productRef: ProductRef) => request<RoadmapItem[]>(`/api/products/${encodeURIComponent(String(productRef))}/roadmap-items`),
+  productRoadmapItems: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<RoadmapItem[]>(`/api/products/${encodeURIComponent(String(productRef))}/roadmap-items?fiscal_year=${fiscalYear}`),
   products: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<Product[]>(`/api/products?fiscal_year=${fiscalYear}`),
   buckets: () => request<Bucket[]>("/api/products/buckets"),
   createProduct: (payload: ProductCreatePayload, fiscalYear = DEFAULT_FISCAL_YEAR) =>
@@ -283,11 +284,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ fiscal_year: fiscalYear }),
     }),
-  syncRoadmap: (roadmapProjectKey = "ROADMAP") =>
-    request<RoadmapSyncResult>(`/api/integrations/jira-rovo/roadmap/sync?roadmap_project_key=${encodeURIComponent(roadmapProjectKey)}`, {
-      method: "POST",
-    }),
-  roadmapItems: () => request<RoadmapItem[]>("/api/integrations/jira-rovo/roadmap/items"),
+  syncRoadmap: (fiscalYear = DEFAULT_FISCAL_YEAR, roadmapProjectKey = "ROADMAP") =>
+    request<RoadmapSyncResult>(
+      `/api/integrations/jira-rovo/roadmap/sync?fiscal_year=${fiscalYear}&roadmap_project_key=${encodeURIComponent(roadmapProjectKey)}`,
+      {
+        method: "POST",
+      },
+    ),
+  roadmapItems: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<RoadmapItem[]>(`/api/integrations/jira-rovo/roadmap/items?fiscal_year=${fiscalYear}`),
   updateRoadmapItemMapping: (itemId: number, payload: RoadmapItemMapPayload) =>
     request<RoadmapItem>(`/api/integrations/jira-rovo/roadmap/items/${itemId}`, {
       method: "PUT",

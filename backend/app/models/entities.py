@@ -157,6 +157,7 @@ class RoadmapItem(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source: Mapped[str] = mapped_column(String(80), default="jira_product_discovery", nullable=False)
+    fiscal_year: Mapped[int] = mapped_column(Integer, default=2027, index=True, nullable=False)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
     bucket_id: Mapped[int | None] = mapped_column(ForeignKey("buckets.id"))
     jira_issue_id: Mapped[str] = mapped_column(String(120), nullable=False)

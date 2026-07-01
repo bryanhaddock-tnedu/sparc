@@ -144,7 +144,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       api.userMappings(),
       api.productMappings(),
       api.jiraProjectCatalog(),
-      api.roadmapItems(),
+      api.roadmapItems(fiscalYear),
       api.roadmapActuals(fiscalYear, { monthSequence }),
       api.roadmapActualGaps(fiscalYear, { monthSequence }),
       api.reportedValues({}, fiscalYear),
@@ -206,7 +206,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     setError(null);
     setNotice(null);
     try {
-      const result = await api.syncRoadmap();
+      const result = await api.syncRoadmap(fiscalYear);
       await loadData();
       setNotice(`Roadmap synced: ${result.roadmap_items} items and ${result.linked_issues} linked delivery tickets.`);
     } catch (err) {
@@ -285,12 +285,19 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const programAreaOptions = useMemo(() => programAreaOptionsFrom(roadmapActualRows, roadmapItems), [roadmapActualRows, roadmapItems]);
   const visibleRoadmapActualRows = useMemo(() => filterRoadmapActualRows(roadmapActualRows, roadmapFilters), [roadmapActualRows, roadmapFilters]);
   const visibleRoadmapGapRows = useMemo(() => filterRoadmapActualRows(roadmapGaps, roadmapFilters), [roadmapGaps, roadmapFilters]);
+  const visibleMappedRoadmapActualRows = useMemo(
+    () => visibleRoadmapActualRows.filter((row) => row.mapping_status === "mapped"),
+    [visibleRoadmapActualRows],
+  );
   const visibleReportedRows = useMemo(() => filterReportedRows(reportedRows, roadmapFilters), [reportedRows, roadmapFilters]);
   const roadmapGapTickets = useMemo(() => expandRoadmapGapTickets(visibleRoadmapGapRows), [visibleRoadmapGapRows]);
-  const billingSummary = useMemo(() => buildRoadmapBillingSummary(visibleRoadmapActualRows), [visibleRoadmapActualRows]);
+  const billingSummary = useMemo(
+    () => buildRoadmapBillingSummary(visibleMappedRoadmapActualRows, visibleRoadmapGapRows),
+    [visibleMappedRoadmapActualRows, visibleRoadmapGapRows],
+  );
   const roadmapForecastComparison = useMemo(
-    () => buildRoadmapForecastComparison(visibleRoadmapActualRows, visibleReportedRows),
-    [visibleRoadmapActualRows, visibleReportedRows],
+    () => buildRoadmapForecastComparison(visibleMappedRoadmapActualRows, visibleReportedRows),
+    [visibleMappedRoadmapActualRows, visibleReportedRows],
   );
 
   if (loading) return <LoadingBlock />;
@@ -712,8 +719,8 @@ function RoadmapBillingSummarySection({
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <SummaryMetric label="Hours" value={formatHours(summary.totals.actualHours)} />
-        <SummaryMetric label="Cost" value={formatCurrency(summary.totals.actualCost)} />
+        <SummaryMetric label="Mapped Hours" value={formatHours(summary.totals.actualHours)} />
+        <SummaryMetric label="Mapped Cost" value={formatCurrency(summary.totals.actualCost)} />
         <SummaryMetric label="Tickets" value={String(summary.totals.tickets)} />
         <SummaryMetric label="Worklogs" value={String(summary.totals.worklogs)} />
         <SummaryMetric label="Gap Tickets" value={String(summary.totals.gapTickets)} tone={summary.totals.gapTickets ? "warn" : "default"} />
@@ -767,7 +774,7 @@ function BillingSummaryTable({ rows, title }: { rows: BillingSummaryRow[]; title
             ) : (
               <TableRow>
                 <TableCell className="py-5 text-sm text-muted-foreground" colSpan={6}>
-                  No billing actuals match the selected filters.
+                  No mapped roadmap actuals match the selected filters.
                 </TableCell>
               </TableRow>
             )}
@@ -808,7 +815,7 @@ function RoadmapForecastComparisonSection({
         <div>
           <h2 className="text-lg font-semibold">Roadmap Forecast Comparison</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Roadmap-attributed actuals compared to Product/Bucket forecast hours. Program Area and Status filters narrow actuals only.
+            Mapped roadmap actuals compared to Product/Bucket forecast hours. Gap tickets stay in the mapping queue until linked to Roadmap Ideas.
           </p>
         </div>
         <Button type="button" variant="outline" onClick={onExport}>
@@ -1381,11 +1388,12 @@ function forecastComparisonRiskRank(status: RoadmapForecastComparisonRow["status
   }
 }
 
-function buildRoadmapBillingSummary(rows: RoadmapActualRow[]): RoadmapBillingSummary {
+function buildRoadmapBillingSummary(rows: RoadmapActualRow[], gapRows: RoadmapActualRow[] = []): RoadmapBillingSummary {
   const programAreas = new Map<string, BillingSummaryAccumulator>();
   const products = new Map<string, BillingSummaryAccumulator>();
   const roadmapItems = new Map<string, BillingSummaryAccumulator>();
   const totals = newAccumulator("totals", "Totals");
+  const gapTickets = new Set<string>();
 
   rows.forEach((row) => {
     addRowToAccumulator(totals, row);
@@ -1405,6 +1413,7 @@ function buildRoadmapBillingSummary(rows: RoadmapActualRow[]): RoadmapBillingSum
           : "Unmapped Roadmap Item";
     addRowToAccumulator(ensureAccumulator(roadmapItems, roadmapItemKey, roadmapItemLabel), row);
   });
+  gapRows.forEach((row) => row.ticket_keys.forEach((ticketKey) => gapTickets.add(ticketKey)));
 
   return {
     totals: {
@@ -1412,7 +1421,7 @@ function buildRoadmapBillingSummary(rows: RoadmapActualRow[]): RoadmapBillingSum
       actualCost: totals.actualCost,
       tickets: totals.tickets.size,
       worklogs: totals.worklogs,
-      gapTickets: totals.gapTickets.size,
+      gapTickets: gapTickets.size,
     },
     programAreas: finalizeSummaryRows(programAreas, "program"),
     products: finalizeSummaryRows(products, "product"),

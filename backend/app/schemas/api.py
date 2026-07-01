@@ -719,6 +719,7 @@ class SyncRunResponse(BaseModel):
 class RoadmapItemResponse(BaseModel):
     id: int
     source: str
+    fiscal_year: int
     product_id: int | None
     product: str | None
     product_slug: str | None

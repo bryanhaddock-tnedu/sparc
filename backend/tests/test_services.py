@@ -301,6 +301,7 @@ def test_product_roadmap_items_show_mapped_items_without_actuals_and_exclude_del
         db.flush()
         idea = RoadmapItem(
             source="jira_product_discovery",
+            fiscal_year=2027,
             product_id=product.id,
             bucket_id=bucket.id,
             jira_issue_id="10001",
@@ -312,6 +313,7 @@ def test_product_roadmap_items_show_mapped_items_without_actuals_and_exclude_del
         )
         delivery_ticket = RoadmapItem(
             source="jira_product_discovery",
+            fiscal_year=2027,
             product_id=product.id,
             bucket_id=bucket.id,
             jira_issue_id="10002",
@@ -322,6 +324,7 @@ def test_product_roadmap_items_show_mapped_items_without_actuals_and_exclude_del
         )
         other_idea = RoadmapItem(
             source="jira_product_discovery",
+            fiscal_year=2026,
             product_id=other_product.id,
             bucket_id=bucket.id,
             jira_issue_id="10003",
@@ -340,13 +343,63 @@ def test_product_roadmap_items_show_mapped_items_without_actuals_and_exclude_del
         )
         db.flush()
 
-        rows = product_roadmap_items(db, product.id)
-        all_rows = list_roadmap_items(db)
+        rows = product_roadmap_items(db, product.id, 2027)
+        prior_year_rows = product_roadmap_items(db, other_product.id, 2026)
+        all_rows = list_roadmap_items(db, 2027)
 
         assert [row["jira_issue_key"] for row in rows] == ["ROADMAP-1"]
         assert rows[0]["linked_issue_count"] == 2
         assert rows[0]["program_area"] == "Programs"
-        assert {row["jira_issue_key"] for row in all_rows} == {"ROADMAP-1", "ROADMAP-3"}
+        assert [row["jira_issue_key"] for row in prior_year_rows] == ["ROADMAP-3"]
+        assert {row["jira_issue_key"] for row in all_rows} == {"ROADMAP-1"}
+
+
+def test_roadmap_actual_rows_ignore_links_to_delivery_tickets():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", slug="student-information")
+        member = TeamMember(name="Avery Johnson", slug="avery-johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "NET_NEW"))
+        month = get_fiscal_month(db, 2027, 1)
+        delivery_ticket = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            product_id=product.id,
+            bucket_id=bucket.id,
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="Delivery ticket incorrectly synced as a roadmap item",
+            issue_type="Story",
+        )
+        db.add(delivery_ticket)
+        db.flush()
+        db.add_all(
+            [
+                RoadmapItemIssueLink(roadmap_item_id=delivery_ticket.id, jira_issue_key="SIS-1"),
+                ActualEntry(
+                    product_id=product.id,
+                    team_member_id=member.id,
+                    bucket_id=bucket.id,
+                    fiscal_month_id=month.id,
+                    hours=Decimal("4"),
+                    source="jira",
+                    source_ticket_key="SIS-1",
+                    source_worklog_id="1",
+                ),
+            ]
+        )
+        db.flush()
+
+        rows = roadmap_actual_rows(db, 2027, product_id=product.id)
+
+        assert len(rows) == 1
+        assert rows[0]["mapping_status"] == "unmapped"
+        assert rows[0]["roadmap_item_key"] is None
+        assert rows[0]["actual_hours"] == 4
 
 
 def test_roadmap_actual_rows_can_filter_by_fiscal_month():
