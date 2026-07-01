@@ -18,6 +18,7 @@ import type {
   JiraProjectCatalog,
   JiraUserMapping,
   Product,
+  ReportedValueRow,
   RoadmapActualRow,
   RoadmapItem,
   SyncRun,
@@ -61,6 +62,24 @@ type RoadmapBillingSummary = {
   roadmapItems: BillingSummaryRow[];
 };
 
+type RoadmapForecastComparisonRow = {
+  id: string;
+  product: string;
+  bucket: string;
+  programAreas: string;
+  roadmapItems: number;
+  teamMembers: number;
+  tickets: number;
+  gapTickets: number;
+  worklogs: number;
+  forecastHours: number;
+  actualHours: number;
+  actualCost: number;
+  remainingHours: number;
+  percentUsed: number | null;
+  status: "on_track" | "near_forecast" | "over_forecast" | "no_forecast" | "mapping_gaps";
+};
+
 const EMPTY_ROADMAP_FILTERS: RoadmapFilterState = {
   productId: "",
   teamMemberId: "",
@@ -84,6 +103,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([]);
   const [roadmapActualRows, setRoadmapActualRows] = useState<RoadmapActualRow[]>([]);
   const [roadmapGaps, setRoadmapGaps] = useState<RoadmapActualRow[]>([]);
+  const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [syncRuns, setSyncRuns] = useState<SyncRun[]>([]);
   const [jiraStatus, setJiraStatus] = useState<JiraIntegrationStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -96,7 +116,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
 
   async function loadData() {
     const monthSequence = roadmapFilters.monthSequence ? Number(roadmapFilters.monthSequence) : null;
-    const [members, productRows, bucketRows, users, jiraProducts, catalogRows, roadmapRows, actualRows, gapRows, runs, status] = await Promise.all([
+    const [members, productRows, bucketRows, users, jiraProducts, catalogRows, roadmapRows, actualRows, gapRows, reportedValueRows, runs, status] = await Promise.all([
       api.teamMembers(),
       api.products(),
       api.buckets(),
@@ -106,6 +126,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       api.roadmapItems(),
       api.roadmapActuals(fiscalYear, { monthSequence }),
       api.roadmapActualGaps(fiscalYear, { monthSequence }),
+      api.reportedValues({}, fiscalYear),
       api.syncRuns(),
       api.jiraIntegrationStatus(),
     ]);
@@ -118,6 +139,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     setRoadmapItems(roadmapRows);
     setRoadmapActualRows(actualRows);
     setRoadmapGaps(gapRows);
+    setReportedRows(reportedValueRows);
     setSyncRuns(runs);
     setJiraStatus(status);
   }
@@ -229,13 +251,25 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     downloadCsv(`sparc-roadmap-gaps-${fiscalYearLabel.toLowerCase()}.csv`, roadmapGapCsvRows(roadmapGapTickets));
   }
 
+  function exportRoadmapForecastComparison() {
+    downloadCsv(
+      `sparc-roadmap-forecast-comparison-${fiscalYearLabel.toLowerCase()}.csv`,
+      roadmapForecastComparisonCsvRows(roadmapForecastComparison),
+    );
+  }
+
   const catalogLastCheckedAt = useMemo(() => latestCatalogCheckedAt(jiraCatalog), [jiraCatalog]);
   const sortedRoadmapItems = useMemo(() => sortRoadmapItems(roadmapItems), [roadmapItems]);
   const programAreaOptions = useMemo(() => programAreaOptionsFrom(roadmapActualRows, roadmapItems), [roadmapActualRows, roadmapItems]);
   const visibleRoadmapActualRows = useMemo(() => filterRoadmapActualRows(roadmapActualRows, roadmapFilters), [roadmapActualRows, roadmapFilters]);
   const visibleRoadmapGapRows = useMemo(() => filterRoadmapActualRows(roadmapGaps, roadmapFilters), [roadmapGaps, roadmapFilters]);
+  const visibleReportedRows = useMemo(() => filterReportedRows(reportedRows, roadmapFilters), [reportedRows, roadmapFilters]);
   const roadmapGapTickets = useMemo(() => expandRoadmapGapTickets(visibleRoadmapGapRows), [visibleRoadmapGapRows]);
   const billingSummary = useMemo(() => buildRoadmapBillingSummary(visibleRoadmapActualRows), [visibleRoadmapActualRows]);
+  const roadmapForecastComparison = useMemo(
+    () => buildRoadmapForecastComparison(visibleRoadmapActualRows, visibleReportedRows),
+    [visibleRoadmapActualRows, visibleReportedRows],
+  );
 
   if (loading) return <LoadingBlock />;
   if (error && !jiraStatus) return <ErrorBlock message={error} />;
@@ -301,6 +335,13 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         summary={billingSummary}
         onExportGaps={exportRoadmapGaps}
         onExportSummary={exportRoadmapSummary}
+      />
+
+      <RoadmapForecastComparisonSection
+        rows={roadmapForecastComparison}
+        programAreaFiltered={Boolean(roadmapFilters.programArea)}
+        statusFiltered={Boolean(roadmapFilters.mappingStatus)}
+        onExport={exportRoadmapForecastComparison}
       />
 
       {!jiraStatus?.configured ? (
@@ -792,6 +833,124 @@ function BillingSummaryTable({ rows, title }: { rows: BillingSummaryRow[]; title
   );
 }
 
+function RoadmapForecastComparisonSection({
+  rows,
+  programAreaFiltered,
+  statusFiltered,
+  onExport,
+}: {
+  rows: RoadmapForecastComparisonRow[];
+  programAreaFiltered: boolean;
+  statusFiltered: boolean;
+  onExport: () => void;
+}) {
+  const totals = rows.reduce(
+    (current, row) => ({
+      forecastHours: current.forecastHours + row.forecastHours,
+      actualHours: current.actualHours + row.actualHours,
+      actualCost: current.actualCost + row.actualCost,
+      remainingHours: current.remainingHours + row.remainingHours,
+      tickets: current.tickets + row.tickets,
+      gapTickets: current.gapTickets + row.gapTickets,
+    }),
+    { forecastHours: 0, actualHours: 0, actualCost: 0, remainingHours: 0, tickets: 0, gapTickets: 0 },
+  );
+  const totalPercentUsed = totals.forecastHours > 0 ? (totals.actualHours / totals.forecastHours) * 100 : null;
+
+  return (
+    <section className="space-y-3 rounded-lg border bg-card p-4">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+        <div>
+          <h2 className="text-lg font-semibold">Roadmap Forecast Comparison</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Roadmap-attributed actuals compared to Product/Bucket forecast hours. Program Area and Status filters narrow actuals only.
+          </p>
+        </div>
+        <Button type="button" variant="outline" onClick={onExport}>
+          <Download className="h-4 w-4" />
+          Comparison CSV
+        </Button>
+      </div>
+      {programAreaFiltered || statusFiltered ? (
+        <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          Forecast rows are not split by Roadmap Item status or Program Area yet, so those filters are reflected on the actuals side of this comparison.
+        </div>
+      ) : null}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <SummaryMetric label="Forecast Hrs" value={formatHours(totals.forecastHours)} />
+        <SummaryMetric label="Roadmap Actual Hrs" value={formatHours(totals.actualHours)} />
+        <SummaryMetric label="Remaining Hrs" value={formatSignedHours(totals.remainingHours)} tone={totals.remainingHours < 0 ? "warn" : "default"} />
+        <SummaryMetric label="Actual Cost" value={formatCurrency(totals.actualCost)} />
+        <SummaryMetric label="% Used" value={formatPercent(totalPercentUsed)} tone={totalPercentUsed !== null && totalPercentUsed >= 100 ? "warn" : "default"} />
+        <SummaryMetric label="Gap Tickets" value={String(totals.gapTickets)} tone={totals.gapTickets ? "warn" : "default"} />
+      </div>
+      <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Product</TableHead>
+                <TableHead>Bucket</TableHead>
+                <TableHead>Program Areas</TableHead>
+                <TableHead className="text-right">Roadmap Items</TableHead>
+                <TableHead className="text-right">Tickets</TableHead>
+                <TableHead className="text-right">Forecast Hrs</TableHead>
+                <TableHead className="text-right">Actual Hrs</TableHead>
+                <TableHead className="text-right">Remaining Hrs</TableHead>
+                <TableHead className="text-right">% Used</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length ? (
+                rows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="font-medium">{row.product}</TableCell>
+                    <TableCell>{row.bucket}</TableCell>
+                    <TableCell>{row.programAreas}</TableCell>
+                    <TableCell className="numeric-cell text-right">{row.roadmapItems}</TableCell>
+                    <TableCell className="numeric-cell text-right">
+                      {row.tickets}
+                      {row.gapTickets ? <span className="ml-1 text-warning">({row.gapTickets} gaps)</span> : null}
+                    </TableCell>
+                    <TableCell className="numeric-cell text-right">{formatHours(row.forecastHours)}</TableCell>
+                    <TableCell className="numeric-cell text-right font-semibold">{formatHours(row.actualHours)}</TableCell>
+                    <TableCell className={`numeric-cell text-right font-semibold ${row.remainingHours < 0 ? "text-warning" : "text-primary"}`}>
+                      {formatSignedHours(row.remainingHours)}
+                    </TableCell>
+                    <TableCell className="numeric-cell text-right">{formatPercent(row.percentUsed)}</TableCell>
+                    <TableCell>
+                      <RoadmapForecastStatusBadge status={row.status} />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell className="py-5 text-sm text-muted-foreground" colSpan={10}>
+                    No roadmap actuals match the selected filters yet.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RoadmapForecastStatusBadge({ status }: { status: RoadmapForecastComparisonRow["status"] }) {
+  const statusMap: Record<RoadmapForecastComparisonRow["status"], { label: string; className: string }> = {
+    on_track: { label: "On track", className: "border-primary/40 text-primary" },
+    near_forecast: { label: "Near forecast", className: "border-warning/50 text-warning" },
+    over_forecast: { label: "Over forecast", className: "border-destructive/40 text-destructive" },
+    no_forecast: { label: "No forecast", className: "border-destructive/40 text-destructive" },
+    mapping_gaps: { label: "Mapping gaps", className: "border-warning/50 text-warning" },
+  };
+  const display = statusMap[status];
+  return <Badge className={display.className}>{display.label}</Badge>;
+}
+
 function MappingTable({ title, unmapped, badgeLabel = "unmapped", children }: { title: string; unmapped: number; badgeLabel?: string; children: ReactNode }) {
   return (
     <section className="space-y-3">
@@ -839,6 +998,16 @@ function filterRoadmapActualRows(rows: RoadmapActualRow[], filters: RoadmapFilte
   });
 }
 
+function filterReportedRows(rows: ReportedValueRow[], filters: RoadmapFilterState) {
+  return rows.filter((row) => {
+    if (filters.productId && row.product_id !== Number(filters.productId)) return false;
+    if (filters.teamMemberId && row.team_member_id !== Number(filters.teamMemberId)) return false;
+    if (filters.bucketId && row.bucket_id !== Number(filters.bucketId)) return false;
+    if (filters.monthSequence && row.month_sequence !== Number(filters.monthSequence)) return false;
+    return true;
+  });
+}
+
 function programAreaOptionsFrom(rows: RoadmapActualRow[], items: RoadmapItem[]) {
   const values = new Set<string>();
   rows.forEach((row) => {
@@ -856,6 +1025,126 @@ function fiscalMonthOptions(fiscalYear: number) {
     const calendarYear = sequence <= 6 ? fiscalYear - 1 : fiscalYear;
     return { sequence, label: `${month} ${calendarYear}` };
   });
+}
+
+function buildRoadmapForecastComparison(actualRows: RoadmapActualRow[], reportedRows: ReportedValueRow[]): RoadmapForecastComparisonRow[] {
+  const forecastHoursByProductBucket = new Map<string, number>();
+  reportedRows.forEach((row) => {
+    const key = productBucketKey(row.product_id, row.bucket_id);
+    forecastHoursByProductBucket.set(key, (forecastHoursByProductBucket.get(key) ?? 0) + row.forecast_hours);
+  });
+
+  const rowsByProductBucket = new Map<string, RoadmapForecastComparisonAccumulator>();
+  actualRows.forEach((row) => {
+    const key = productBucketKey(row.product_id, row.bucket_id);
+    const accumulator = ensureForecastComparisonAccumulator(rowsByProductBucket, key, row);
+    accumulator.programAreas.add(row.program_area || "Unassigned");
+    accumulator.teamMembers.add(row.team_member);
+    accumulator.worklogs += row.worklog_count;
+    accumulator.actualHours += row.actual_hours;
+    accumulator.actualCost += row.actual_cost;
+    if (row.roadmap_item_id !== null) {
+      accumulator.roadmapItems.add(String(row.roadmap_item_id));
+    }
+    row.ticket_keys.forEach((ticketKey) => {
+      accumulator.tickets.add(ticketKey);
+      if (row.mapping_status !== "mapped") accumulator.gapTickets.add(ticketKey);
+    });
+  });
+
+  return Array.from(rowsByProductBucket.values())
+    .map((row) => {
+      const forecastHours = forecastHoursByProductBucket.get(row.id) ?? 0;
+      const remainingHours = forecastHours - row.actualHours;
+      const percentUsed = forecastHours > 0 ? (row.actualHours / forecastHours) * 100 : null;
+      return {
+        id: row.id,
+        product: row.product,
+        bucket: row.bucket,
+        programAreas: displaySet(row.programAreas, "program areas"),
+        roadmapItems: row.roadmapItems.size,
+        teamMembers: row.teamMembers.size,
+        tickets: row.tickets.size,
+        gapTickets: row.gapTickets.size,
+        worklogs: row.worklogs,
+        forecastHours,
+        actualHours: row.actualHours,
+        actualCost: row.actualCost,
+        remainingHours,
+        percentUsed,
+        status: forecastComparisonStatus(forecastHours, row.actualHours, row.gapTickets.size),
+      };
+    })
+    .sort((left, right) => {
+      const leftRisk = forecastComparisonRiskRank(left.status);
+      const rightRisk = forecastComparisonRiskRank(right.status);
+      return leftRisk - rightRisk || right.actualHours - left.actualHours || left.product.localeCompare(right.product);
+    });
+}
+
+type RoadmapForecastComparisonAccumulator = {
+  id: string;
+  product: string;
+  bucket: string;
+  programAreas: Set<string>;
+  roadmapItems: Set<string>;
+  teamMembers: Set<string>;
+  tickets: Set<string>;
+  gapTickets: Set<string>;
+  worklogs: number;
+  actualHours: number;
+  actualCost: number;
+};
+
+function ensureForecastComparisonAccumulator(map: Map<string, RoadmapForecastComparisonAccumulator>, id: string, row: RoadmapActualRow) {
+  const existing = map.get(id);
+  if (existing) return existing;
+  const created: RoadmapForecastComparisonAccumulator = {
+    id,
+    product: row.product,
+    bucket: row.bucket,
+    programAreas: new Set(),
+    roadmapItems: new Set(),
+    teamMembers: new Set(),
+    tickets: new Set(),
+    gapTickets: new Set(),
+    worklogs: 0,
+    actualHours: 0,
+    actualCost: 0,
+  };
+  map.set(id, created);
+  return created;
+}
+
+function productBucketKey(productId: number, bucketId: number) {
+  return `${productId}:${bucketId}`;
+}
+
+function forecastComparisonStatus(
+  forecastHours: number,
+  actualHours: number,
+  gapTickets: number,
+): RoadmapForecastComparisonRow["status"] {
+  if (forecastHours <= 0 && actualHours > 0) return "no_forecast";
+  if (forecastHours > 0 && actualHours > forecastHours) return "over_forecast";
+  if (gapTickets > 0) return "mapping_gaps";
+  if (forecastHours > 0 && actualHours / forecastHours >= 0.85) return "near_forecast";
+  return "on_track";
+}
+
+function forecastComparisonRiskRank(status: RoadmapForecastComparisonRow["status"]) {
+  switch (status) {
+    case "no_forecast":
+      return 0;
+    case "over_forecast":
+      return 1;
+    case "mapping_gaps":
+      return 2;
+    case "near_forecast":
+      return 3;
+    case "on_track":
+      return 4;
+  }
 }
 
 function buildRoadmapBillingSummary(rows: RoadmapActualRow[]): RoadmapBillingSummary {
@@ -1020,6 +1309,43 @@ function roadmapGapCsvRows(gaps: ReturnType<typeof expandRoadmapGapTickets>) {
   ];
 }
 
+function roadmapForecastComparisonCsvRows(rows: RoadmapForecastComparisonRow[]) {
+  return [
+    [
+      "product",
+      "bucket",
+      "program_areas",
+      "roadmap_items",
+      "team_members",
+      "tickets",
+      "gap_tickets",
+      "worklogs",
+      "forecast_hours",
+      "roadmap_actual_hours",
+      "roadmap_actual_cost",
+      "remaining_hours",
+      "percent_used",
+      "status",
+    ],
+    ...rows.map((row) => [
+      row.product,
+      row.bucket,
+      row.programAreas,
+      row.roadmapItems,
+      row.teamMembers,
+      row.tickets,
+      row.gapTickets,
+      row.worklogs,
+      roundCsvNumber(row.forecastHours),
+      roundCsvNumber(row.actualHours),
+      roundCsvNumber(row.actualCost),
+      roundCsvNumber(row.remainingHours),
+      row.percentUsed === null ? "" : roundCsvNumber(row.percentUsed),
+      row.status,
+    ]),
+  ];
+}
+
 function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
   const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -1038,6 +1364,16 @@ function csvCell(value: string | number) {
 
 function roundCsvNumber(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function formatSignedHours(value: number) {
+  if (value === 0) return formatHours(0);
+  return value > 0 ? formatHours(value) : `-${formatHours(Math.abs(value))}`;
+}
+
+function formatPercent(value: number | null) {
+  if (value === null) return "No forecast";
+  return `${Math.round(value)}%`;
 }
 
 function formatDate(value: string) {
