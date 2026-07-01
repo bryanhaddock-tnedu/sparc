@@ -140,6 +140,12 @@ export interface ProductCreatePayload {
   is_active?: boolean;
 }
 
+export interface Bucket {
+  id: number;
+  code: string;
+  name: string;
+}
+
 export interface ProductTeamMember {
   id: number;
   product_id: number;
@@ -179,6 +185,11 @@ export interface RoadmapItem {
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RoadmapItemMapPayload {
+  product_id: number | null;
+  bucket_id: number | null;
 }
 
 export interface RoadmapActualRow {

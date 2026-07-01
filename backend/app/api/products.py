@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.models import ActualEntry, Bucket, ForecastEntry, Product, ProductBudget, ProductJiraSpace, ProductTeamMember, TeamMember
 from app.schemas import (
     BucketDistributionResponse,
+    BucketResponse,
     ProductBucketTablesResponse,
     ProductCreate,
     ProductJiraSpaceCreate,
@@ -63,6 +64,14 @@ def create_product(payload: ProductCreate, fiscal_year: int = 2027, db: Session 
         raise conflict("Product name or Jira key already exists") from exc
     db.refresh(product)
     return serialize_product(product, budget_amount)
+
+
+@router.get("/buckets", response_model=list[BucketResponse])
+def list_buckets(db: Session = Depends(get_db)) -> list[dict[str, object]]:
+    return [
+        {"id": bucket.id, "code": bucket.code, "name": bucket.name}
+        for bucket in db.scalars(select(Bucket).order_by(Bucket.id)).all()
+    ]
 
 
 @router.get("/{product_ref}", response_model=ProductResponse)

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import get_settings
-from app.models import ActualEntry, FiscalMonth, ProductJiraSpace, RoadmapItem, RoadmapItemIssueLink, SyncRun
+from app.models import ActualEntry, Bucket, FiscalMonth, Product, ProductJiraSpace, RoadmapItem, RoadmapItemIssueLink, SyncRun
 from app.services.costs import calculate_cost, round_hours
 from app.services.jira_rovo import _require_jira_settings, _search_jira_issues, serialize_sync_run
 from app.services.slugs import product_url_slug, team_member_url_slug
@@ -71,6 +71,33 @@ def list_roadmap_items(db: Session) -> list[dict[str, object]]:
         .order_by(RoadmapItem.jira_issue_key)
     ).unique().all()
     return [serialize_roadmap_item(item) for item in items]
+
+
+def update_roadmap_item_mapping(
+    db: Session,
+    roadmap_item_id: int,
+    *,
+    product_id: int | None,
+    bucket_id: int | None,
+) -> dict[str, object]:
+    item = db.get(RoadmapItem, roadmap_item_id)
+    if item is None:
+        raise ValueError("Roadmap Item not found")
+    if product_id is not None and db.get(Product, product_id) is None:
+        raise ValueError("Product not found")
+    if bucket_id is not None and db.get(Bucket, bucket_id) is None:
+        raise ValueError("Bucket not found")
+
+    item.product_id = product_id
+    item.bucket_id = bucket_id
+    db.flush()
+    db.expire(item, ["product", "bucket", "issue_links"])
+    mapped_item = db.scalars(
+        select(RoadmapItem)
+        .options(joinedload(RoadmapItem.product), joinedload(RoadmapItem.bucket), joinedload(RoadmapItem.issue_links))
+        .where(RoadmapItem.id == roadmap_item_id)
+    ).unique().one()
+    return serialize_roadmap_item(mapped_item)
 
 
 def run_live_roadmap_sync(db: Session, roadmap_project_key: str = DEFAULT_ROADMAP_PROJECT_KEY) -> dict[str, object]:
@@ -204,7 +231,7 @@ def _upsert_roadmap_item(db: Session, payload: RoadmapIssuePayload) -> RoadmapIt
     item.source_payload_hash = _roadmap_payload_hash(payload)
     item.last_synced_at = utcnow()
     inferred_product_id = _infer_product_id_from_links(db, payload.links)
-    if inferred_product_id is not None:
+    if inferred_product_id is not None and item.product_id is None:
         item.product_id = inferred_product_id
     db.flush()
     return item

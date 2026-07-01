@@ -14,6 +14,7 @@ from app.schemas import (
     JiraRovoSyncResponse,
     JiraUserMapRequest,
     JiraUserMappingResponse,
+    RoadmapItemMapRequest,
     RoadmapItemResponse,
     RoadmapSyncResponse,
     SyncRunResponse,
@@ -31,7 +32,7 @@ from app.services.jira_rovo import (
     run_live_jira_rovo_sync,
     run_mock_jira_rovo_sync,
 )
-from app.services.roadmap import DEFAULT_ROADMAP_PROJECT_KEY, list_roadmap_items, run_live_roadmap_sync
+from app.services.roadmap import DEFAULT_ROADMAP_PROJECT_KEY, list_roadmap_items, run_live_roadmap_sync, update_roadmap_item_mapping
 
 router = APIRouter(prefix="/integrations/jira-rovo", tags=["jira-rovo"])
 
@@ -93,6 +94,26 @@ def sync_live_jira_rovo(payload: JiraLiveSyncRequest, db: Session = Depends(get_
 @router.get("/roadmap/items", response_model=list[RoadmapItemResponse])
 def get_roadmap_items(db: Session = Depends(get_db)) -> list[dict[str, object]]:
     return list_roadmap_items(db)
+
+
+@router.put("/roadmap/items/{item_id}", response_model=RoadmapItemResponse)
+def update_roadmap_item_mapping_endpoint(
+    item_id: int,
+    payload: RoadmapItemMapRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        result = update_roadmap_item_mapping(
+            db,
+            item_id,
+            product_id=payload.product_id,
+            bucket_id=payload.bucket_id,
+        )
+        db.commit()
+        return result
+    except ValueError as exc:
+        db.rollback()
+        raise bad_request(str(exc)) from exc
 
 
 @router.post("/roadmap/sync", response_model=RoadmapSyncResponse)

@@ -2,6 +2,7 @@ import type {
   AdminDataExportOption,
   AdminDataImportResult,
   AuthStatus,
+  Bucket,
   BucketDistributionRow,
   DashboardLaborMix,
   DashboardSummary,
@@ -36,6 +37,7 @@ import type {
   ReportedValueRow,
   RoadmapActualRow,
   RoadmapItem,
+  RoadmapItemMapPayload,
   RoadmapSyncResult,
   SyncRun,
   SystemScanResult,
@@ -174,6 +176,7 @@ export const api = {
   productRoadmapActuals: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<RoadmapActualRow[]>(`/api/products/${encodeURIComponent(String(productRef))}/roadmap-actuals?fiscal_year=${fiscalYear}`),
   products: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<Product[]>(`/api/products?fiscal_year=${fiscalYear}`),
+  buckets: () => request<Bucket[]>("/api/products/buckets"),
   createProduct: (payload: ProductCreatePayload, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<Product>(`/api/products?fiscal_year=${fiscalYear}`, {
       method: "POST",
@@ -272,6 +275,11 @@ export const api = {
       method: "POST",
     }),
   roadmapItems: () => request<RoadmapItem[]>("/api/integrations/jira-rovo/roadmap/items"),
+  updateRoadmapItemMapping: (itemId: number, payload: RoadmapItemMapPayload) =>
+    request<RoadmapItem>(`/api/integrations/jira-rovo/roadmap/items/${itemId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   jiraIntegrationStatus: () => request<JiraIntegrationStatus>("/api/integrations/jira-rovo/status"),
   unmappedUsers: () => request<UnmappedUser[]>("/api/integrations/jira-rovo/unmapped-users"),
   unmappedProducts: () => request<UnmappedProduct[]>("/api/integrations/jira-rovo/unmapped-products"),

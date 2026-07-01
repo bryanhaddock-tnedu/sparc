@@ -21,7 +21,7 @@ export function FiscalYearProvider({ children }: PropsWithChildren) {
     return Number.isFinite(storedYear) ? storedYear : appConfig.fiscalYear;
   });
 
-  const fiscalYearOptions = useMemo(() => fiscalYearOptionSet(appConfig.fiscalYear), []);
+  const fiscalYearOptions = useMemo(() => fiscalYearOptionSet(appConfig.fiscalYear, fiscalYear), [fiscalYear]);
 
   function setFiscalYear(nextFiscalYear: number) {
     setFiscalYearState(nextFiscalYear);
@@ -55,11 +55,17 @@ export function fiscalYearRangeLabel(fiscalYear: number) {
   return `Jul ${fiscalYear - 1} - Jun ${fiscalYear}`;
 }
 
-function fiscalYearOptionSet(defaultFiscalYear: number) {
+function fiscalYearOptionSet(defaultFiscalYear: number, selectedFiscalYear: number) {
   const currentFiscalYear = fiscalYearForDate(new Date());
-  return Array.from(
-    new Set([currentFiscalYear, defaultFiscalYear, defaultFiscalYear + 1, defaultFiscalYear + 2]),
-  ).sort((left, right) => left - right);
+  const nearbyFiscalYears = [-2, -1, 0, 1, 2];
+  const options = new Set<number>([selectedFiscalYear]);
+  nearbyFiscalYears.forEach((offset) => {
+    options.add(currentFiscalYear + offset);
+    options.add(defaultFiscalYear + offset);
+  });
+  return Array.from(options)
+    .filter((year) => Number.isFinite(year) && year >= 2020)
+    .sort((left, right) => left - right);
 }
 
 function fiscalYearForDate(value: Date) {

@@ -10,12 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
-import type { JiraIntegrationStatus, JiraProductMapping, JiraProjectCatalog, JiraUserMapping, Product, RoadmapItem, SyncRun, TeamMember } from "../types/api";
+import type { Bucket, JiraIntegrationStatus, JiraProductMapping, JiraProjectCatalog, JiraUserMapping, Product, RoadmapItem, SyncRun, TeamMember } from "../types/api";
 
 export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [buckets, setBuckets] = useState<Bucket[]>([]);
   const [userMappings, setUserMappings] = useState<JiraUserMapping[]>([]);
   const [productMappings, setProductMappings] = useState<JiraProductMapping[]>([]);
   const [jiraCatalog, setJiraCatalog] = useState<JiraProjectCatalog[]>([]);
@@ -30,9 +31,10 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [notice, setNotice] = useState<string | null>(null);
 
   async function loadData() {
-    const [members, productRows, users, jiraProducts, catalogRows, roadmapRows, runs, status] = await Promise.all([
+    const [members, productRows, bucketRows, users, jiraProducts, catalogRows, roadmapRows, runs, status] = await Promise.all([
       api.teamMembers(),
       api.products(),
+      api.buckets(),
       api.userMappings(),
       api.productMappings(),
       api.jiraProjectCatalog(),
@@ -42,6 +44,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     ]);
     setTeamMembers(members);
     setProducts(productRows);
+    setBuckets(bucketRows);
     setUserMappings(users);
     setProductMappings(jiraProducts);
     setJiraCatalog(catalogRows);
@@ -110,13 +113,29 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     await loadData();
   }
 
+  async function updateRoadmapItemMapping(itemId: number, productId: number | null, bucketId: number | null) {
+    setError(null);
+    setNotice(null);
+    try {
+      const updatedItem = await api.updateRoadmapItemMapping(itemId, {
+        product_id: productId,
+        bucket_id: bucketId,
+      });
+      setRoadmapItems((current) => current.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update Roadmap Item mapping");
+    }
+  }
+
   const catalogLastCheckedAt = useMemo(() => latestCatalogCheckedAt(jiraCatalog), [jiraCatalog]);
+  const sortedRoadmapItems = useMemo(() => sortRoadmapItems(roadmapItems), [roadmapItems]);
 
   if (loading) return <LoadingBlock />;
   if (error && !jiraStatus) return <ErrorBlock message={error} />;
 
   const unmappedUserCount = userMappings.filter((mapping) => mapping.team_member_id === null).length;
   const unmappedProductCount = productMappings.filter((mapping) => mapping.product_id === null).length;
+  const unmappedRoadmapCount = roadmapItems.filter((item) => item.product_id === null || item.bucket_id === null).length;
 
   return (
     <div className="space-y-5">
@@ -124,7 +143,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         <div>
           {embedded ? <h2 className="text-xl font-semibold">Jira Sync</h2> : <h1 className="text-2xl font-semibold">Jira Sync</h1>}
           <p className="mt-1 text-sm text-muted-foreground">
-            Live Jira actual-hours sync, mappings, and sync history for {fiscalYearLabel} ({fiscalYearRangeLabel}).
+            Live Jira actual-hours sync for {fiscalYearLabel} ({fiscalYearRangeLabel}). Roadmap Item mapping is global.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
@@ -156,7 +175,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         />
         <StatusCard label="User mappings" value={`${userMappings.length - unmappedUserCount}/${userMappings.length}`} />
         <StatusCard label="Product mappings" value={`${productMappings.length - unmappedProductCount}/${productMappings.length}`} />
-        <StatusCard label="Roadmap Items" value={`${roadmapItems.length}`} />
+        <StatusCard label="Roadmap Items" value={`${roadmapItems.length - unmappedRoadmapCount}/${roadmapItems.length}`} />
         <StatusCard label="Latest sync" value={syncRuns[0]?.status ?? "No runs"} />
       </section>
 
@@ -227,6 +246,75 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
                     {products.map((product) => (
                       <option key={product.id} value={product.id}>
                         {product.name}
+                      </option>
+                    ))}
+                  </select>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </MappingTable>
+
+      <MappingTable title="Roadmap Items" unmapped={unmappedRoadmapCount}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Roadmap Item</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Tickets</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Bucket</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedRoadmapItems.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell>
+                  <div className="font-medium text-primary">
+                    {item.source_url ? (
+                      <a href={item.source_url} target="_blank" rel="noreferrer">
+                        {item.jira_issue_key}
+                      </a>
+                    ) : (
+                      item.jira_issue_key
+                    )}
+                  </div>
+                  <div className="max-w-[28rem] truncate text-sm text-foreground" title={item.title}>
+                    {item.title}
+                  </div>
+                  {item.program_area ? <div className="text-xs text-muted-foreground">{item.program_area}</div> : null}
+                </TableCell>
+                <TableCell>{item.status ?? ""}</TableCell>
+                <TableCell className="numeric-cell">{item.linked_issue_count}</TableCell>
+                <TableCell>
+                  <select
+                    className="h-9 w-full min-w-52 rounded-md border border-input bg-background px-2 text-sm"
+                    value={item.product_id ?? ""}
+                    onChange={(event) =>
+                      void updateRoadmapItemMapping(item.id, event.target.value ? Number(event.target.value) : null, item.bucket_id)
+                    }
+                  >
+                    <option value="">Unmapped</option>
+                    {products.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.name}
+                      </option>
+                    ))}
+                  </select>
+                </TableCell>
+                <TableCell>
+                  <select
+                    className="h-9 w-full min-w-40 rounded-md border border-input bg-background px-2 text-sm"
+                    value={item.bucket_id ?? ""}
+                    onChange={(event) =>
+                      void updateRoadmapItemMapping(item.id, item.product_id, event.target.value ? Number(event.target.value) : null)
+                    }
+                  >
+                    <option value="">Unmapped</option>
+                    {buckets.map((bucket) => (
+                      <option key={bucket.id} value={bucket.id}>
+                        {bucket.name}
                       </option>
                     ))}
                   </select>
@@ -341,6 +429,15 @@ function MappingTable({ title, unmapped, children }: { title: string; unmapped: 
       </div>
     </section>
   );
+}
+
+function sortRoadmapItems(items: RoadmapItem[]) {
+  return [...items].sort((left, right) => {
+    const leftUnmapped = left.product_id === null || left.bucket_id === null;
+    const rightUnmapped = right.product_id === null || right.bucket_id === null;
+    if (leftUnmapped !== rightUnmapped) return leftUnmapped ? -1 : 1;
+    return left.jira_issue_key.localeCompare(right.jira_issue_key);
+  });
 }
 
 function formatDate(value: string) {

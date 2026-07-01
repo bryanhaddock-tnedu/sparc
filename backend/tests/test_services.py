@@ -39,7 +39,7 @@ from app.services.jira_projects import (
     update_product_jira_space,
 )
 from app.services import jira_projects
-from app.services.roadmap import roadmap_actual_rows
+from app.services.roadmap import roadmap_actual_rows, update_roadmap_item_mapping
 
 
 def test_fiscal_year_mapping():
@@ -248,6 +248,36 @@ def test_roadmap_actual_rows_join_worklogs_without_double_counting_ambiguous_lin
         assert ambiguous["actual_hours"] == 2
         assert ambiguous["actual_cost"] == 200
         assert ambiguous["ticket_keys"] == ["SIS-2"]
+
+
+def test_roadmap_item_mapping_updates_product_and_bucket():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", slug="student-information")
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        item = RoadmapItem(
+            source="jira_product_discovery",
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="Program billing feature",
+            status="In Progress",
+        )
+        db.add_all([product, item])
+        db.flush()
+
+        mapped = update_roadmap_item_mapping(db, item.id, product_id=product.id, bucket_id=bucket.id)
+        assert mapped["product_id"] == product.id
+        assert mapped["product"] == "Student Information"
+        assert mapped["bucket_id"] == bucket.id
+        assert mapped["bucket"] == "Maintenance"
+
+        cleared = update_roadmap_item_mapping(db, item.id, product_id=None, bucket_id=None)
+        assert cleared["product_id"] is None
+        assert cleared["product"] is None
+        assert cleared["bucket_id"] is None
+        assert cleared["bucket"] is None
 
 
 def test_product_budget_is_fiscal_year_specific():

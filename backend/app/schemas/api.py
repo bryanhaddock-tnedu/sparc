@@ -57,6 +57,12 @@ class ProductResponse(BaseModel):
     updated_at: datetime
 
 
+class BucketResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+
+
 class TeamMemberResponse(BaseModel):
     id: int
     staff_id: str | None
@@ -730,6 +736,11 @@ class RoadmapItemResponse(BaseModel):
     last_synced_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class RoadmapItemMapRequest(BaseModel):
+    product_id: int | None
+    bucket_id: int | None
 
 
 class RoadmapActualRowResponse(BaseModel):
