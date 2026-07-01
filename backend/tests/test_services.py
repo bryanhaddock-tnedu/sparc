@@ -30,6 +30,10 @@ from app.services.aggregations import dashboard_labor_mix, dashboard_products, d
 from app.services.costs import calculate_cost
 from app.services.fiscal_year import fiscal_sequence_for_date, fiscal_year_for_date, get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
+from app.services.forecast_recommendations import (
+    create_forecast_recommendation_decision,
+    list_forecast_recommendation_decisions,
+)
 from app.services.jira_projects import (
     JiraProjectPayload,
     add_product_jira_space,
@@ -640,6 +644,127 @@ def test_manual_roadmap_ticket_mapping_replaces_existing_links():
         assert len(links) == 1
         assert links[0].roadmap_item_id == second_item.id
         assert links[0].source == "manual"
+
+
+def test_forecast_recommendation_apply_adds_hours_to_explicit_forecast_line():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", slug="student-information")
+        member = TeamMember(name="Avery Johnson", slug="avery-johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "NET_NEW"))
+        month = get_fiscal_month(db, 2027, 1)
+        item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            product_id=product.id,
+            bucket_id=bucket.id,
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="Program billing feature",
+            issue_type="Idea",
+        )
+        db.add(item)
+        db.flush()
+        db.add_all(
+            [
+                RoadmapItemIssueLink(roadmap_item_id=item.id, jira_issue_key="SIS-1"),
+                ActualEntry(
+                    product_id=product.id,
+                    team_member_id=member.id,
+                    bucket_id=bucket.id,
+                    fiscal_month_id=month.id,
+                    hours=Decimal("6"),
+                    source="jira",
+                    source_ticket_key="SIS-1",
+                    source_worklog_id="1",
+                ),
+            ]
+        )
+        db.flush()
+
+        decision = create_forecast_recommendation_decision(
+            db,
+            fiscal_year=2027,
+            product_id=product.id,
+            bucket_id=bucket.id,
+            action="applied",
+            target_team_member_id=member.id,
+            target_month_sequence=1,
+            note="Use current roadmap actuals",
+        )
+
+        entry = db.scalar(select(ForecastEntry))
+        assert entry is not None
+        assert entry.product_id == product.id
+        assert entry.team_member_id == member.id
+        assert entry.bucket_id == bucket.id
+        assert entry.fiscal_month_id == month.id
+        assert entry.hours == Decimal("6.00")
+        assert decision["recommendation"] == "add_forecast"
+        assert decision["action"] == "applied"
+        assert decision["suggested_delta_hours"] == 6
+        assert decision["applied_forecast_entry_id"] == entry.id
+        assert list_forecast_recommendation_decisions(db, 2027)[0]["note"] == "Use current roadmap actuals"
+
+
+def test_forecast_recommendation_rejects_without_changing_forecast():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", slug="student-information")
+        member = TeamMember(name="Avery Johnson", slug="avery-johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "ENHANCE"))
+        month = get_fiscal_month(db, 2027, 1)
+        item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            product_id=product.id,
+            bucket_id=bucket.id,
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="Program billing feature",
+            issue_type="Idea",
+        )
+        db.add(item)
+        db.flush()
+        db.add_all(
+            [
+                RoadmapItemIssueLink(roadmap_item_id=item.id, jira_issue_key="SIS-1"),
+                ActualEntry(
+                    product_id=product.id,
+                    team_member_id=member.id,
+                    bucket_id=bucket.id,
+                    fiscal_month_id=month.id,
+                    hours=Decimal("4"),
+                    source="jira",
+                    source_ticket_key="SIS-1",
+                    source_worklog_id="1",
+                ),
+            ]
+        )
+        db.flush()
+
+        decision = create_forecast_recommendation_decision(
+            db,
+            fiscal_year=2027,
+            product_id=product.id,
+            bucket_id=bucket.id,
+            action="rejected",
+            note="No forecast change needed",
+        )
+
+        assert db.scalar(select(ForecastEntry)) is None
+        assert decision["recommendation"] == "add_forecast"
+        assert decision["action"] == "rejected"
+        assert decision["suggested_delta_hours"] == 4
+        assert decision["applied_forecast_entry_id"] is None
 
 
 def test_roadmap_sync_preserves_manual_ticket_links():

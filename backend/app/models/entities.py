@@ -39,6 +39,11 @@ class Product(TimestampMixin, Base):
     forecasts: Mapped[list["ForecastEntry"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     actuals: Mapped[list["ActualEntry"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     estimates: Mapped[list["EstimatedEntry"]] = relationship(back_populates="product", cascade="all, delete-orphan")
+    forecast_recommendation_decisions: Mapped[list["ForecastRecommendationDecision"]] = relationship(
+        back_populates="product",
+        cascade="all, delete-orphan",
+        foreign_keys="ForecastRecommendationDecision.product_id",
+    )
     estimated_issue_allocations: Mapped[list["EstimatedIssueAllocation"]] = relationship(back_populates="product")
     team_members: Mapped[list["ProductTeamMember"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     jira_spaces: Mapped[list["ProductJiraSpace"]] = relationship(back_populates="product", cascade="all, delete-orphan")
@@ -75,6 +80,10 @@ class TeamMember(TimestampMixin, Base):
     forecasts: Mapped[list["ForecastEntry"]] = relationship(back_populates="team_member", cascade="all, delete-orphan")
     actuals: Mapped[list["ActualEntry"]] = relationship(back_populates="team_member", cascade="all, delete-orphan")
     estimates: Mapped[list["EstimatedEntry"]] = relationship(back_populates="team_member", cascade="all, delete-orphan")
+    forecast_recommendation_decisions: Mapped[list["ForecastRecommendationDecision"]] = relationship(
+        back_populates="target_team_member",
+        foreign_keys="ForecastRecommendationDecision.target_team_member_id",
+    )
     estimated_issue_allocations: Mapped[list["EstimatedIssueAllocation"]] = relationship(back_populates="team_member")
     product_assignments: Mapped[list["ProductTeamMember"]] = relationship(back_populates="team_member", cascade="all, delete-orphan")
 
@@ -89,6 +98,7 @@ class Bucket(Base):
     forecasts: Mapped[list["ForecastEntry"]] = relationship(back_populates="bucket")
     actuals: Mapped[list["ActualEntry"]] = relationship(back_populates="bucket")
     estimates: Mapped[list["EstimatedEntry"]] = relationship(back_populates="bucket")
+    forecast_recommendation_decisions: Mapped[list["ForecastRecommendationDecision"]] = relationship(back_populates="bucket")
     estimated_issue_allocations: Mapped[list["EstimatedIssueAllocation"]] = relationship(back_populates="bucket")
     product_team_members: Mapped[list["ProductTeamMember"]] = relationship(back_populates="default_bucket")
     roadmap_items: Mapped[list["RoadmapItem"]] = relationship(back_populates="bucket")
@@ -236,6 +246,31 @@ class ForecastEntry(TimestampMixin, Base):
     team_member: Mapped[TeamMember] = relationship(back_populates="forecasts")
     bucket: Mapped[Bucket] = relationship(back_populates="forecasts")
     fiscal_month: Mapped[FiscalMonth] = relationship(back_populates="forecasts")
+
+
+class ForecastRecommendationDecision(TimestampMixin, Base):
+    __tablename__ = "forecast_recommendation_decisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fiscal_year: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    bucket_id: Mapped[int] = mapped_column(ForeignKey("buckets.id"), nullable=False)
+    recommendation: Mapped[str] = mapped_column(String(40), nullable=False)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    forecast_hours: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
+    roadmap_actual_hours: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
+    suggested_delta_hours: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
+    suggested_forecast_hours: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
+    target_team_member_id: Mapped[int | None] = mapped_column(ForeignKey("team_members.id"))
+    target_month_sequence: Mapped[int | None] = mapped_column(Integer)
+    applied_forecast_entry_id: Mapped[int | None] = mapped_column(ForeignKey("forecast_entries.id"))
+    note: Mapped[str | None] = mapped_column(Text)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    product: Mapped[Product] = relationship(back_populates="forecast_recommendation_decisions", foreign_keys=[product_id])
+    bucket: Mapped[Bucket] = relationship(back_populates="forecast_recommendation_decisions")
+    target_team_member: Mapped[TeamMember | None] = relationship(back_populates="forecast_recommendation_decisions", foreign_keys=[target_team_member_id])
+    applied_forecast_entry: Mapped[ForecastEntry | None] = relationship(foreign_keys=[applied_forecast_entry_id])
 
 
 class ActualEntry(TimestampMixin, Base):

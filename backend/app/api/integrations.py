@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from app.api.errors import bad_request
 from app.db.session import get_db
 from app.schemas import (
+    ForecastRecommendationDecisionRequest,
+    ForecastRecommendationDecisionResponse,
     JiraProductMapRequest,
     JiraProductMappingResponse,
     JiraIntegrationStatusResponse,
@@ -22,6 +24,7 @@ from app.schemas import (
     RoadmapTicketMapResponse,
     SyncRunResponse,
 )
+from app.services.forecast_recommendations import create_forecast_recommendation_decision, list_forecast_recommendation_decisions
 from app.services.jira_projects import list_jira_project_catalog, refresh_jira_project_catalog, update_jira_project_catalog_visibility
 from app.services.jira_rovo import (
     jira_integration_status,
@@ -144,6 +147,37 @@ def get_roadmap_actual_gaps(
     db: Session = Depends(get_db),
 ) -> list[dict[str, object]]:
     return roadmap_actual_gap_rows(db, fiscal_year, month_sequence=month_sequence)
+
+
+@router.get("/roadmap/forecast-recommendation-decisions", response_model=list[ForecastRecommendationDecisionResponse])
+def get_forecast_recommendation_decisions(
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    return list_forecast_recommendation_decisions(db, fiscal_year)
+
+
+@router.post("/roadmap/forecast-recommendation-decisions", response_model=ForecastRecommendationDecisionResponse)
+def create_forecast_recommendation_decision_endpoint(
+    payload: ForecastRecommendationDecisionRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        result = create_forecast_recommendation_decision(
+            db,
+            fiscal_year=payload.fiscal_year,
+            product_id=payload.product_id,
+            bucket_id=payload.bucket_id,
+            action=payload.action,
+            target_team_member_id=payload.target_team_member_id,
+            target_month_sequence=payload.target_month_sequence,
+            note=payload.note,
+        )
+        db.commit()
+        return result
+    except ValueError as exc:
+        db.rollback()
+        raise bad_request(str(exc)) from exc
 
 
 @router.put("/roadmap/ticket-links/{ticket_key}", response_model=RoadmapTicketMapResponse)

@@ -1,5 +1,6 @@
 from decimal import Decimal
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -788,6 +789,40 @@ class RoadmapSyncResponse(BaseModel):
     linked_issues: int
     removed_from_fiscal_year: int = 0
     fiscal_year_label: str | None = None
+
+
+class ForecastRecommendationDecisionRequest(BaseModel):
+    fiscal_year: int = 2027
+    product_id: int
+    bucket_id: int
+    action: Literal["applied", "rejected"]
+    target_team_member_id: int | None = None
+    target_month_sequence: int | None = None
+    note: str | None = None
+
+
+class ForecastRecommendationDecisionResponse(BaseModel):
+    id: int
+    fiscal_year: int
+    product_id: int
+    product: str | None
+    product_slug: str | None
+    bucket_id: int
+    bucket: str | None
+    recommendation: str
+    action: str
+    forecast_hours: float
+    roadmap_actual_hours: float
+    suggested_delta_hours: float
+    suggested_forecast_hours: float
+    target_team_member_id: int | None
+    target_team_member: str | None
+    target_month_sequence: int | None
+    applied_forecast_entry_id: int | None
+    note: str | None
+    decided_at: datetime
+    created_at: datetime
+    updated_at: datetime
 
 
 class JiraRovoSyncResponse(BaseModel):

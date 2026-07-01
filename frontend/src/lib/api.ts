@@ -14,6 +14,8 @@ import type {
   EstimationProfileUpdatePayload,
   EstimationRun,
   EstimationRunRequest,
+  ForecastRecommendationDecision,
+  ForecastRecommendationDecisionPayload,
   ForecastResponse,
   ForecastUpsertPayload,
   JiraIntegrationStatus,
@@ -301,6 +303,13 @@ export const api = {
     request<RoadmapActualRow[]>(`/api/integrations/jira-rovo/roadmap/actuals?${roadmapActualQuery(fiscalYear, params)}`),
   roadmapActualGaps: (fiscalYear = DEFAULT_FISCAL_YEAR, params: RoadmapActualParams = {}) =>
     request<RoadmapActualRow[]>(`/api/integrations/jira-rovo/roadmap/actual-gaps?${roadmapActualQuery(fiscalYear, params)}`),
+  forecastRecommendationDecisions: (fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<ForecastRecommendationDecision[]>(`/api/integrations/jira-rovo/roadmap/forecast-recommendation-decisions?fiscal_year=${fiscalYear}`),
+  createForecastRecommendationDecision: (payload: ForecastRecommendationDecisionPayload) =>
+    request<ForecastRecommendationDecision>("/api/integrations/jira-rovo/roadmap/forecast-recommendation-decisions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateRoadmapTicketMapping: (ticketKey: string, payload: RoadmapTicketMapPayload) =>
     request<RoadmapTicketMapResult>(`/api/integrations/jira-rovo/roadmap/ticket-links/${encodeURIComponent(ticketKey)}`, {
       method: "PUT",

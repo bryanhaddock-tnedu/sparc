@@ -1,4 +1,4 @@
-import { DatabaseZap, Download, RefreshCw } from "lucide-react";
+import { CheckCircle2, DatabaseZap, Download, RefreshCw, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -13,6 +13,8 @@ import { useFiscalYear } from "../lib/fiscalYear";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type {
   Bucket,
+  ForecastRecommendationAction,
+  ForecastRecommendationDecision,
   JiraIntegrationStatus,
   JiraProductMapping,
   JiraProjectCatalog,
@@ -64,6 +66,8 @@ type RoadmapBillingSummary = {
 
 type RoadmapForecastComparisonRow = {
   id: string;
+  productId: number;
+  bucketId: number;
   product: string;
   bucket: string;
   programAreas: string;
@@ -81,6 +85,12 @@ type RoadmapForecastComparisonRow = {
   suggestedForecastHours: number;
   recommendation: "none" | "monitor" | "resolve_gaps" | "add_forecast" | "increase_forecast";
   status: "on_track" | "near_forecast" | "over_forecast" | "no_forecast" | "mapping_gaps";
+};
+
+type ForecastRecommendationTarget = {
+  teamMemberId: string;
+  monthSequence: string;
+  note: string;
 };
 
 type RoadmapItemMappingSummary = {
@@ -126,8 +136,10 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [jiraCatalog, setJiraCatalog] = useState<JiraProjectCatalog[]>([]);
   const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([]);
   const [roadmapActualRows, setRoadmapActualRows] = useState<RoadmapActualRow[]>([]);
+  const [roadmapForecastActualRows, setRoadmapForecastActualRows] = useState<RoadmapActualRow[]>([]);
   const [roadmapGaps, setRoadmapGaps] = useState<RoadmapActualRow[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
+  const [forecastDecisions, setForecastDecisions] = useState<ForecastRecommendationDecision[]>([]);
   const [syncRuns, setSyncRuns] = useState<SyncRun[]>([]);
   const [jiraStatus, setJiraStatus] = useState<JiraIntegrationStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -137,10 +149,27 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [roadmapFilters, setRoadmapFilters] = useState<RoadmapFilterState>(EMPTY_ROADMAP_FILTERS);
+  const [forecastRecommendationTargets, setForecastRecommendationTargets] = useState<Record<string, ForecastRecommendationTarget>>({});
+  const [submittingForecastDecision, setSubmittingForecastDecision] = useState<string | null>(null);
 
   async function loadData() {
     const monthSequence = roadmapFilters.monthSequence ? Number(roadmapFilters.monthSequence) : null;
-    const [members, productRows, bucketRows, users, jiraProducts, catalogRows, roadmapRows, actualRows, gapRows, reportedValueRows, runs, status] = await Promise.all([
+    const [
+      members,
+      productRows,
+      bucketRows,
+      users,
+      jiraProducts,
+      catalogRows,
+      roadmapRows,
+      actualRows,
+      forecastActualRows,
+      gapRows,
+      reportedValueRows,
+      forecastDecisionRows,
+      runs,
+      status,
+    ] = await Promise.all([
       api.teamMembers(),
       api.products(),
       api.buckets(),
@@ -149,8 +178,10 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       api.jiraProjectCatalog(),
       api.roadmapItems(fiscalYear),
       api.roadmapActuals(fiscalYear, { monthSequence }),
+      api.roadmapActuals(fiscalYear),
       api.roadmapActualGaps(fiscalYear, { monthSequence }),
       api.reportedValues({}, fiscalYear),
+      api.forecastRecommendationDecisions(fiscalYear),
       api.syncRuns(),
       api.jiraIntegrationStatus(),
     ]);
@@ -162,8 +193,10 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     setJiraCatalog(catalogRows);
     setRoadmapItems(roadmapRows);
     setRoadmapActualRows(actualRows);
+    setRoadmapForecastActualRows(forecastActualRows);
     setRoadmapGaps(gapRows);
     setReportedRows(reportedValueRows);
+    setForecastDecisions(forecastDecisionRows);
     setSyncRuns(runs);
     setJiraStatus(status);
   }
@@ -267,6 +300,58 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     }
   }
 
+  function updateForecastRecommendationTarget(rowId: string, updates: Partial<ForecastRecommendationTarget>) {
+    setForecastRecommendationTargets((current) => {
+      const existing = current[rowId] ?? { teamMemberId: "", monthSequence: "", note: "" };
+      return {
+        ...current,
+        [rowId]: {
+          ...existing,
+          ...updates,
+        },
+      };
+    });
+  }
+
+  async function recordForecastRecommendationDecision(row: RoadmapForecastComparisonRow, action: ForecastRecommendationAction) {
+    setError(null);
+    setNotice(null);
+    const target = forecastRecommendationTargets[row.id] ?? { teamMemberId: "", monthSequence: "", note: "" };
+    if (action === "applied" && (!target.teamMemberId || !target.monthSequence)) {
+      setError("Choose a target Team Member and Fiscal Month before applying a forecast recommendation.");
+      return;
+    }
+    const submissionKey = `${row.id}:${action}`;
+    setSubmittingForecastDecision(submissionKey);
+    try {
+      await api.createForecastRecommendationDecision({
+        fiscal_year: fiscalYear,
+        product_id: row.productId,
+        bucket_id: row.bucketId,
+        action,
+        target_team_member_id: action === "applied" ? Number(target.teamMemberId) : null,
+        target_month_sequence: action === "applied" ? Number(target.monthSequence) : null,
+        note: target.note.trim() || null,
+      });
+      await loadData();
+      if (action === "applied") {
+        setForecastRecommendationTargets((current) => ({
+          ...current,
+          [row.id]: { teamMemberId: "", monthSequence: "", note: "" },
+        }));
+      }
+      setNotice(
+        action === "applied"
+          ? `Forecast recommendation applied for ${row.product} / ${row.bucket}.`
+          : `Forecast recommendation rejected for ${row.product} / ${row.bucket}.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to record forecast recommendation decision");
+    } finally {
+      setSubmittingForecastDecision(null);
+    }
+  }
+
   function updateRoadmapFilter(key: keyof RoadmapFilterState, value: string) {
     setRoadmapFilters((current) => ({ ...current, [key]: value }));
   }
@@ -309,6 +394,10 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const roadmapForecastComparison = useMemo(
     () => buildRoadmapForecastComparison(visibleMappedRoadmapActualRows, visibleReportedRows),
     [visibleMappedRoadmapActualRows, visibleReportedRows],
+  );
+  const forecastReviewQueue = useMemo(
+    () => buildRoadmapForecastComparison(roadmapForecastActualRows.filter((row) => row.mapping_status === "mapped"), reportedRows),
+    [roadmapForecastActualRows, reportedRows],
   );
 
   if (loading) return <LoadingBlock />;
@@ -382,6 +471,17 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         programAreaFiltered={Boolean(roadmapFilters.programArea)}
         statusFiltered={Boolean(roadmapFilters.mappingStatus)}
         onExport={exportRoadmapForecastComparison}
+      />
+
+      <ForecastRecommendationReviewSection
+        decisions={forecastDecisions}
+        fiscalYear={fiscalYear}
+        rows={forecastReviewQueue}
+        submittingKey={submittingForecastDecision}
+        targets={forecastRecommendationTargets}
+        teamMembers={teamMembers}
+        onDecision={recordForecastRecommendationDecision}
+        onTargetChange={updateForecastRecommendationTarget}
       />
 
       {!jiraStatus?.configured ? (
@@ -936,6 +1036,242 @@ function RoadmapForecastRecommendationBadge({ recommendation }: { recommendation
   return <Badge className={display.className}>{display.label}</Badge>;
 }
 
+function ForecastRecommendationReviewSection({
+  decisions,
+  fiscalYear,
+  rows,
+  submittingKey,
+  targets,
+  teamMembers,
+  onDecision,
+  onTargetChange,
+}: {
+  decisions: ForecastRecommendationDecision[];
+  fiscalYear: number;
+  rows: RoadmapForecastComparisonRow[];
+  submittingKey: string | null;
+  targets: Record<string, ForecastRecommendationTarget>;
+  teamMembers: TeamMember[];
+  onDecision: (row: RoadmapForecastComparisonRow, action: ForecastRecommendationAction) => void;
+  onTargetChange: (rowId: string, updates: Partial<ForecastRecommendationTarget>) => void;
+}) {
+  const actionableRows = rows.filter(isActionableForecastRecommendation);
+  const activeTeamMembers = teamMembers.filter((member) => member.status === "active");
+  const totals = actionableRows.reduce(
+    (current, row) => ({
+      rows: current.rows + 1,
+      actualHours: current.actualHours + row.actualHours,
+      suggestedDeltaHours: current.suggestedDeltaHours + row.suggestedDeltaHours,
+    }),
+    { rows: 0, actualHours: 0, suggestedDeltaHours: 0 },
+  );
+
+  return (
+    <section className="space-y-3 rounded-lg border bg-card p-4">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+        <div>
+          <h2 className="text-lg font-semibold">Forecast Review Queue</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Full FY Product/Bucket recommendations from mapped Roadmap Actuals.</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 sm:min-w-[24rem]">
+          <SummaryMetric label="Rows" value={String(totals.rows)} />
+          <SummaryMetric label="Actual Hrs" value={formatHours(totals.actualHours)} />
+          <SummaryMetric label="Suggested Add" value={formatHours(totals.suggestedDeltaHours)} tone={totals.suggestedDeltaHours ? "warn" : "default"} />
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Product</TableHead>
+                <TableHead>Bucket</TableHead>
+                <TableHead className="text-right">Forecast Hrs</TableHead>
+                <TableHead className="text-right">Actual Hrs</TableHead>
+                <TableHead className="text-right">Suggested Add</TableHead>
+                <TableHead>Target Team Member</TableHead>
+                <TableHead>Target Month</TableHead>
+                <TableHead>Note</TableHead>
+                <TableHead>Decision</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {actionableRows.length ? (
+                actionableRows.map((row) => {
+                  const target = targets[row.id] ?? { teamMemberId: "", monthSequence: "", note: "" };
+                  const applyKey = `${row.id}:applied`;
+                  const rejectKey = `${row.id}:rejected`;
+                  return (
+                    <TableRow key={row.id}>
+                      <TableCell>
+                        <div className="font-medium text-primary">{row.product}</div>
+                        <div className="text-xs text-muted-foreground">{row.programAreas}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div>{row.bucket}</div>
+                        <RoadmapForecastRecommendationBadge recommendation={row.recommendation} />
+                      </TableCell>
+                      <TableCell className="numeric-cell text-right">{formatHours(row.forecastHours)}</TableCell>
+                      <TableCell className="numeric-cell text-right font-semibold">{formatHours(row.actualHours)}</TableCell>
+                      <TableCell className="numeric-cell text-right font-semibold text-warning">{formatHours(row.suggestedDeltaHours)}</TableCell>
+                      <TableCell>
+                        <select
+                          className="h-9 w-full min-w-52 rounded-md border border-input bg-background px-2 text-sm"
+                          value={target.teamMemberId}
+                          onChange={(event) => onTargetChange(row.id, { teamMemberId: event.target.value })}
+                        >
+                          <option value="">Select Team Member</option>
+                          {activeTeamMembers.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name}
+                            </option>
+                          ))}
+                        </select>
+                      </TableCell>
+                      <TableCell>
+                        <select
+                          className="h-9 w-full min-w-36 rounded-md border border-input bg-background px-2 text-sm"
+                          value={target.monthSequence}
+                          onChange={(event) => onTargetChange(row.id, { monthSequence: event.target.value })}
+                        >
+                          <option value="">Select Month</option>
+                          {fiscalMonthOptions(fiscalYear).map((month) => (
+                            <option key={month.sequence} value={month.sequence}>
+                              {month.label}
+                            </option>
+                          ))}
+                        </select>
+                      </TableCell>
+                      <TableCell>
+                        <textarea
+                          className="min-h-9 w-full min-w-56 resize-y rounded-md border border-input bg-background px-2 py-1 text-sm"
+                          value={target.note}
+                          onChange={(event) => onTargetChange(row.id, { note: event.target.value })}
+                          placeholder="Optional note"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-2">
+                          <Button
+                            disabled={submittingKey !== null || !target.teamMemberId || !target.monthSequence}
+                            size="sm"
+                            type="button"
+                            onClick={() => onDecision(row, "applied")}
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            {submittingKey === applyKey ? "Applying" : "Apply"}
+                          </Button>
+                          <Button
+                            disabled={submittingKey !== null}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                            onClick={() => onDecision(row, "rejected")}
+                          >
+                            <XCircle className="h-4 w-4" />
+                            {submittingKey === rejectKey ? "Rejecting" : "Reject"}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : (
+                <TableRow>
+                  <TableCell className="py-5 text-sm text-muted-foreground" colSpan={9}>
+                    No add/increase forecast recommendations for this fiscal year.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+      <ForecastRecommendationDecisionHistory decisions={decisions} fiscalYear={fiscalYear} />
+    </section>
+  );
+}
+
+function ForecastRecommendationDecisionHistory({
+  decisions,
+  fiscalYear,
+}: {
+  decisions: ForecastRecommendationDecision[];
+  fiscalYear: number;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border">
+      <div className="border-b bg-secondary/50 px-3 py-2 text-sm font-semibold">Decision History</div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Decision</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Bucket</TableHead>
+              <TableHead className="text-right">Snapshot</TableHead>
+              <TableHead>Target</TableHead>
+              <TableHead>Note</TableHead>
+              <TableHead>Decided</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {decisions.length ? (
+              decisions.slice(0, 8).map((decision) => (
+                <TableRow key={decision.id}>
+                  <TableCell>
+                    <ForecastDecisionActionBadge action={decision.action} />
+                  </TableCell>
+                  <TableCell className="font-medium">{decision.product ?? "Unknown product"}</TableCell>
+                  <TableCell>{decision.bucket ?? "Unknown bucket"}</TableCell>
+                  <TableCell className="numeric-cell text-right">
+                    <div>{formatHours(decision.roadmap_actual_hours)} actual</div>
+                    <div className="text-xs text-muted-foreground">{formatHours(decision.forecast_hours)} forecast</div>
+                  </TableCell>
+                  <TableCell>
+                    {decision.action === "applied" ? (
+                      <>
+                        <div>{decision.target_team_member ?? "Unknown Team Member"}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {decision.target_month_sequence ? fiscalMonthLabel(fiscalYear, decision.target_month_sequence) : "No month"}
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">No forecast change</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="max-w-72 truncate" title={decision.note ?? ""}>
+                    {decision.note ?? ""}
+                  </TableCell>
+                  <TableCell>{formatDateTime(decision.decided_at)}</TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell className="py-5 text-sm text-muted-foreground" colSpan={7}>
+                  No forecast recommendation decisions recorded yet.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
+function ForecastDecisionActionBadge({ action }: { action: ForecastRecommendationAction }) {
+  return action === "applied" ? (
+    <Badge className="border-primary/40 text-primary">Applied</Badge>
+  ) : (
+    <Badge className="border-muted text-muted-foreground">Rejected</Badge>
+  );
+}
+
+function isActionableForecastRecommendation(row: RoadmapForecastComparisonRow) {
+  return row.suggestedDeltaHours > 0 && (row.recommendation === "add_forecast" || row.recommendation === "increase_forecast");
+}
+
 function RoadmapItemMappingWorkbench({
   buckets,
   products,
@@ -1303,6 +1639,10 @@ function fiscalMonthOptions(fiscalYear: number) {
   });
 }
 
+function fiscalMonthLabel(fiscalYear: number, sequence: number) {
+  return fiscalMonthOptions(fiscalYear).find((month) => month.sequence === sequence)?.label ?? `Month ${sequence}`;
+}
+
 function buildRoadmapForecastComparison(actualRows: RoadmapActualRow[], reportedRows: ReportedValueRow[]): RoadmapForecastComparisonRow[] {
   const forecastHoursByProductBucket = new Map<string, number>();
   reportedRows.forEach((row) => {
@@ -1337,6 +1677,8 @@ function buildRoadmapForecastComparison(actualRows: RoadmapActualRow[], reported
       const status = forecastComparisonStatus(forecastHours, row.actualHours, row.gapTickets.size);
       return {
         id: row.id,
+        productId: row.productId,
+        bucketId: row.bucketId,
         product: row.product,
         bucket: row.bucket,
         programAreas: displaySet(row.programAreas, "program areas"),
@@ -1380,6 +1722,8 @@ function forecastRecommendation(status: RoadmapForecastComparisonRow["status"]):
 
 type RoadmapForecastComparisonAccumulator = {
   id: string;
+  productId: number;
+  bucketId: number;
   product: string;
   bucket: string;
   programAreas: Set<string>;
@@ -1397,6 +1741,8 @@ function ensureForecastComparisonAccumulator(map: Map<string, RoadmapForecastCom
   if (existing) return existing;
   const created: RoadmapForecastComparisonAccumulator = {
     id,
+    productId: row.product_id,
+    bucketId: row.bucket_id,
     product: row.product,
     bucket: row.bucket,
     programAreas: new Set(),

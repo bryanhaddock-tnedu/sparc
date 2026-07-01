@@ -239,6 +239,44 @@ export interface RoadmapSyncResult {
   fiscal_year_label: string | null;
 }
 
+export type ForecastRecommendationAction = "applied" | "rejected";
+
+export type ForecastRecommendationKind = "none" | "monitor" | "add_forecast" | "increase_forecast";
+
+export interface ForecastRecommendationDecisionPayload {
+  fiscal_year: number;
+  product_id: number;
+  bucket_id: number;
+  action: ForecastRecommendationAction;
+  target_team_member_id?: number | null;
+  target_month_sequence?: number | null;
+  note?: string | null;
+}
+
+export interface ForecastRecommendationDecision {
+  id: number;
+  fiscal_year: number;
+  product_id: number;
+  product: string | null;
+  product_slug: string | null;
+  bucket_id: number;
+  bucket: string | null;
+  recommendation: ForecastRecommendationKind;
+  action: ForecastRecommendationAction;
+  forecast_hours: number;
+  roadmap_actual_hours: number;
+  suggested_delta_hours: number;
+  suggested_forecast_hours: number;
+  target_team_member_id: number | null;
+  target_team_member: string | null;
+  target_month_sequence: number | null;
+  applied_forecast_entry_id: number | null;
+  note: string | null;
+  decided_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProductTeamMemberPayload {
   team_member_id: number;
   default_bucket_id?: number | null;
