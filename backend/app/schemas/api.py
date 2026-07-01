@@ -732,6 +732,7 @@ class RoadmapItemResponse(BaseModel):
     status_category: str | None
     issue_type: str | None
     program_area: str | None
+    source_category: str | None = None
     source_url: str | None
     linked_issue_count: int
     last_synced_at: datetime | None

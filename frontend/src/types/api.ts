@@ -181,6 +181,7 @@ export interface RoadmapItem {
   status_category: string | null;
   issue_type: string | null;
   program_area: string | null;
+  source_category: string | null;
   source_url: string | null;
   linked_issue_count: number;
   last_synced_at: string | null;

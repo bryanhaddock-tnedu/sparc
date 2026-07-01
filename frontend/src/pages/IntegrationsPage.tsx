@@ -1018,6 +1018,7 @@ function RoadmapItemMappingTable({
             <TableRow>
               <TableHead>Roadmap Item</TableHead>
               <TableHead>Mapping</TableHead>
+              <TableHead>Jira Category</TableHead>
               <TableHead className="text-right">Tickets</TableHead>
               <TableHead>Product</TableHead>
               <TableHead>Bucket</TableHead>
@@ -1034,6 +1035,7 @@ function RoadmapItemMappingTable({
                   <TableCell>
                     <RoadmapItemMappingBadge item={item} />
                   </TableCell>
+                  <TableCell>{item.source_category || "Not set"}</TableCell>
                   <TableCell className="numeric-cell text-right">{item.linked_issue_count}</TableCell>
                   <TableCell>
                     <select
@@ -1081,7 +1083,7 @@ function RoadmapItemMappingTable({
               ))
             ) : (
               <TableRow>
-                <TableCell className="py-5 text-sm text-muted-foreground" colSpan={6}>
+                <TableCell className="py-5 text-sm text-muted-foreground" colSpan={7}>
                   {emptyMessage}
                 </TableCell>
               </TableRow>

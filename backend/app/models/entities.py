@@ -167,6 +167,7 @@ class RoadmapItem(TimestampMixin, Base):
     status_category: Mapped[str | None] = mapped_column(String(80))
     issue_type: Mapped[str | None] = mapped_column(String(120))
     program_area: Mapped[str | None] = mapped_column(String(160))
+    source_category: Mapped[str | None] = mapped_column(String(160))
     source_url: Mapped[str | None] = mapped_column(Text)
     source_payload_hash: Mapped[str | None] = mapped_column(String(128))
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

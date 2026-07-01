@@ -345,6 +345,7 @@ def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
         item = _upsert_roadmap_item(db, payload, 2027)
 
         assert item.bucket_id == enhance.id
+        assert item.source_category == "Enhancements"
 
 
 def test_stale_roadmap_items_move_out_of_selected_fiscal_year():

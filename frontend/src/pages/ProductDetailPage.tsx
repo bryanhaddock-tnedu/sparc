@@ -484,12 +484,13 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
       </div>
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1080px] text-sm">
+          <table className="w-full min-w-[1180px] text-sm">
             <thead>
               <tr className="border-b bg-secondary/60">
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Roadmap Item</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Status</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bucket</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Jira Category</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Program Area</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Linked Tickets</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actual Hrs</th>
@@ -520,6 +521,7 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
                       </td>
                       <td className="px-3 py-3">{item.status ?? "No status"}</td>
                       <td className="px-3 py-3">{item.bucket ?? "Unmapped"}</td>
+                      <td className="px-3 py-3">{item.source_category || "Not set"}</td>
                       <td className="px-3 py-3">{item.program_area || "Unassigned"}</td>
                       <td className="numeric-cell px-3 py-3 text-right font-semibold">{item.linked_issue_count}</td>
                       <td className="numeric-cell px-3 py-3 text-right font-semibold">{formatHours(actualSummary?.actualHours ?? 0)}</td>
@@ -530,7 +532,7 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
                 })
               ) : (
                 <tr>
-                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={8}>
+                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={9}>
                     No Roadmap Items are mapped to this product yet. Use Admin / Jira / Roadmap Item Mapping to attach Roadmap Items to this product.
                   </td>
                 </tr>

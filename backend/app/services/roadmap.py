@@ -73,6 +73,7 @@ def serialize_roadmap_item(item: RoadmapItem) -> dict[str, object]:
         "status_category": item.status_category,
         "issue_type": item.issue_type,
         "program_area": item.program_area,
+        "source_category": item.source_category,
         "source_url": item.source_url,
         "linked_issue_count": len(item.issue_links),
         "last_synced_at": item.last_synced_at,
@@ -331,6 +332,7 @@ def _upsert_roadmap_item(db: Session, payload: RoadmapIssuePayload, fiscal_year:
     item.issue_type = payload.issue_type
     if payload.program_area is not None:
         item.program_area = payload.program_area
+    item.source_category = payload.category
     bucket_id = _bucket_id_from_category(db, payload.category)
     if bucket_id is not None:
         item.bucket_id = bucket_id
