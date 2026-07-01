@@ -18,6 +18,7 @@ ROADMAP_SOURCE = "jira_product_discovery"
 ROADMAP_LINK_SOURCE = "jira_issue_link"
 MANUAL_ROADMAP_LINK_SOURCE = "manual"
 DEFAULT_ROADMAP_PROJECT_KEY = "ROADMAP"
+ROADMAP_ITEM_ISSUE_TYPES = {"idea"}
 
 
 @dataclass(frozen=True)
@@ -71,7 +72,17 @@ def list_roadmap_items(db: Session) -> list[dict[str, object]]:
         .options(joinedload(RoadmapItem.product), joinedload(RoadmapItem.bucket), joinedload(RoadmapItem.issue_links))
         .order_by(RoadmapItem.jira_issue_key)
     ).unique().all()
-    return [serialize_roadmap_item(item) for item in items]
+    return [serialize_roadmap_item(item) for item in items if _is_roadmap_item_issue_type(item.issue_type)]
+
+
+def product_roadmap_items(db: Session, product_id: int) -> list[dict[str, object]]:
+    items = db.scalars(
+        select(RoadmapItem)
+        .options(joinedload(RoadmapItem.product), joinedload(RoadmapItem.bucket), joinedload(RoadmapItem.issue_links))
+        .where(RoadmapItem.product_id == product_id)
+        .order_by(RoadmapItem.jira_issue_key)
+    ).unique().all()
+    return [serialize_roadmap_item(item) for item in items if _is_roadmap_item_issue_type(item.issue_type)]
 
 
 def update_roadmap_item_mapping(
@@ -188,11 +199,16 @@ def fetch_live_roadmap_items(roadmap_project_key: str) -> list[RoadmapIssuePaylo
     settings = get_settings()
     _require_jira_settings(settings.jira_site_url, settings.jira_api_email, settings.jira_api_token)
     site_url = settings.jira_site_url.rstrip("/")
-    jql = f'project = "{roadmap_project_key}" ORDER BY updated ASC'
+    # Jira Product Discovery roadmap entries are Idea issues. Delivery tickets are linked underneath them.
+    jql = f'project = "{roadmap_project_key}" AND issuetype in ("Idea") ORDER BY updated ASC'
     fields = ["summary", "status", "issuetype", "issuelinks"]
     with httpx.Client(timeout=45, auth=(settings.jira_api_email, settings.jira_api_token)) as client:
         issues = _search_jira_issues(client, site_url, jql, fields)
-        return [_normalize_roadmap_issue(site_url, issue) for issue in issues]
+        payloads: list[RoadmapIssuePayload] = []
+        for issue in issues:
+            if _is_roadmap_item_issue_type(_issue_type_name(issue)):
+                payloads.append(_normalize_roadmap_issue(site_url, issue))
+        return payloads
 
 
 def roadmap_actual_rows(
@@ -413,6 +429,19 @@ def _normalize_roadmap_issue(site_url: str, issue: dict[str, object]) -> Roadmap
         source_url=f"{site_url}/browse/{issue_key}" if issue_key else None,
         links=links,
     )
+
+
+def _issue_type_name(issue: dict[str, object]) -> str | None:
+    fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
+    issue_type = fields.get("issuetype") if isinstance(fields.get("issuetype"), dict) else {}
+    value = str(issue_type.get("name") or "").strip()
+    return value or None
+
+
+def _is_roadmap_item_issue_type(issue_type: str | None) -> bool:
+    if issue_type is None:
+        return True
+    return issue_type.strip().lower() in ROADMAP_ITEM_ISSUE_TYPES
 
 
 def _extract_issue_links(fields: dict[str, object], roadmap_issue_key: str) -> list[RoadmapIssueLinkPayload]:

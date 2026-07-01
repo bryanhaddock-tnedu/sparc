@@ -25,6 +25,7 @@ import type {
   ProductTeamMember,
   ReportedValueRow,
   RoadmapActualRow,
+  RoadmapItem,
   TeamMember,
 } from "../types/api";
 
@@ -56,6 +57,7 @@ export function ProductDetailPage() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [roadmapActualRows, setRoadmapActualRows] = useState<RoadmapActualRow[]>([]);
+  const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([]);
   const [distribution, setDistribution] = useState<{ bucket: string; hours: number }[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [forecastLineMemberId, setForecastLineMemberId] = useState("");
@@ -70,13 +72,23 @@ export function ProductDetailPage() {
   async function loadData() {
     const summaryResult = await api.productSummary(productRef, fiscalYear);
     const resolvedProductId = summaryResult.product.id;
-    const [distributionResult, tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult, roadmapActualsResult] = await Promise.all([
+    const [
+      distributionResult,
+      tablesResult,
+      productSpacesResult,
+      productTeamResult,
+      teamMembersResult,
+      reportedRowsResult,
+      roadmapItemsResult,
+      roadmapActualsResult,
+    ] = await Promise.all([
       api.bucketDistribution(resolvedProductId, fiscalYear),
       api.productBucketTables(resolvedProductId, fiscalYear),
       api.productJiraSpaces(resolvedProductId),
       api.productTeamMembers(resolvedProductId),
       api.teamMembers(),
       api.reportedValues({ product_id: resolvedProductId }, fiscalYear),
+      api.productRoadmapItems(resolvedProductId),
       api.productRoadmapActuals(resolvedProductId, fiscalYear),
     ]);
     if (productRef !== summaryResult.product.slug) {
@@ -89,6 +101,7 @@ export function ProductDetailPage() {
     setProductTeam(productTeamResult);
     setTeamMembers(teamMembersResult);
     setReportedRows(reportedRowsResult);
+    setRoadmapItems(roadmapItemsResult);
     setRoadmapActualRows(roadmapActualsResult);
     setDrafts({});
   }
@@ -317,6 +330,7 @@ export function ProductDetailPage() {
         </div>
       </section>
 
+      <ProductRoadmapItemsSection items={roadmapItems} />
       <RoadmapActualsTable rows={roadmapActualRows} showTeamMember title="Roadmap Actuals For Billing" />
 
       <ProductTeamSection
@@ -433,6 +447,88 @@ function SnapshotRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-baseline justify-between gap-3 rounded-md bg-secondary/50 px-3 py-2">
       <span className="truncate text-sm text-muted-foreground">{label}</span>
       <span className="numeric-cell shrink-0 text-base font-semibold text-primary">{value}</span>
+    </div>
+  );
+}
+
+function ProductRoadmapItemsSection({ items }: { items: RoadmapItem[] }) {
+  const linkedTickets = items.reduce((total, item) => total + item.linked_issue_count, 0);
+  const buckets = new Set(items.map((item) => item.bucket).filter(Boolean));
+  const programAreas = new Set(items.map((item) => item.program_area || "Unassigned"));
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
+        <div>
+          <h2 className="text-lg font-semibold">Roadmap Items</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Roadmap Items mapped to this product. Actual billing appears separately after Jira worklogs are synced.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <RoadmapItemMetric label="Items" value={String(items.length)} />
+          <RoadmapItemMetric label="Tickets" value={String(linkedTickets)} />
+          <RoadmapItemMetric label="Buckets" value={String(buckets.size)} />
+          <RoadmapItemMetric label="Programs" value={String(programAreas.size)} />
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-sm">
+            <thead>
+              <tr className="border-b bg-secondary/60">
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Roadmap Item</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Status</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bucket</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Program Area</th>
+                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Linked Tickets</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.length ? (
+                items.map((item) => (
+                  <tr key={item.id} className="border-b last:border-0">
+                    <td className="px-3 py-3">
+                      <div className="font-medium text-primary">
+                        {item.source_url ? (
+                          <a href={item.source_url} target="_blank" rel="noreferrer">
+                            {item.jira_issue_key}
+                          </a>
+                        ) : (
+                          item.jira_issue_key
+                        )}
+                      </div>
+                      <div className="max-w-[36rem] truncate text-sm text-foreground" title={item.title}>
+                        {item.title}
+                      </div>
+                      <div className="text-xs text-muted-foreground">{item.issue_type ?? "Roadmap Item"}</div>
+                    </td>
+                    <td className="px-3 py-3">{item.status ?? "No status"}</td>
+                    <td className="px-3 py-3">{item.bucket ?? "Unmapped"}</td>
+                    <td className="px-3 py-3">{item.program_area || "Unassigned"}</td>
+                    <td className="numeric-cell px-3 py-3 text-right font-semibold">{item.linked_issue_count}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={5}>
+                    No Roadmap Items are mapped to this product yet. Use Admin / Jira / Roadmap Item Mapping to attach Roadmap Items to this product.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RoadmapItemMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-secondary px-3 py-2">
+      <div className="text-xs font-semibold uppercase text-muted-foreground">{label}</div>
+      <div className="numeric-cell text-right text-base font-semibold text-primary">{value}</div>
     </div>
   );
 }

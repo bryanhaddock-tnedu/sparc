@@ -39,7 +39,14 @@ from app.services.jira_projects import (
     update_product_jira_space,
 )
 from app.services import jira_projects
-from app.services.roadmap import _replace_roadmap_issue_links, map_roadmap_ticket, roadmap_actual_rows, update_roadmap_item_mapping
+from app.services.roadmap import (
+    _replace_roadmap_issue_links,
+    list_roadmap_items,
+    map_roadmap_ticket,
+    product_roadmap_items,
+    roadmap_actual_rows,
+    update_roadmap_item_mapping,
+)
 
 
 def test_fiscal_year_mapping():
@@ -280,6 +287,66 @@ def test_roadmap_item_mapping_updates_product_and_bucket():
         assert cleared["bucket_id"] is None
         assert cleared["bucket"] is None
         assert cleared["program_area"] is None
+
+
+def test_product_roadmap_items_show_mapped_items_without_actuals_and_exclude_delivery_tickets():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", slug="student-information")
+        other_product = Product(name="Other Product", slug="other-product")
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "ENHANCE"))
+        db.add_all([product, other_product])
+        db.flush()
+        idea = RoadmapItem(
+            source="jira_product_discovery",
+            product_id=product.id,
+            bucket_id=bucket.id,
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="Program billing feature",
+            status="In Progress",
+            issue_type="Idea",
+            program_area="Programs",
+        )
+        delivery_ticket = RoadmapItem(
+            source="jira_product_discovery",
+            product_id=product.id,
+            bucket_id=bucket.id,
+            jira_issue_id="10002",
+            jira_issue_key="ROADMAP-2",
+            title="Delivery ticket that should not be a roadmap item",
+            status="Done",
+            issue_type="Story",
+        )
+        other_idea = RoadmapItem(
+            source="jira_product_discovery",
+            product_id=other_product.id,
+            bucket_id=bucket.id,
+            jira_issue_id="10003",
+            jira_issue_key="ROADMAP-3",
+            title="Other product idea",
+            issue_type="Idea",
+        )
+        db.add_all([idea, delivery_ticket, other_idea])
+        db.flush()
+        db.add_all(
+            [
+                RoadmapItemIssueLink(roadmap_item_id=idea.id, jira_issue_key="SIS-1"),
+                RoadmapItemIssueLink(roadmap_item_id=idea.id, jira_issue_key="SIS-2"),
+                RoadmapItemIssueLink(roadmap_item_id=delivery_ticket.id, jira_issue_key="SIS-3"),
+            ]
+        )
+        db.flush()
+
+        rows = product_roadmap_items(db, product.id)
+        all_rows = list_roadmap_items(db)
+
+        assert [row["jira_issue_key"] for row in rows] == ["ROADMAP-1"]
+        assert rows[0]["linked_issue_count"] == 2
+        assert rows[0]["program_area"] == "Programs"
+        assert {row["jira_issue_key"] for row in all_rows} == {"ROADMAP-1", "ROADMAP-3"}
 
 
 def test_roadmap_actual_rows_can_filter_by_fiscal_month():

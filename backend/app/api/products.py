@@ -17,6 +17,7 @@ from app.schemas import (
     ProductJiraSpaceUpdate,
     ProductResponse,
     RoadmapActualRowResponse,
+    RoadmapItemResponse,
     ProductSummaryResponse,
     ProductTeamMemberCreate,
     ProductTeamMemberResponse,
@@ -33,7 +34,7 @@ from app.services.jira_projects import (
     validate_product_jira_space,
 )
 from app.services.product_org import product_org_pair_error
-from app.services.roadmap import roadmap_actual_rows
+from app.services.roadmap import product_roadmap_items, roadmap_actual_rows
 from app.services.slugs import resolve_product_ref, team_member_url_slug, unique_product_slug
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -332,6 +333,15 @@ def get_product_roadmap_actuals(
 ) -> list[dict[str, object]]:
     product = _resolve_product_or_404(db, product_ref)
     return roadmap_actual_rows(db, fiscal_year, product_id=product.id)
+
+
+@router.get("/{product_ref}/roadmap-items", response_model=list[RoadmapItemResponse])
+def get_product_roadmap_items(
+    product_ref: str,
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    product = _resolve_product_or_404(db, product_ref)
+    return product_roadmap_items(db, product.id)
 
 
 def _resolve_product_or_404(db: Session, product_ref: str) -> Product:

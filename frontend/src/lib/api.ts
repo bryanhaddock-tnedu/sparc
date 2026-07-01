@@ -187,6 +187,7 @@ export const api = {
     request<ProductBucketTables>(`/api/products/${encodeURIComponent(String(productRef))}/bucket-tables?fiscal_year=${fiscalYear}`),
   productRoadmapActuals: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<RoadmapActualRow[]>(`/api/products/${encodeURIComponent(String(productRef))}/roadmap-actuals?fiscal_year=${fiscalYear}`),
+  productRoadmapItems: (productRef: ProductRef) => request<RoadmapItem[]>(`/api/products/${encodeURIComponent(String(productRef))}/roadmap-items`),
   products: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<Product[]>(`/api/products?fiscal_year=${fiscalYear}`),
   buckets: () => request<Bucket[]>("/api/products/buckets"),
   createProduct: (payload: ProductCreatePayload, fiscalYear = DEFAULT_FISCAL_YEAR) =>
