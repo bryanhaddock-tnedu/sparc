@@ -40,6 +40,7 @@ from app.services.roadmap import (
     list_roadmap_items,
     map_roadmap_ticket,
     roadmap_actual_gap_rows,
+    roadmap_actual_rows,
     run_live_roadmap_sync,
     update_roadmap_item_mapping,
 )
@@ -118,6 +119,7 @@ def update_roadmap_item_mapping_endpoint(
             item_id,
             product_id=payload.product_id,
             bucket_id=payload.bucket_id,
+            program_area=payload.program_area,
         )
         db.commit()
         return result
@@ -126,9 +128,22 @@ def update_roadmap_item_mapping_endpoint(
         raise bad_request(str(exc)) from exc
 
 
+@router.get("/roadmap/actuals", response_model=list[RoadmapActualRowResponse])
+def get_roadmap_actuals(
+    fiscal_year: int = 2027,
+    month_sequence: int | None = None,
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    return roadmap_actual_rows(db, fiscal_year, month_sequence=month_sequence)
+
+
 @router.get("/roadmap/actual-gaps", response_model=list[RoadmapActualRowResponse])
-def get_roadmap_actual_gaps(fiscal_year: int = 2027, db: Session = Depends(get_db)) -> list[dict[str, object]]:
-    return roadmap_actual_gap_rows(db, fiscal_year)
+def get_roadmap_actual_gaps(
+    fiscal_year: int = 2027,
+    month_sequence: int | None = None,
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    return roadmap_actual_gap_rows(db, fiscal_year, month_sequence=month_sequence)
 
 
 @router.put("/roadmap/ticket-links/{ticket_key}", response_model=RoadmapTicketMapResponse)

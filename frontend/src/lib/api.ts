@@ -64,7 +64,17 @@ type DashboardScopeParams = {
   monthSequence?: number | null;
 };
 
+type RoadmapActualParams = {
+  monthSequence?: number | null;
+};
+
 function dashboardQuery(fiscalYear: number, params: DashboardScopeParams = {}) {
+  const search = new URLSearchParams({ fiscal_year: String(fiscalYear) });
+  if (params.monthSequence != null) search.set("month_sequence", String(params.monthSequence));
+  return search.toString();
+}
+
+function roadmapActualQuery(fiscalYear: number, params: RoadmapActualParams = {}) {
   const search = new URLSearchParams({ fiscal_year: String(fiscalYear) });
   if (params.monthSequence != null) search.set("month_sequence", String(params.monthSequence));
   return search.toString();
@@ -282,8 +292,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
-  roadmapActualGaps: (fiscalYear = DEFAULT_FISCAL_YEAR) =>
-    request<RoadmapActualRow[]>(`/api/integrations/jira-rovo/roadmap/actual-gaps?fiscal_year=${fiscalYear}`),
+  roadmapActuals: (fiscalYear = DEFAULT_FISCAL_YEAR, params: RoadmapActualParams = {}) =>
+    request<RoadmapActualRow[]>(`/api/integrations/jira-rovo/roadmap/actuals?${roadmapActualQuery(fiscalYear, params)}`),
+  roadmapActualGaps: (fiscalYear = DEFAULT_FISCAL_YEAR, params: RoadmapActualParams = {}) =>
+    request<RoadmapActualRow[]>(`/api/integrations/jira-rovo/roadmap/actual-gaps?${roadmapActualQuery(fiscalYear, params)}`),
   updateRoadmapTicketMapping: (ticketKey: string, payload: RoadmapTicketMapPayload) =>
     request<RoadmapTicketMapResult>(`/api/integrations/jira-rovo/roadmap/ticket-links/${encodeURIComponent(ticketKey)}`, {
       method: "PUT",

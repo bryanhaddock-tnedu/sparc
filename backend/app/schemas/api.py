@@ -741,6 +741,7 @@ class RoadmapItemResponse(BaseModel):
 class RoadmapItemMapRequest(BaseModel):
     product_id: int | None
     bucket_id: int | None
+    program_area: str | None = None
 
 
 class RoadmapTicketMapRequest(BaseModel):

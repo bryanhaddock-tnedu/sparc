@@ -190,6 +190,7 @@ export interface RoadmapItem {
 export interface RoadmapItemMapPayload {
   product_id: number | null;
   bucket_id: number | null;
+  program_area?: string | null;
 }
 
 export interface RoadmapTicketMapPayload {

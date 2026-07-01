@@ -80,6 +80,7 @@ def update_roadmap_item_mapping(
     *,
     product_id: int | None,
     bucket_id: int | None,
+    program_area: str | None = None,
 ) -> dict[str, object]:
     item = db.get(RoadmapItem, roadmap_item_id)
     if item is None:
@@ -91,6 +92,7 @@ def update_roadmap_item_mapping(
 
     item.product_id = product_id
     item.bucket_id = bucket_id
+    item.program_area = program_area.strip() if program_area else None
     db.flush()
     db.expire(item, ["product", "bucket", "issue_links"])
     mapped_item = db.scalars(
@@ -101,8 +103,12 @@ def update_roadmap_item_mapping(
     return serialize_roadmap_item(mapped_item)
 
 
-def roadmap_actual_gap_rows(db: Session, fiscal_year: int) -> list[dict[str, object]]:
-    return [row for row in roadmap_actual_rows(db, fiscal_year) if row["mapping_status"] != "mapped"]
+def roadmap_actual_gap_rows(db: Session, fiscal_year: int, *, month_sequence: int | None = None) -> list[dict[str, object]]:
+    return [
+        row
+        for row in roadmap_actual_rows(db, fiscal_year, month_sequence=month_sequence)
+        if row["mapping_status"] != "mapped"
+    ]
 
 
 def map_roadmap_ticket(db: Session, ticket_key: str, roadmap_item_id: int | None) -> dict[str, object]:
@@ -195,8 +201,17 @@ def roadmap_actual_rows(
     *,
     product_id: int | None = None,
     team_member_id: int | None = None,
+    bucket_id: int | None = None,
+    month_sequence: int | None = None,
 ) -> list[dict[str, object]]:
-    entries = _actual_entries(db, fiscal_year, product_id=product_id, team_member_id=team_member_id)
+    entries = _actual_entries(
+        db,
+        fiscal_year,
+        product_id=product_id,
+        team_member_id=team_member_id,
+        bucket_id=bucket_id,
+        month_sequence=month_sequence,
+    )
     links_by_ticket = _roadmap_links_by_ticket(db, entries)
     grouped: dict[tuple[int | None, int, int, int, str], dict[str, object]] = {}
 
@@ -316,6 +331,8 @@ def _actual_entries(
     *,
     product_id: int | None = None,
     team_member_id: int | None = None,
+    bucket_id: int | None = None,
+    month_sequence: int | None = None,
 ) -> list[ActualEntry]:
     statement = (
         select(ActualEntry)
@@ -333,6 +350,10 @@ def _actual_entries(
         statement = statement.where(ActualEntry.product_id == product_id)
     if team_member_id is not None:
         statement = statement.where(ActualEntry.team_member_id == team_member_id)
+    if bucket_id is not None:
+        statement = statement.where(ActualEntry.bucket_id == bucket_id)
+    if month_sequence is not None:
+        statement = statement.where(FiscalMonth.sequence == month_sequence)
     return db.scalars(statement).all()
 
 

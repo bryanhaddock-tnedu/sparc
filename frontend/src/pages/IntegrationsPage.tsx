@@ -1,4 +1,4 @@
-import { DatabaseZap, RefreshCw } from "lucide-react";
+import { DatabaseZap, Download, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -24,6 +24,55 @@ import type {
   TeamMember,
 } from "../types/api";
 
+type RoadmapFilterState = {
+  productId: string;
+  teamMemberId: string;
+  bucketId: string;
+  monthSequence: string;
+  programArea: string;
+  mappingStatus: string;
+};
+
+type BillingSummaryRow = {
+  id: string;
+  label: string;
+  programArea: string;
+  product: string;
+  roadmapItems: number;
+  products: number;
+  teamMembers: number;
+  tickets: number;
+  worklogs: number;
+  actualHours: number;
+  actualCost: number;
+  gapTickets: number;
+};
+
+type RoadmapBillingSummary = {
+  totals: {
+    actualHours: number;
+    actualCost: number;
+    tickets: number;
+    worklogs: number;
+    gapTickets: number;
+  };
+  programAreas: BillingSummaryRow[];
+  products: BillingSummaryRow[];
+  roadmapItems: BillingSummaryRow[];
+};
+
+const EMPTY_ROADMAP_FILTERS: RoadmapFilterState = {
+  productId: "",
+  teamMemberId: "",
+  bucketId: "",
+  monthSequence: "",
+  programArea: "",
+  mappingStatus: "",
+};
+
+const UNASSIGNED_PROGRAM_AREA = "__unassigned";
+const FISCAL_MONTH_LABELS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+
 export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -33,6 +82,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [productMappings, setProductMappings] = useState<JiraProductMapping[]>([]);
   const [jiraCatalog, setJiraCatalog] = useState<JiraProjectCatalog[]>([]);
   const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([]);
+  const [roadmapActualRows, setRoadmapActualRows] = useState<RoadmapActualRow[]>([]);
   const [roadmapGaps, setRoadmapGaps] = useState<RoadmapActualRow[]>([]);
   const [syncRuns, setSyncRuns] = useState<SyncRun[]>([]);
   const [jiraStatus, setJiraStatus] = useState<JiraIntegrationStatus | null>(null);
@@ -42,9 +92,11 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [catalogRefreshing, setCatalogRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [roadmapFilters, setRoadmapFilters] = useState<RoadmapFilterState>(EMPTY_ROADMAP_FILTERS);
 
   async function loadData() {
-    const [members, productRows, bucketRows, users, jiraProducts, catalogRows, roadmapRows, gapRows, runs, status] = await Promise.all([
+    const monthSequence = roadmapFilters.monthSequence ? Number(roadmapFilters.monthSequence) : null;
+    const [members, productRows, bucketRows, users, jiraProducts, catalogRows, roadmapRows, actualRows, gapRows, runs, status] = await Promise.all([
       api.teamMembers(),
       api.products(),
       api.buckets(),
@@ -52,7 +104,8 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       api.productMappings(),
       api.jiraProjectCatalog(),
       api.roadmapItems(),
-      api.roadmapActualGaps(fiscalYear),
+      api.roadmapActuals(fiscalYear, { monthSequence }),
+      api.roadmapActualGaps(fiscalYear, { monthSequence }),
       api.syncRuns(),
       api.jiraIntegrationStatus(),
     ]);
@@ -63,16 +116,18 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     setProductMappings(jiraProducts);
     setJiraCatalog(catalogRows);
     setRoadmapItems(roadmapRows);
+    setRoadmapActualRows(actualRows);
     setRoadmapGaps(gapRows);
     setSyncRuns(runs);
     setJiraStatus(status);
   }
 
   useEffect(() => {
+    setLoading(true);
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load integration data"))
       .finally(() => setLoading(false));
-  }, [fiscalYear]);
+  }, [fiscalYear, roadmapFilters.monthSequence]);
 
   async function runLiveSync() {
     setLiveSyncing(true);
@@ -128,15 +183,20 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     await loadData();
   }
 
-  async function updateRoadmapItemMapping(itemId: number, productId: number | null, bucketId: number | null) {
+  async function updateRoadmapItemMapping(
+    item: RoadmapItem,
+    updates: Partial<Pick<RoadmapItem, "product_id" | "bucket_id" | "program_area">>,
+  ) {
     setError(null);
     setNotice(null);
     try {
-      const updatedItem = await api.updateRoadmapItemMapping(itemId, {
-        product_id: productId,
-        bucket_id: bucketId,
+      const updatedItem = await api.updateRoadmapItemMapping(item.id, {
+        product_id: updates.product_id !== undefined ? updates.product_id : item.product_id,
+        bucket_id: updates.bucket_id !== undefined ? updates.bucket_id : item.bucket_id,
+        program_area: updates.program_area !== undefined ? updates.program_area : item.program_area,
       });
       setRoadmapItems((current) => current.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
+      await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update Roadmap Item mapping");
     }
@@ -153,9 +213,29 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     }
   }
 
+  function updateRoadmapFilter(key: keyof RoadmapFilterState, value: string) {
+    setRoadmapFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function resetRoadmapFilters() {
+    setRoadmapFilters(EMPTY_ROADMAP_FILTERS);
+  }
+
+  function exportRoadmapSummary() {
+    downloadCsv(`sparc-roadmap-billing-${fiscalYearLabel.toLowerCase()}.csv`, roadmapBillingSummaryCsvRows(billingSummary));
+  }
+
+  function exportRoadmapGaps() {
+    downloadCsv(`sparc-roadmap-gaps-${fiscalYearLabel.toLowerCase()}.csv`, roadmapGapCsvRows(roadmapGapTickets));
+  }
+
   const catalogLastCheckedAt = useMemo(() => latestCatalogCheckedAt(jiraCatalog), [jiraCatalog]);
   const sortedRoadmapItems = useMemo(() => sortRoadmapItems(roadmapItems), [roadmapItems]);
-  const roadmapGapTickets = useMemo(() => expandRoadmapGapTickets(roadmapGaps), [roadmapGaps]);
+  const programAreaOptions = useMemo(() => programAreaOptionsFrom(roadmapActualRows, roadmapItems), [roadmapActualRows, roadmapItems]);
+  const visibleRoadmapActualRows = useMemo(() => filterRoadmapActualRows(roadmapActualRows, roadmapFilters), [roadmapActualRows, roadmapFilters]);
+  const visibleRoadmapGapRows = useMemo(() => filterRoadmapActualRows(roadmapGaps, roadmapFilters), [roadmapGaps, roadmapFilters]);
+  const roadmapGapTickets = useMemo(() => expandRoadmapGapTickets(visibleRoadmapGapRows), [visibleRoadmapGapRows]);
+  const billingSummary = useMemo(() => buildRoadmapBillingSummary(visibleRoadmapActualRows), [visibleRoadmapActualRows]);
 
   if (loading) return <LoadingBlock />;
   if (error && !jiraStatus) return <ErrorBlock message={error} />;
@@ -205,6 +285,23 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         <StatusCard label="Roadmap Items" value={`${roadmapItems.length - unmappedRoadmapCount}/${roadmapItems.length}`} />
         <StatusCard label="Latest sync" value={syncRuns[0]?.status ?? "No runs"} />
       </section>
+
+      <RoadmapBillingFilters
+        buckets={buckets}
+        filters={roadmapFilters}
+        fiscalYear={fiscalYear}
+        programAreas={programAreaOptions}
+        products={products}
+        teamMembers={teamMembers}
+        onChange={updateRoadmapFilter}
+        onReset={resetRoadmapFilters}
+      />
+
+      <RoadmapBillingSummarySection
+        summary={billingSummary}
+        onExportGaps={exportRoadmapGaps}
+        onExportSummary={exportRoadmapSummary}
+      />
 
       {!jiraStatus?.configured ? (
         <div className="rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm">
@@ -292,6 +389,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
               <TableHead>Tickets</TableHead>
               <TableHead>Product</TableHead>
               <TableHead>Bucket</TableHead>
+              <TableHead>Program Area</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -319,7 +417,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
                     className="h-9 w-full min-w-52 rounded-md border border-input bg-background px-2 text-sm"
                     value={item.product_id ?? ""}
                     onChange={(event) =>
-                      void updateRoadmapItemMapping(item.id, event.target.value ? Number(event.target.value) : null, item.bucket_id)
+                      void updateRoadmapItemMapping(item, { product_id: event.target.value ? Number(event.target.value) : null })
                     }
                   >
                     <option value="">Unmapped</option>
@@ -335,7 +433,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
                     className="h-9 w-full min-w-40 rounded-md border border-input bg-background px-2 text-sm"
                     value={item.bucket_id ?? ""}
                     onChange={(event) =>
-                      void updateRoadmapItemMapping(item.id, item.product_id, event.target.value ? Number(event.target.value) : null)
+                      void updateRoadmapItemMapping(item, { bucket_id: event.target.value ? Number(event.target.value) : null })
                     }
                   >
                     <option value="">Unmapped</option>
@@ -345,6 +443,20 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
                       </option>
                     ))}
                   </select>
+                </TableCell>
+                <TableCell>
+                  <input
+                    className="h-9 w-full min-w-44 rounded-md border border-input bg-background px-2 text-sm"
+                    defaultValue={item.program_area ?? ""}
+                    key={`${item.id}-${item.program_area ?? ""}`}
+                    onBlur={(event) => {
+                      const nextProgramArea = event.currentTarget.value.trim() || null;
+                      if (nextProgramArea !== (item.program_area ?? null)) {
+                        void updateRoadmapItemMapping(item, { program_area: nextProgramArea });
+                      }
+                    }}
+                    placeholder="Program area"
+                  />
                 </TableCell>
               </TableRow>
             ))}
@@ -499,6 +611,187 @@ function StatusCard({ label, value, tone = "default" }: { label: string; value: 
   );
 }
 
+function RoadmapBillingFilters({
+  buckets,
+  filters,
+  fiscalYear,
+  products,
+  programAreas,
+  teamMembers,
+  onChange,
+  onReset,
+}: {
+  buckets: Bucket[];
+  filters: RoadmapFilterState;
+  fiscalYear: number;
+  products: Product[];
+  programAreas: string[];
+  teamMembers: TeamMember[];
+  onChange: (key: keyof RoadmapFilterState, value: string) => void;
+  onReset: () => void;
+}) {
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
+        <FilterSelect label="Product" value={filters.productId} onChange={(value) => onChange("productId", value)}>
+          <option value="">All products</option>
+          {products.map((product) => (
+            <option key={product.id} value={product.id}>
+              {product.name}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Team Member" value={filters.teamMemberId} onChange={(value) => onChange("teamMemberId", value)}>
+          <option value="">All team members</option>
+          {teamMembers.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.name}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Bucket" value={filters.bucketId} onChange={(value) => onChange("bucketId", value)}>
+          <option value="">All buckets</option>
+          {buckets.map((bucket) => (
+            <option key={bucket.id} value={bucket.id}>
+              {bucket.name}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Month" value={filters.monthSequence} onChange={(value) => onChange("monthSequence", value)}>
+          <option value="">Entire FY</option>
+          {fiscalMonthOptions(fiscalYear).map((month) => (
+            <option key={month.sequence} value={month.sequence}>
+              {month.label}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Program Area" value={filters.programArea} onChange={(value) => onChange("programArea", value)}>
+          <option value="">All program areas</option>
+          <option value={UNASSIGNED_PROGRAM_AREA}>Unassigned</option>
+          {programAreas.map((programArea) => (
+            <option key={programArea} value={programArea}>
+              {programArea}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Status" value={filters.mappingStatus} onChange={(value) => onChange("mappingStatus", value)}>
+          <option value="">All statuses</option>
+          <option value="mapped">Mapped</option>
+          <option value="unmapped">Unmapped</option>
+          <option value="ambiguous">Ambiguous</option>
+        </FilterSelect>
+        <div className="flex items-end">
+          <Button className="h-9 w-full" type="button" variant="outline" onClick={onReset}>
+            Reset
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FilterSelect({ children, label, value, onChange }: { children: ReactNode; label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="space-y-1">
+      <span className="text-xs font-semibold uppercase text-muted-foreground">{label}</span>
+      <select className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" value={value} onChange={(event) => onChange(event.target.value)}>
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function RoadmapBillingSummarySection({
+  summary,
+  onExportGaps,
+  onExportSummary,
+}: {
+  summary: RoadmapBillingSummary;
+  onExportGaps: () => void;
+  onExportSummary: () => void;
+}) {
+  return (
+    <section className="space-y-3 rounded-lg border bg-card p-4">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+        <h2 className="text-lg font-semibold">Roadmap Billing Summary</h2>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button type="button" variant="outline" onClick={onExportSummary}>
+            <Download className="h-4 w-4" />
+            Summary CSV
+          </Button>
+          <Button type="button" variant="outline" onClick={onExportGaps}>
+            <Download className="h-4 w-4" />
+            Gaps CSV
+          </Button>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <SummaryMetric label="Hours" value={formatHours(summary.totals.actualHours)} />
+        <SummaryMetric label="Cost" value={formatCurrency(summary.totals.actualCost)} />
+        <SummaryMetric label="Tickets" value={String(summary.totals.tickets)} />
+        <SummaryMetric label="Worklogs" value={String(summary.totals.worklogs)} />
+        <SummaryMetric label="Gap Tickets" value={String(summary.totals.gapTickets)} tone={summary.totals.gapTickets ? "warn" : "default"} />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <BillingSummaryTable rows={summary.programAreas} title="Program Areas" />
+        <BillingSummaryTable rows={summary.products} title="Products" />
+      </div>
+      <BillingSummaryTable rows={summary.roadmapItems} title="Roadmap Items" />
+    </section>
+  );
+}
+
+function SummaryMetric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warn" }) {
+  return (
+    <div className="rounded-md bg-secondary px-3 py-2">
+      <div className="text-xs font-semibold uppercase text-muted-foreground">{label}</div>
+      <div className={`numeric-cell text-lg font-semibold ${tone === "warn" ? "text-warning" : "text-primary"}`}>{value}</div>
+    </div>
+  );
+}
+
+function BillingSummaryTable({ rows, title }: { rows: BillingSummaryRow[]; title: string }) {
+  return (
+    <section className="overflow-hidden rounded-lg border">
+      <div className="border-b bg-secondary/50 px-3 py-2 text-sm font-semibold">{title}</div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Program Area</TableHead>
+              <TableHead className="text-right">Tickets</TableHead>
+              <TableHead className="text-right">Hours</TableHead>
+              <TableHead className="text-right">Cost</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.length ? (
+              rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-medium">{row.label}</TableCell>
+                  <TableCell>{row.product}</TableCell>
+                  <TableCell>{row.programArea}</TableCell>
+                  <TableCell className="numeric-cell text-right">{row.tickets}</TableCell>
+                  <TableCell className="numeric-cell text-right font-semibold">{formatHours(row.actualHours)}</TableCell>
+                  <TableCell className="numeric-cell text-right font-semibold text-primary">{formatCurrency(row.actualCost)}</TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell className="py-5 text-sm text-muted-foreground" colSpan={6}>
+                  No billing actuals match the selected filters.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
 function MappingTable({ title, unmapped, badgeLabel = "unmapped", children }: { title: string; unmapped: number; badgeLabel?: string; children: ReactNode }) {
   return (
     <section className="space-y-3">
@@ -532,6 +825,219 @@ function expandRoadmapGapTickets(rows: RoadmapActualRow[]) {
       row,
     })),
   );
+}
+
+function filterRoadmapActualRows(rows: RoadmapActualRow[], filters: RoadmapFilterState) {
+  return rows.filter((row) => {
+    if (filters.productId && row.product_id !== Number(filters.productId)) return false;
+    if (filters.teamMemberId && row.team_member_id !== Number(filters.teamMemberId)) return false;
+    if (filters.bucketId && row.bucket_id !== Number(filters.bucketId)) return false;
+    if (filters.mappingStatus && row.mapping_status !== filters.mappingStatus) return false;
+    if (filters.programArea === UNASSIGNED_PROGRAM_AREA && row.program_area) return false;
+    if (filters.programArea && filters.programArea !== UNASSIGNED_PROGRAM_AREA && row.program_area !== filters.programArea) return false;
+    return true;
+  });
+}
+
+function programAreaOptionsFrom(rows: RoadmapActualRow[], items: RoadmapItem[]) {
+  const values = new Set<string>();
+  rows.forEach((row) => {
+    if (row.program_area) values.add(row.program_area);
+  });
+  items.forEach((item) => {
+    if (item.program_area) values.add(item.program_area);
+  });
+  return Array.from(values).sort((left, right) => left.localeCompare(right));
+}
+
+function fiscalMonthOptions(fiscalYear: number) {
+  return FISCAL_MONTH_LABELS.map((month, index) => {
+    const sequence = index + 1;
+    const calendarYear = sequence <= 6 ? fiscalYear - 1 : fiscalYear;
+    return { sequence, label: `${month} ${calendarYear}` };
+  });
+}
+
+function buildRoadmapBillingSummary(rows: RoadmapActualRow[]): RoadmapBillingSummary {
+  const programAreas = new Map<string, BillingSummaryAccumulator>();
+  const products = new Map<string, BillingSummaryAccumulator>();
+  const roadmapItems = new Map<string, BillingSummaryAccumulator>();
+  const totals = newAccumulator("totals", "Totals");
+
+  rows.forEach((row) => {
+    addRowToAccumulator(totals, row);
+
+    const programAreaKey = row.program_area || UNASSIGNED_PROGRAM_AREA;
+    addRowToAccumulator(ensureAccumulator(programAreas, programAreaKey, row.program_area || "Unassigned"), row);
+
+    const productKey = String(row.product_id);
+    addRowToAccumulator(ensureAccumulator(products, productKey, row.product), row);
+
+    const roadmapItemKey = row.roadmap_item_id ? String(row.roadmap_item_id) : row.mapping_status;
+    const roadmapItemLabel =
+      row.mapping_status === "mapped"
+        ? `${row.roadmap_item_key ?? "Roadmap Item"} - ${row.roadmap_item_title ?? "Untitled"}`
+        : row.mapping_status === "ambiguous"
+          ? "Ambiguous Roadmap Mapping"
+          : "Unmapped Roadmap Item";
+    addRowToAccumulator(ensureAccumulator(roadmapItems, roadmapItemKey, roadmapItemLabel), row);
+  });
+
+  return {
+    totals: {
+      actualHours: totals.actualHours,
+      actualCost: totals.actualCost,
+      tickets: totals.tickets.size,
+      worklogs: totals.worklogs,
+      gapTickets: totals.gapTickets.size,
+    },
+    programAreas: finalizeSummaryRows(programAreas, "program"),
+    products: finalizeSummaryRows(products, "product"),
+    roadmapItems: finalizeSummaryRows(roadmapItems, "roadmap"),
+  };
+}
+
+type BillingSummaryAccumulator = {
+  id: string;
+  label: string;
+  programAreas: Set<string>;
+  products: Set<string>;
+  roadmapItems: Set<string>;
+  teamMembers: Set<string>;
+  tickets: Set<string>;
+  gapTickets: Set<string>;
+  worklogs: number;
+  actualHours: number;
+  actualCost: number;
+};
+
+function newAccumulator(id: string, label: string): BillingSummaryAccumulator {
+  return {
+    id,
+    label,
+    programAreas: new Set(),
+    products: new Set(),
+    roadmapItems: new Set(),
+    teamMembers: new Set(),
+    tickets: new Set(),
+    gapTickets: new Set(),
+    worklogs: 0,
+    actualHours: 0,
+    actualCost: 0,
+  };
+}
+
+function ensureAccumulator(map: Map<string, BillingSummaryAccumulator>, id: string, label: string) {
+  const existing = map.get(id);
+  if (existing) return existing;
+  const created = newAccumulator(id, label);
+  map.set(id, created);
+  return created;
+}
+
+function addRowToAccumulator(accumulator: BillingSummaryAccumulator, row: RoadmapActualRow) {
+  accumulator.programAreas.add(row.program_area || "Unassigned");
+  accumulator.products.add(row.product);
+  accumulator.roadmapItems.add(row.roadmap_item_key || row.mapping_status);
+  accumulator.teamMembers.add(row.team_member);
+  row.ticket_keys.forEach((ticketKey) => {
+    accumulator.tickets.add(ticketKey);
+    if (row.mapping_status !== "mapped") accumulator.gapTickets.add(ticketKey);
+  });
+  accumulator.worklogs += row.worklog_count;
+  accumulator.actualHours += row.actual_hours;
+  accumulator.actualCost += row.actual_cost;
+}
+
+function finalizeSummaryRows(map: Map<string, BillingSummaryAccumulator>, mode: "program" | "product" | "roadmap") {
+  return Array.from(map.values())
+    .map((row) => ({
+      id: row.id,
+      label: row.label,
+      programArea: mode === "program" ? row.label : displaySet(row.programAreas, "program areas"),
+      product: mode === "product" ? row.label : displaySet(row.products, "products"),
+      roadmapItems: row.roadmapItems.size,
+      products: row.products.size,
+      teamMembers: row.teamMembers.size,
+      tickets: row.tickets.size,
+      worklogs: row.worklogs,
+      actualHours: row.actualHours,
+      actualCost: row.actualCost,
+      gapTickets: row.gapTickets.size,
+    }))
+    .sort((left, right) => right.actualCost - left.actualCost || left.label.localeCompare(right.label));
+}
+
+function displaySet(values: Set<string>, noun: string) {
+  if (values.size === 0) return "";
+  if (values.size === 1) return Array.from(values)[0];
+  return `${values.size} ${noun}`;
+}
+
+function roadmapBillingSummaryCsvRows(summary: RoadmapBillingSummary) {
+  const rows: Array<Array<string | number>> = [
+    ["section", "name", "product", "program_area", "roadmap_items", "products", "team_members", "tickets", "worklogs", "gap_tickets", "actual_hours", "actual_cost"],
+  ];
+  addSummaryCsvRows(rows, "program_area", summary.programAreas);
+  addSummaryCsvRows(rows, "product", summary.products);
+  addSummaryCsvRows(rows, "roadmap_item", summary.roadmapItems);
+  return rows;
+}
+
+function addSummaryCsvRows(rows: Array<Array<string | number>>, section: string, summaryRows: BillingSummaryRow[]) {
+  summaryRows.forEach((row) => {
+    rows.push([
+      section,
+      row.label,
+      row.product,
+      row.programArea,
+      row.roadmapItems,
+      row.products,
+      row.teamMembers,
+      row.tickets,
+      row.worklogs,
+      row.gapTickets,
+      roundCsvNumber(row.actualHours),
+      roundCsvNumber(row.actualCost),
+    ]);
+  });
+}
+
+function roadmapGapCsvRows(gaps: ReturnType<typeof expandRoadmapGapTickets>) {
+  return [
+    ["ticket_key", "mapping_status", "product", "team_member", "bucket", "program_area", "group_ticket_count", "group_hours", "group_cost"],
+    ...gaps.map((gap) => [
+      gap.ticketKey,
+      gap.row.mapping_status,
+      gap.row.product,
+      gap.row.team_member,
+      gap.row.bucket,
+      gap.row.program_area ?? "Unassigned",
+      gap.row.ticket_count,
+      roundCsvNumber(gap.row.actual_hours),
+      roundCsvNumber(gap.row.actual_cost),
+    ]),
+  ];
+}
+
+function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
+  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function csvCell(value: string | number) {
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function roundCsvNumber(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
 function formatDate(value: string) {
