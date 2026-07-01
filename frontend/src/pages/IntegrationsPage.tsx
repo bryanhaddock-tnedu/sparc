@@ -80,6 +80,27 @@ type RoadmapForecastComparisonRow = {
   status: "on_track" | "near_forecast" | "over_forecast" | "no_forecast" | "mapping_gaps";
 };
 
+type RoadmapItemMappingSummary = {
+  total: number;
+  mapped: number;
+  needsMapping: number;
+  needsProduct: number;
+  needsBucket: number;
+  linkedTickets: number;
+  unmappedItems: RoadmapItem[];
+  mappedItems: RoadmapItem[];
+  coverageRows: RoadmapItemCoverageRow[];
+};
+
+type RoadmapItemCoverageRow = {
+  id: string;
+  product: string;
+  bucket: string;
+  programAreas: string;
+  roadmapItems: number;
+  linkedTickets: number;
+};
+
 const EMPTY_ROADMAP_FILTERS: RoadmapFilterState = {
   productId: "",
   teamMemberId: "",
@@ -260,6 +281,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
 
   const catalogLastCheckedAt = useMemo(() => latestCatalogCheckedAt(jiraCatalog), [jiraCatalog]);
   const sortedRoadmapItems = useMemo(() => sortRoadmapItems(roadmapItems), [roadmapItems]);
+  const roadmapItemMappingSummary = useMemo(() => buildRoadmapItemMappingSummary(roadmapItems), [roadmapItems]);
   const programAreaOptions = useMemo(() => programAreaOptionsFrom(roadmapActualRows, roadmapItems), [roadmapActualRows, roadmapItems]);
   const visibleRoadmapActualRows = useMemo(() => filterRoadmapActualRows(roadmapActualRows, roadmapFilters), [roadmapActualRows, roadmapFilters]);
   const visibleRoadmapGapRows = useMemo(() => filterRoadmapActualRows(roadmapGaps, roadmapFilters), [roadmapGaps, roadmapFilters]);
@@ -276,7 +298,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
 
   const unmappedUserCount = userMappings.filter((mapping) => mapping.team_member_id === null).length;
   const unmappedProductCount = productMappings.filter((mapping) => mapping.product_id === null).length;
-  const unmappedRoadmapCount = roadmapItems.filter((item) => item.product_id === null || item.bucket_id === null).length;
+  const unmappedRoadmapCount = roadmapItemMappingSummary.needsMapping;
 
   return (
     <div className="space-y-5">
@@ -421,89 +443,12 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         </Table>
       </MappingTable>
 
-      <MappingTable title="Roadmap Items" unmapped={unmappedRoadmapCount}>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Roadmap Item</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Tickets</TableHead>
-              <TableHead>Product</TableHead>
-              <TableHead>Bucket</TableHead>
-              <TableHead>Program Area</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedRoadmapItems.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell>
-                  <div className="font-medium text-primary">
-                    {item.source_url ? (
-                      <a href={item.source_url} target="_blank" rel="noreferrer">
-                        {item.jira_issue_key}
-                      </a>
-                    ) : (
-                      item.jira_issue_key
-                    )}
-                  </div>
-                  <div className="max-w-[28rem] truncate text-sm text-foreground" title={item.title}>
-                    {item.title}
-                  </div>
-                  {item.program_area ? <div className="text-xs text-muted-foreground">{item.program_area}</div> : null}
-                </TableCell>
-                <TableCell>{item.status ?? ""}</TableCell>
-                <TableCell className="numeric-cell">{item.linked_issue_count}</TableCell>
-                <TableCell>
-                  <select
-                    className="h-9 w-full min-w-52 rounded-md border border-input bg-background px-2 text-sm"
-                    value={item.product_id ?? ""}
-                    onChange={(event) =>
-                      void updateRoadmapItemMapping(item, { product_id: event.target.value ? Number(event.target.value) : null })
-                    }
-                  >
-                    <option value="">Unmapped</option>
-                    {products.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.name}
-                      </option>
-                    ))}
-                  </select>
-                </TableCell>
-                <TableCell>
-                  <select
-                    className="h-9 w-full min-w-40 rounded-md border border-input bg-background px-2 text-sm"
-                    value={item.bucket_id ?? ""}
-                    onChange={(event) =>
-                      void updateRoadmapItemMapping(item, { bucket_id: event.target.value ? Number(event.target.value) : null })
-                    }
-                  >
-                    <option value="">Unmapped</option>
-                    {buckets.map((bucket) => (
-                      <option key={bucket.id} value={bucket.id}>
-                        {bucket.name}
-                      </option>
-                    ))}
-                  </select>
-                </TableCell>
-                <TableCell>
-                  <input
-                    className="h-9 w-full min-w-44 rounded-md border border-input bg-background px-2 text-sm"
-                    defaultValue={item.program_area ?? ""}
-                    key={`${item.id}-${item.program_area ?? ""}`}
-                    onBlur={(event) => {
-                      const nextProgramArea = event.currentTarget.value.trim() || null;
-                      if (nextProgramArea !== (item.program_area ?? null)) {
-                        void updateRoadmapItemMapping(item, { program_area: nextProgramArea });
-                      }
-                    }}
-                    placeholder="Program area"
-                  />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </MappingTable>
+      <RoadmapItemMappingWorkbench
+        buckets={buckets}
+        products={products}
+        summary={roadmapItemMappingSummary}
+        onChange={updateRoadmapItemMapping}
+      />
 
       <MappingTable title="Roadmap Actual Gaps" unmapped={roadmapGapTickets.length} badgeLabel="gaps">
         <Table>
@@ -951,6 +896,235 @@ function RoadmapForecastStatusBadge({ status }: { status: RoadmapForecastCompari
   return <Badge className={display.className}>{display.label}</Badge>;
 }
 
+function RoadmapItemMappingWorkbench({
+  buckets,
+  products,
+  summary,
+  onChange,
+}: {
+  buckets: Bucket[];
+  products: Product[];
+  summary: RoadmapItemMappingSummary;
+  onChange: (
+    item: RoadmapItem,
+    updates: Partial<Pick<RoadmapItem, "product_id" | "bucket_id" | "program_area">>,
+  ) => void;
+}) {
+  return (
+    <section className="space-y-3 rounded-lg border bg-card p-4">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+        <div>
+          <h2 className="text-lg font-semibold">Roadmap Item Mapping</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Map unmapped Roadmap Items to Product and Bucket, then review mapped coverage by Product/Bucket for billing attribution.
+          </p>
+        </div>
+        <Badge className={summary.needsMapping ? "border-destructive/40 text-destructive" : "border-primary/40 text-primary"}>
+          {summary.needsMapping} need mapping
+        </Badge>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <SummaryMetric label="Roadmap Items" value={String(summary.total)} />
+        <SummaryMetric label="Mapped" value={String(summary.mapped)} />
+        <SummaryMetric label="Need Mapping" value={String(summary.needsMapping)} tone={summary.needsMapping ? "warn" : "default"} />
+        <SummaryMetric label="Need Product" value={String(summary.needsProduct)} tone={summary.needsProduct ? "warn" : "default"} />
+        <SummaryMetric label="Need Bucket" value={String(summary.needsBucket)} tone={summary.needsBucket ? "warn" : "default"} />
+        <SummaryMetric label="Linked Tickets" value={String(summary.linkedTickets)} />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <RoadmapItemMappingTable
+          buckets={buckets}
+          emptyMessage="All Roadmap Items have Product and Bucket mappings."
+          items={summary.unmappedItems}
+          products={products}
+          title="Needs Mapping"
+          onChange={onChange}
+        />
+        <RoadmapItemCoverageTable rows={summary.coverageRows} />
+      </div>
+      <RoadmapItemMappingTable
+        buckets={buckets}
+        emptyMessage="No mapped Roadmap Items yet."
+        items={summary.mappedItems}
+        products={products}
+        title="Mapped Roadmap Items"
+        onChange={onChange}
+      />
+    </section>
+  );
+}
+
+function RoadmapItemMappingTable({
+  buckets,
+  emptyMessage,
+  items,
+  products,
+  title,
+  onChange,
+}: {
+  buckets: Bucket[];
+  emptyMessage: string;
+  items: RoadmapItem[];
+  products: Product[];
+  title: string;
+  onChange: (
+    item: RoadmapItem,
+    updates: Partial<Pick<RoadmapItem, "product_id" | "bucket_id" | "program_area">>,
+  ) => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border">
+      <div className="border-b bg-secondary/50 px-3 py-2 text-sm font-semibold">{title}</div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Roadmap Item</TableHead>
+              <TableHead>Mapping</TableHead>
+              <TableHead className="text-right">Tickets</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Bucket</TableHead>
+              <TableHead>Program Area</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.length ? (
+              items.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell>
+                    <RoadmapItemIdentity item={item} />
+                  </TableCell>
+                  <TableCell>
+                    <RoadmapItemMappingBadge item={item} />
+                  </TableCell>
+                  <TableCell className="numeric-cell text-right">{item.linked_issue_count}</TableCell>
+                  <TableCell>
+                    <select
+                      className="h-9 w-full min-w-52 rounded-md border border-input bg-background px-2 text-sm"
+                      value={item.product_id ?? ""}
+                      onChange={(event) => onChange(item, { product_id: event.target.value ? Number(event.target.value) : null })}
+                    >
+                      <option value="">Unmapped</option>
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name}
+                        </option>
+                      ))}
+                    </select>
+                  </TableCell>
+                  <TableCell>
+                    <select
+                      className="h-9 w-full min-w-40 rounded-md border border-input bg-background px-2 text-sm"
+                      value={item.bucket_id ?? ""}
+                      onChange={(event) => onChange(item, { bucket_id: event.target.value ? Number(event.target.value) : null })}
+                    >
+                      <option value="">Unmapped</option>
+                      {buckets.map((bucket) => (
+                        <option key={bucket.id} value={bucket.id}>
+                          {bucket.name}
+                        </option>
+                      ))}
+                    </select>
+                  </TableCell>
+                  <TableCell>
+                    <input
+                      className="h-9 w-full min-w-44 rounded-md border border-input bg-background px-2 text-sm"
+                      defaultValue={item.program_area ?? ""}
+                      key={`${item.id}-${item.program_area ?? ""}`}
+                      onBlur={(event) => {
+                        const nextProgramArea = event.currentTarget.value.trim() || null;
+                        if (nextProgramArea !== (item.program_area ?? null)) {
+                          onChange(item, { program_area: nextProgramArea });
+                        }
+                      }}
+                      placeholder="Program area"
+                    />
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell className="py-5 text-sm text-muted-foreground" colSpan={6}>
+                  {emptyMessage}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
+function RoadmapItemCoverageTable({ rows }: { rows: RoadmapItemCoverageRow[] }) {
+  return (
+    <section className="overflow-hidden rounded-lg border">
+      <div className="border-b bg-secondary/50 px-3 py-2 text-sm font-semibold">Mapped Coverage</div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Product</TableHead>
+              <TableHead>Bucket</TableHead>
+              <TableHead>Program Areas</TableHead>
+              <TableHead className="text-right">Items</TableHead>
+              <TableHead className="text-right">Tickets</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.length ? (
+              rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-medium">{row.product}</TableCell>
+                  <TableCell>{row.bucket}</TableCell>
+                  <TableCell>{row.programAreas}</TableCell>
+                  <TableCell className="numeric-cell text-right">{row.roadmapItems}</TableCell>
+                  <TableCell className="numeric-cell text-right">{row.linkedTickets}</TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell className="py-5 text-sm text-muted-foreground" colSpan={5}>
+                  No mapped coverage yet.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
+function RoadmapItemIdentity({ item }: { item: RoadmapItem }) {
+  return (
+    <div>
+      <div className="font-medium text-primary">
+        {item.source_url ? (
+          <a href={item.source_url} target="_blank" rel="noreferrer">
+            {item.jira_issue_key}
+          </a>
+        ) : (
+          item.jira_issue_key
+        )}
+      </div>
+      <div className="max-w-[28rem] truncate text-sm text-foreground" title={item.title}>
+        {item.title}
+      </div>
+      <div className="text-xs text-muted-foreground">{item.status ?? "No status"}</div>
+    </div>
+  );
+}
+
+function RoadmapItemMappingBadge({ item }: { item: RoadmapItem }) {
+  const missingProduct = item.product_id === null;
+  const missingBucket = item.bucket_id === null;
+  if (!missingProduct && !missingBucket) return <Badge className="border-primary/40 text-primary">mapped</Badge>;
+  if (missingProduct && missingBucket) return <Badge className="border-destructive/40 text-destructive">needs product + bucket</Badge>;
+  if (missingProduct) return <Badge className="border-warning/50 text-warning">needs product</Badge>;
+  return <Badge className="border-warning/50 text-warning">needs bucket</Badge>;
+}
+
 function MappingTable({ title, unmapped, badgeLabel = "unmapped", children }: { title: string; unmapped: number; badgeLabel?: string; children: ReactNode }) {
   return (
     <section className="space-y-3">
@@ -975,6 +1149,66 @@ function sortRoadmapItems(items: RoadmapItem[]) {
     return left.jira_issue_key.localeCompare(right.jira_issue_key);
   });
 }
+
+function buildRoadmapItemMappingSummary(items: RoadmapItem[]): RoadmapItemMappingSummary {
+  const sortedItems = sortRoadmapItems(items);
+  const unmappedItems = sortedItems.filter((item) => item.product_id === null || item.bucket_id === null);
+  const mappedItems = sortedItems.filter((item) => item.product_id !== null && item.bucket_id !== null);
+  return {
+    total: items.length,
+    mapped: mappedItems.length,
+    needsMapping: unmappedItems.length,
+    needsProduct: items.filter((item) => item.product_id === null).length,
+    needsBucket: items.filter((item) => item.bucket_id === null).length,
+    linkedTickets: items.reduce((total, item) => total + item.linked_issue_count, 0),
+    unmappedItems,
+    mappedItems,
+    coverageRows: buildRoadmapItemCoverageRows(mappedItems),
+  };
+}
+
+function buildRoadmapItemCoverageRows(items: RoadmapItem[]) {
+  const coverage = new Map<string, RoadmapItemCoverageAccumulator>();
+  items.forEach((item) => {
+    if (item.product_id === null || item.bucket_id === null) return;
+    const key = `${item.product_id}:${item.bucket_id}`;
+    const existing = coverage.get(key);
+    const row =
+      existing ??
+      ({
+        id: key,
+        product: item.product ?? "Unmapped product",
+        bucket: item.bucket ?? "Unmapped bucket",
+        programAreas: new Set<string>(),
+        roadmapItems: 0,
+        linkedTickets: 0,
+      } satisfies RoadmapItemCoverageAccumulator);
+    row.roadmapItems += 1;
+    row.linkedTickets += item.linked_issue_count;
+    row.programAreas.add(item.program_area || "Unassigned");
+    coverage.set(key, row);
+  });
+
+  return Array.from(coverage.values())
+    .map((row) => ({
+      id: row.id,
+      product: row.product,
+      bucket: row.bucket,
+      programAreas: displaySet(row.programAreas, "program areas"),
+      roadmapItems: row.roadmapItems,
+      linkedTickets: row.linkedTickets,
+    }))
+    .sort((left, right) => right.roadmapItems - left.roadmapItems || left.product.localeCompare(right.product));
+}
+
+type RoadmapItemCoverageAccumulator = {
+  id: string;
+  product: string;
+  bucket: string;
+  programAreas: Set<string>;
+  roadmapItems: number;
+  linkedTickets: number;
+};
 
 function expandRoadmapGapTickets(rows: RoadmapActualRow[]) {
   return rows.flatMap((row) =>
