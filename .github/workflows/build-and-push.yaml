@@ -27,19 +27,3 @@ jobs:
           tags: |
             ${{ secrets.REGISTRY_URL }}/sparc:${{ github.sha }}
             ${{ secrets.REGISTRY_URL }}/sparc:latest
-      - name: Report UAT Version
-        if: ${{ github.ref == 'refs/heads/develop' }}
-        continue-on-error: true
-        run: |
-          stage_url="https://sparc.uat.tnedu.gov"
-          response="$(curl -fsS "$stage_url/api/app-version" || true)"
-          version="$(RESPONSE="$response" python3 -c 'import json, os; print(json.loads(os.environ["RESPONSE"]).get("version", ""))' 2>/dev/null || true)"
-          {
-            echo "## UAT version snapshot"
-            echo "- Image pushed: \`$GITHUB_SHA\`"
-            echo "- UAT reported version: \`${version:-unavailable}\`"
-            echo "- UAT response: \`$response\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$version" != "$GITHUB_SHA" ]; then
-            echo "::warning::Image push succeeded, but UAT is currently reporting '${version:-unavailable}'. The rollout may be pending or handled by an external deployment process."
-          fi
