@@ -234,6 +234,8 @@ export interface RoadmapSyncResult {
   sync_run: SyncRun;
   roadmap_items: number;
   linked_issues: number;
+  removed_from_fiscal_year: number;
+  fiscal_year_label: string | null;
 }
 
 export interface ProductTeamMemberPayload {

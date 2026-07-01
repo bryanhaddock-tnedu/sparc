@@ -40,7 +40,12 @@ from app.services.jira_projects import (
 )
 from app.services import jira_projects
 from app.services.roadmap import (
+    UNSCOPED_ROADMAP_FISCAL_YEAR,
+    _has_fiscal_year_label,
+    _normalize_roadmap_issue,
     _replace_roadmap_issue_links,
+    _remove_stale_roadmap_items_from_fiscal_year,
+    _roadmap_fiscal_year_label,
     list_roadmap_items,
     map_roadmap_ticket,
     product_roadmap_items,
@@ -289,6 +294,78 @@ def test_roadmap_item_mapping_updates_product_and_bucket():
         assert cleared["program_area"] is None
 
 
+def test_roadmap_issue_normalization_uses_fiscal_year_label_and_agency_office():
+    issue = {
+        "id": "10001",
+        "key": "ROADMAP-1",
+        "fields": {
+            "summary": "Program billing feature",
+            "labels": ["FY27", "billing"],
+            "customfield_12345": {"value": "Academics"},
+            "status": {"name": "In Progress", "statusCategory": {"name": "In Progress"}},
+            "issuetype": {"name": "Idea"},
+            "issuelinks": [],
+        },
+    }
+
+    payload = _normalize_roadmap_issue("https://tndoe.atlassian.net", issue, ["customfield_12345"])
+
+    assert _roadmap_fiscal_year_label(2027) == "FY27"
+    assert _has_fiscal_year_label(payload.labels, 2027)
+    assert not _has_fiscal_year_label(payload.labels, 2026)
+    assert payload.issue_key == "ROADMAP-1"
+    assert payload.issue_type == "Idea"
+    assert payload.program_area == "Academics"
+
+
+def test_stale_roadmap_items_move_out_of_selected_fiscal_year():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        stale = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="Old roadmap idea",
+            issue_type="Idea",
+        )
+        current = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            jira_issue_id="10002",
+            jira_issue_key="ROADMAP-2",
+            title="Current roadmap idea",
+            issue_type="Idea",
+        )
+        other_project = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            jira_issue_id="10003",
+            jira_issue_key="OTHER-1",
+            title="Other project idea",
+            issue_type="Idea",
+        )
+        delivery_ticket = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            jira_issue_id="10004",
+            jira_issue_key="ROADMAP-3",
+            title="Delivery ticket",
+            issue_type="Story",
+        )
+        db.add_all([stale, current, other_project, delivery_ticket])
+        db.flush()
+
+        removed = _remove_stale_roadmap_items_from_fiscal_year(db, 2027, "ROADMAP", {"ROADMAP-2"})
+
+        assert removed == 1
+        assert stale.fiscal_year == UNSCOPED_ROADMAP_FISCAL_YEAR
+        assert current.fiscal_year == 2027
+        assert other_project.fiscal_year == 2027
+        assert delivery_ticket.fiscal_year == 2027
+
+
 def test_product_roadmap_items_show_mapped_items_without_actuals_and_exclude_delivery_tickets():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -400,6 +477,53 @@ def test_roadmap_actual_rows_ignore_links_to_delivery_tickets():
         assert rows[0]["mapping_status"] == "unmapped"
         assert rows[0]["roadmap_item_key"] is None
         assert rows[0]["actual_hours"] == 4
+
+
+def test_roadmap_actual_rows_ignore_links_to_other_fiscal_year_roadmap_items():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", slug="student-information")
+        member = TeamMember(name="Avery Johnson", slug="avery-johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "NET_NEW"))
+        month = get_fiscal_month(db, 2027, 1)
+        prior_year_item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2026,
+            product_id=product.id,
+            bucket_id=bucket.id,
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="FY26 roadmap idea",
+            issue_type="Idea",
+        )
+        db.add(prior_year_item)
+        db.flush()
+        db.add_all(
+            [
+                RoadmapItemIssueLink(roadmap_item_id=prior_year_item.id, jira_issue_key="SIS-1"),
+                ActualEntry(
+                    product_id=product.id,
+                    team_member_id=member.id,
+                    bucket_id=bucket.id,
+                    fiscal_month_id=month.id,
+                    hours=Decimal("4"),
+                    source="jira",
+                    source_ticket_key="SIS-1",
+                    source_worklog_id="1",
+                ),
+            ]
+        )
+        db.flush()
+
+        rows = roadmap_actual_rows(db, 2027, product_id=product.id)
+
+        assert len(rows) == 1
+        assert rows[0]["mapping_status"] == "unmapped"
+        assert rows[0]["roadmap_item_key"] is None
 
 
 def test_roadmap_actual_rows_can_filter_by_fiscal_month():

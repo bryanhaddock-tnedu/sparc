@@ -785,6 +785,8 @@ class RoadmapSyncResponse(BaseModel):
     sync_run: SyncRunResponse
     roadmap_items: int
     linked_issues: int
+    removed_from_fiscal_year: int = 0
+    fiscal_year_label: str | None = None
 
 
 class JiraRovoSyncResponse(BaseModel):

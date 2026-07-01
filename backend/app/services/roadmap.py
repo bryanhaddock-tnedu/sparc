@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.config import get_settings
 from app.models import ActualEntry, Bucket, FiscalMonth, Product, ProductJiraSpace, RoadmapItem, RoadmapItemIssueLink, SyncRun
 from app.services.costs import calculate_cost, round_hours
-from app.services.jira_rovo import _require_jira_settings, _search_jira_issues, serialize_sync_run
+from app.services.jira_projects import _raise_for_jira_response
+from app.services.jira_rovo import _jira_field_text, _require_jira_settings, _search_jira_issues, serialize_sync_run
 from app.services.slugs import product_url_slug, team_member_url_slug
 from app.models.entities import utcnow
 
@@ -19,6 +20,8 @@ ROADMAP_LINK_SOURCE = "jira_issue_link"
 MANUAL_ROADMAP_LINK_SOURCE = "manual"
 DEFAULT_ROADMAP_PROJECT_KEY = "ROADMAP"
 ROADMAP_ITEM_ISSUE_TYPES = {"idea"}
+AGENCY_OFFICE_FIELD_NAMES = {"agency office"}
+UNSCOPED_ROADMAP_FISCAL_YEAR = 0
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,8 @@ class RoadmapIssuePayload:
     status: str | None
     status_category: str | None
     issue_type: str | None
+    labels: tuple[str, ...]
+    program_area: str | None
     source_url: str | None
     links: tuple[RoadmapIssueLinkPayload, ...]
 
@@ -175,14 +180,16 @@ def run_live_roadmap_sync(db: Session, fiscal_year: int, roadmap_project_key: st
     linked = 0
 
     try:
-        for payload in fetch_live_roadmap_items(project_key):
+        payloads = fetch_live_roadmap_items(project_key, fiscal_year)
+        for payload in payloads:
             item = _upsert_roadmap_item(db, payload, fiscal_year)
             imported += 1
             linked += _replace_roadmap_issue_links(db, item, payload.links)
+        removed = _remove_stale_roadmap_items_from_fiscal_year(db, fiscal_year, project_key, {payload.issue_key for payload in payloads})
 
         sync_run.status = "completed"
         sync_run.imported_count = imported
-        sync_run.skipped_count = 0
+        sync_run.skipped_count = removed
         sync_run.completed_at = utcnow()
     except Exception as exc:
         sync_run.status = "failed"
@@ -198,22 +205,27 @@ def run_live_roadmap_sync(db: Session, fiscal_year: int, roadmap_project_key: st
         "sync_run": serialize_sync_run(sync_run),
         "roadmap_items": imported,
         "linked_issues": linked,
+        "removed_from_fiscal_year": sync_run.skipped_count,
+        "fiscal_year_label": _roadmap_fiscal_year_label(fiscal_year),
     }
 
 
-def fetch_live_roadmap_items(roadmap_project_key: str) -> list[RoadmapIssuePayload]:
+def fetch_live_roadmap_items(roadmap_project_key: str, fiscal_year: int) -> list[RoadmapIssuePayload]:
     settings = get_settings()
     _require_jira_settings(settings.jira_site_url, settings.jira_api_email, settings.jira_api_token)
     site_url = settings.jira_site_url.rstrip("/")
     # Jira Product Discovery roadmap entries are Idea issues. Delivery tickets are linked underneath them.
-    jql = f'project = "{roadmap_project_key}" AND issuetype in ("Idea") ORDER BY updated ASC'
-    fields = ["summary", "status", "issuetype", "issuelinks"]
+    fiscal_year_label = _roadmap_fiscal_year_label(fiscal_year)
+    jql = f'project = "{roadmap_project_key}" AND issuetype in ("Idea") AND labels = "{fiscal_year_label}" ORDER BY updated ASC'
     with httpx.Client(timeout=45, auth=(settings.jira_api_email, settings.jira_api_token)) as client:
+        agency_office_field_ids = _fetch_agency_office_field_ids(client, site_url)
+        fields = ["summary", "status", "issuetype", "labels", "issuelinks", *agency_office_field_ids]
         issues = _search_jira_issues(client, site_url, jql, fields)
         payloads: list[RoadmapIssuePayload] = []
         for issue in issues:
-            if _is_roadmap_item_issue_type(_issue_type_name(issue)):
-                payloads.append(_normalize_roadmap_issue(site_url, issue))
+            labels = _labels_from_issue(issue)
+            if _is_roadmap_item_issue_type(_issue_type_name(issue)) and _has_fiscal_year_label(labels, fiscal_year):
+                payloads.append(_normalize_roadmap_issue(site_url, issue, agency_office_field_ids))
         return payloads
 
 
@@ -234,7 +246,7 @@ def roadmap_actual_rows(
         bucket_id=bucket_id,
         month_sequence=month_sequence,
     )
-    links_by_ticket = _roadmap_links_by_ticket(db, entries)
+    links_by_ticket = _roadmap_links_by_ticket(db, entries, fiscal_year)
     grouped: dict[tuple[int | None, int, int, int, str], dict[str, object]] = {}
 
     for entry in entries:
@@ -308,6 +320,8 @@ def _upsert_roadmap_item(db: Session, payload: RoadmapIssuePayload, fiscal_year:
     item.status = payload.status
     item.status_category = payload.status_category
     item.issue_type = payload.issue_type
+    if payload.program_area is not None:
+        item.program_area = payload.program_area
     item.source_url = payload.source_url
     item.source_payload_hash = _roadmap_payload_hash(payload)
     item.last_synced_at = utcnow()
@@ -316,6 +330,31 @@ def _upsert_roadmap_item(db: Session, payload: RoadmapIssuePayload, fiscal_year:
         item.product_id = inferred_product_id
     db.flush()
     return item
+
+
+def _remove_stale_roadmap_items_from_fiscal_year(
+    db: Session,
+    fiscal_year: int,
+    roadmap_project_key: str,
+    current_issue_keys: set[str],
+) -> int:
+    project_prefix = f"{roadmap_project_key.strip().upper()}-%"
+    items = db.scalars(
+        select(RoadmapItem).where(
+            RoadmapItem.source == ROADMAP_SOURCE,
+            RoadmapItem.fiscal_year == fiscal_year,
+            RoadmapItem.jira_issue_key.like(project_prefix),
+        )
+    ).all()
+    removed = 0
+    for item in items:
+        if item.jira_issue_key in current_issue_keys or not _is_roadmap_item_issue_type(item.issue_type):
+            continue
+        item.fiscal_year = UNSCOPED_ROADMAP_FISCAL_YEAR
+        item.last_synced_at = utcnow()
+        removed += 1
+    db.flush()
+    return removed
 
 
 def _replace_roadmap_issue_links(db: Session, item: RoadmapItem, links: tuple[RoadmapIssueLinkPayload, ...]) -> int:
@@ -380,7 +419,7 @@ def _actual_entries(
     return db.scalars(statement).all()
 
 
-def _roadmap_links_by_ticket(db: Session, entries: list[ActualEntry]) -> dict[str, list[RoadmapItemIssueLink]]:
+def _roadmap_links_by_ticket(db: Session, entries: list[ActualEntry], fiscal_year: int) -> dict[str, list[RoadmapItemIssueLink]]:
     ticket_keys = sorted(
         {
             ticket_key
@@ -398,6 +437,8 @@ def _roadmap_links_by_ticket(db: Session, entries: list[ActualEntry]) -> dict[st
     ).all()
     by_ticket: dict[str, list[RoadmapItemIssueLink]] = defaultdict(list)
     for link in links:
+        if link.roadmap_item.fiscal_year != fiscal_year:
+            continue
         if not _is_roadmap_item_issue_type(link.roadmap_item.issue_type):
             continue
         by_ticket[_normalize_issue_key(link.jira_issue_key)].append(link)
@@ -421,13 +462,14 @@ def _infer_product_id_from_links(db: Session, links: tuple[RoadmapIssueLinkPaylo
     return next(iter(product_ids)) if len(product_ids) == 1 else None
 
 
-def _normalize_roadmap_issue(site_url: str, issue: dict[str, object]) -> RoadmapIssuePayload:
+def _normalize_roadmap_issue(site_url: str, issue: dict[str, object], agency_office_field_ids: list[str]) -> RoadmapIssuePayload:
     fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
     status = fields.get("status") if isinstance(fields.get("status"), dict) else {}
     status_category = status.get("statusCategory") if isinstance(status.get("statusCategory"), dict) else {}
     issue_type = fields.get("issuetype") if isinstance(fields.get("issuetype"), dict) else {}
     issue_key = _normalize_issue_key(str(issue.get("key") or ""))
     links = tuple(_extract_issue_links(fields, issue_key))
+    labels = _labels_from_issue(issue)
     return RoadmapIssuePayload(
         issue_id=str(issue.get("id") or issue_key),
         issue_key=issue_key,
@@ -435,6 +477,8 @@ def _normalize_roadmap_issue(site_url: str, issue: dict[str, object]) -> Roadmap
         status=str(status.get("name") or "") or None,
         status_category=str(status_category.get("name") or "") or None,
         issue_type=str(issue_type.get("name") or "") or None,
+        labels=labels,
+        program_area=_program_area_from_issue_fields(fields, agency_office_field_ids),
         source_url=f"{site_url}/browse/{issue_key}" if issue_key else None,
         links=links,
     )
@@ -482,6 +526,46 @@ def _extract_issue_links(fields: dict[str, object], roadmap_issue_key: str) -> l
     return links
 
 
+def _fetch_agency_office_field_ids(client: httpx.Client, site_url: str) -> list[str]:
+    response = client.get(f"{site_url.rstrip('/')}/rest/api/3/field", headers={"Accept": "application/json"})
+    _raise_for_jira_response(response)
+    fields = response.json()
+    if not isinstance(fields, list):
+        return []
+    return [
+        str(field["id"])
+        for field in fields
+        if isinstance(field, dict)
+        and str(field.get("name") or "").strip().casefold() in AGENCY_OFFICE_FIELD_NAMES
+        and field.get("id")
+    ]
+
+
+def _program_area_from_issue_fields(fields: dict[str, object], agency_office_field_ids: list[str]) -> str | None:
+    for field_id in agency_office_field_ids:
+        value = _jira_field_text(fields.get(field_id))
+        if value:
+            return value
+    return None
+
+
+def _labels_from_issue(issue: dict[str, object]) -> tuple[str, ...]:
+    fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
+    labels = fields.get("labels") if isinstance(fields, dict) else []
+    if not isinstance(labels, list):
+        return tuple()
+    return tuple(str(label).strip() for label in labels if str(label).strip())
+
+
+def _has_fiscal_year_label(labels: tuple[str, ...], fiscal_year: int) -> bool:
+    expected = _roadmap_fiscal_year_label(fiscal_year)
+    return any(label.strip().casefold() == expected.casefold() for label in labels)
+
+
+def _roadmap_fiscal_year_label(fiscal_year: int) -> str:
+    return f"FY{fiscal_year % 100:02d}"
+
+
 def _roadmap_payload_hash(payload: RoadmapIssuePayload) -> str:
     raw = "|".join(
         [
@@ -489,6 +573,8 @@ def _roadmap_payload_hash(payload: RoadmapIssuePayload) -> str:
             payload.issue_key,
             payload.title,
             payload.status or "",
+            ",".join(sorted(payload.labels)),
+            payload.program_area or "",
             ",".join(sorted(link.issue_key for link in payload.links)),
         ]
     )

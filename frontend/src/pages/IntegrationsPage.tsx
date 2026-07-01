@@ -208,7 +208,12 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     try {
       const result = await api.syncRoadmap(fiscalYear);
       await loadData();
-      setNotice(`Roadmap synced: ${result.roadmap_items} items and ${result.linked_issues} linked delivery tickets.`);
+      const removedCopy = result.removed_from_fiscal_year
+        ? ` ${result.removed_from_fiscal_year} stale items moved out of ${result.fiscal_year_label ?? fiscalYearLabel}.`
+        : "";
+      setNotice(
+        `Roadmap synced for ${result.fiscal_year_label ?? fiscalYearLabel}: ${result.roadmap_items} items and ${result.linked_issues} linked delivery tickets.${removedCopy}`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sync Jira roadmap");
     } finally {
