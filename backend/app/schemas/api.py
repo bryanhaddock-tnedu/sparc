@@ -795,5 +795,6 @@ class JiraRovoSyncResponse(BaseModel):
     sync_run: SyncRunResponse
     imported_worklogs: int
     skipped_unmapped_worklogs: int
+    deleted_worklogs: int = 0
     unmapped_users: list[JiraUserMappingResponse]
     unmapped_products: list[JiraProductMappingResponse]

@@ -699,6 +699,7 @@ export interface JiraRovoSyncResult {
   sync_run: SyncRun;
   imported_worklogs: number;
   skipped_unmapped_worklogs: number;
+  deleted_worklogs: number;
   unmapped_users: UnmappedUser[];
   unmapped_products: UnmappedProduct[];
 }

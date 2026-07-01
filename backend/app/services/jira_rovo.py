@@ -166,25 +166,25 @@ def run_live_jira_rovo_sync(db: Session, fiscal_year: int) -> dict[str, object]:
     db.flush()
     imported = 0
     skipped_unmapped = 0
+    deleted = 0
 
     try:
-        for worklog in fetch_live_jira_worklogs(db, fiscal_year):
+        worklogs = fetch_live_jira_worklogs(db, fiscal_year)
+        current_worklog_keys = {_worklog_identity(worklog) for worklog in worklogs}
+        for worklog in worklogs:
             fiscal_month = _ensure_month_for_worklog(db, fiscal_year_for_date(worklog.worked_on), worklog.worked_on)
             bucket = db.scalar(select(Bucket).where(Bucket.code == worklog.bucket_code))
             user_mapping = _ensure_user_mapping(db, worklog)
             product_mapping = _ensure_product_mapping(db, worklog)
+            existing = _existing_live_actual(db, worklog)
 
             if bucket is None or user_mapping.team_member_id is None or product_mapping.product_id is None:
+                if existing is not None:
+                    db.delete(existing)
+                    deleted += 1
                 skipped_unmapped += 1
                 continue
 
-            existing = db.scalar(
-                select(ActualEntry).where(
-                    ActualEntry.source == "jira",
-                    ActualEntry.source_issue_id == worklog.issue_id,
-                    ActualEntry.source_worklog_id == worklog.worklog_id,
-                )
-            )
             payload_hash = _payload_hash(worklog)
             if existing is None:
                 db.add(
@@ -221,6 +221,7 @@ def run_live_jira_rovo_sync(db: Session, fiscal_year: int) -> dict[str, object]:
                 existing.worked_on = worklog.worked_on
             imported += 1
 
+        deleted += _delete_stale_live_actuals(db, fiscal_year, current_worklog_keys)
         sync_run.status = "completed"
         sync_run.imported_count = imported
         sync_run.skipped_count = skipped_unmapped
@@ -239,6 +240,7 @@ def run_live_jira_rovo_sync(db: Session, fiscal_year: int) -> dict[str, object]:
         "sync_run": serialize_sync_run(sync_run),
         "imported_worklogs": imported,
         "skipped_unmapped_worklogs": skipped_unmapped,
+        "deleted_worklogs": deleted,
         "unmapped_users": list_unmapped_users(db),
         "unmapped_products": list_unmapped_products(db),
     }
@@ -269,6 +271,53 @@ def fetch_live_jira_worklogs(db: Session, fiscal_year: int) -> list[MockWorklog]
                 if normalized is not None:
                     worklogs.append(normalized)
     return worklogs
+
+
+def _existing_live_actual(db: Session, worklog: MockWorklog) -> ActualEntry | None:
+    return db.scalar(
+        select(ActualEntry).where(
+            ActualEntry.source == "jira",
+            ActualEntry.source_issue_id == worklog.issue_id,
+            ActualEntry.source_worklog_id == worklog.worklog_id,
+        )
+    )
+
+
+def _delete_stale_live_actuals(db: Session, fiscal_year: int, current_worklog_keys: set[tuple[str, str]]) -> int:
+    active_project_keys = {
+        key
+        for key in db.scalars(
+            select(ProductJiraSpace.jira_project_key).where(ProductJiraSpace.is_active.is_(True))
+        ).all()
+        if key
+    }
+    if not active_project_keys:
+        return 0
+
+    entries = db.scalars(
+        select(ActualEntry)
+        .join(ActualEntry.fiscal_month)
+        .where(
+            ActualEntry.source == "jira",
+            FiscalMonth.fiscal_year == fiscal_year,
+            ActualEntry.source_project_key.in_(active_project_keys),
+        )
+    ).all()
+    deleted = 0
+    for entry in entries:
+        if _actual_entry_identity(entry) in current_worklog_keys:
+            continue
+        db.delete(entry)
+        deleted += 1
+    return deleted
+
+
+def _worklog_identity(worklog: MockWorklog) -> tuple[str, str]:
+    return (str(worklog.issue_id or "").strip(), str(worklog.worklog_id or "").strip())
+
+
+def _actual_entry_identity(entry: ActualEntry) -> tuple[str, str]:
+    return (str(entry.source_issue_id or "").strip(), str(entry.source_worklog_id or "").strip())
 
 
 def list_unmapped_users(db: Session) -> list[dict[str, object]]:

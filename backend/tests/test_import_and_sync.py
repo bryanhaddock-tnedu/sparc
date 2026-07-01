@@ -156,6 +156,76 @@ def test_live_sync_uses_product_jira_space_mapping(monkeypatch):
         assert actual.team_member_id == member.id
 
 
+def test_live_sync_deletes_jira_actuals_for_removed_worklogs(monkeypatch):
+    with session() as db:
+        _seed_buckets(db)
+        product = Product(name="Live Product")
+        member = TeamMember(name="Live User", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        db.add(
+            ProductJiraSpace(
+                product_id=product.id,
+                jira_project_key="LIVE",
+                jira_project_name="Live Jira Project",
+                is_active=True,
+                validation_status="valid",
+            )
+        )
+        db.add(
+            JiraUserMapping(
+                jira_account_id="acct-live",
+                jira_display_name="Live User",
+                team_member_id=member.id,
+            )
+        )
+        db.flush()
+        current_worklogs = [
+            MockWorklog(
+                "live-wl-1",
+                "900001",
+                "LIVE-1",
+                "First worklog",
+                "Done",
+                "LIVE",
+                "Live Jira Project",
+                "acct-live",
+                "Live User",
+                None,
+                "MAINTENANCE",
+                date(2026, 5, 6),
+                Decimal("3.50"),
+            ),
+            MockWorklog(
+                "live-wl-2",
+                "900002",
+                "LIVE-2",
+                "Deleted later",
+                "Done",
+                "LIVE",
+                "Live Jira Project",
+                "acct-live",
+                "Live User",
+                None,
+                "MAINTENANCE",
+                date(2026, 5, 7),
+                Decimal("2.00"),
+            ),
+        ]
+
+        monkeypatch.setattr("app.services.jira_rovo.fetch_live_jira_worklogs", lambda _db, _fiscal_year: current_worklogs)
+        first = run_live_jira_rovo_sync(db, 2026)
+        current_worklogs = current_worklogs[:1]
+        second = run_live_jira_rovo_sync(db, 2026)
+        remaining = db.scalars(select(ActualEntry).where(ActualEntry.source == "jira").order_by(ActualEntry.source_worklog_id)).all()
+
+        assert first["imported_worklogs"] == 2
+        assert first["deleted_worklogs"] == 0
+        assert second["imported_worklogs"] == 1
+        assert second["deleted_worklogs"] == 1
+        assert [entry.source_worklog_id for entry in remaining] == ["live-wl-1"]
+
+
 def _add_mock_sync_mappings(db: Session) -> tuple[dict[str, Product], dict[str, TeamMember]]:
     products = {
         "Student Information": Product(name="Student Information", jira_space_key="SIS"),

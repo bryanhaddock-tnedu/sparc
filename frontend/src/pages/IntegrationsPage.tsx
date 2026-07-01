@@ -180,8 +180,11 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     setError(null);
     setNotice(null);
     try {
-      await api.syncLiveJiraRovo(fiscalYear);
+      const result = await api.syncLiveJiraRovo(fiscalYear);
       await loadData();
+      setNotice(
+        `Jira actuals synced: ${result.imported_worklogs} worklogs imported, ${result.deleted_worklogs} stale worklogs removed, ${result.skipped_unmapped_worklogs} skipped for mapping.`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to run live Jira sync");
     } finally {
