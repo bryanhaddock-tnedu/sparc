@@ -1,7 +1,7 @@
 """Audit forecast recommendation decisions.
 
-Revision ID: 0013_forecast_recommendation_decisions
-Revises: 0012_roadmap_item_source_category
+Revision ID: 0013_forecast_recs
+Revises: 0012_roadmap_source_category
 Create Date: 2026-07-01
 """
 
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "0013_forecast_recommendation_decisions"
-down_revision: str | None = "0012_roadmap_item_source_category"
+revision: str = "0013_forecast_recs"
+down_revision: str | None = "0012_roadmap_source_category"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

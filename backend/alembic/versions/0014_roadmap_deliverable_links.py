@@ -1,7 +1,7 @@
 """Add product-scoped roadmap deliverable link metadata.
 
-Revision ID: 0014_roadmap_deliverable_links
-Revises: 0013_forecast_recommendation_decisions
+Revision ID: 0014_roadmap_deliv_links
+Revises: 0013_forecast_recs
 Create Date: 2026-07-01
 """
 
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "0014_roadmap_deliverable_links"
-down_revision: str | None = "0013_forecast_recommendation_decisions"
+revision: str = "0014_roadmap_deliv_links"
+down_revision: str | None = "0013_forecast_recs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
