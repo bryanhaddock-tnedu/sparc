@@ -16,6 +16,7 @@ from app.models.entities import utcnow
 
 ROADMAP_SOURCE = "jira_product_discovery"
 ROADMAP_LINK_SOURCE = "jira_issue_link"
+MANUAL_ROADMAP_LINK_SOURCE = "manual"
 DEFAULT_ROADMAP_PROJECT_KEY = "ROADMAP"
 
 
@@ -98,6 +99,48 @@ def update_roadmap_item_mapping(
         .where(RoadmapItem.id == roadmap_item_id)
     ).unique().one()
     return serialize_roadmap_item(mapped_item)
+
+
+def roadmap_actual_gap_rows(db: Session, fiscal_year: int) -> list[dict[str, object]]:
+    return [row for row in roadmap_actual_rows(db, fiscal_year) if row["mapping_status"] != "mapped"]
+
+
+def map_roadmap_ticket(db: Session, ticket_key: str, roadmap_item_id: int | None) -> dict[str, object]:
+    normalized_ticket_key = _normalize_issue_key(ticket_key)
+    if not normalized_ticket_key:
+        raise ValueError("Ticket key is required")
+
+    existing_links = db.scalars(select(RoadmapItemIssueLink).where(RoadmapItemIssueLink.jira_issue_key == normalized_ticket_key)).all()
+    for link in existing_links:
+        db.delete(link)
+    db.flush()
+
+    if roadmap_item_id is None:
+        return {
+            "ticket_key": normalized_ticket_key,
+            "roadmap_item_id": None,
+            "roadmap_item_key": None,
+            "roadmap_item_title": None,
+        }
+
+    item = db.get(RoadmapItem, roadmap_item_id)
+    if item is None:
+        raise ValueError("Roadmap Item not found")
+
+    link = RoadmapItemIssueLink(
+        roadmap_item_id=item.id,
+        jira_issue_key=normalized_ticket_key,
+        source=MANUAL_ROADMAP_LINK_SOURCE,
+        last_synced_at=utcnow(),
+    )
+    db.add(link)
+    db.flush()
+    return {
+        "ticket_key": normalized_ticket_key,
+        "roadmap_item_id": item.id,
+        "roadmap_item_key": item.jira_issue_key,
+        "roadmap_item_title": item.title,
+    }
 
 
 def run_live_roadmap_sync(db: Session, roadmap_project_key: str = DEFAULT_ROADMAP_PROJECT_KEY) -> dict[str, object]:
@@ -260,7 +303,7 @@ def _replace_roadmap_issue_links(db: Session, item: RoadmapItem, links: tuple[Ro
         link.last_synced_at = now
         linked += 1
 
-    stale_links = [link for key, link in existing.items() if key not in seen]
+    stale_links = [link for key, link in existing.items() if key not in seen and link.source == ROADMAP_LINK_SOURCE]
     for link in stale_links:
         db.delete(link)
     db.flush()

@@ -10,7 +10,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
-import type { Bucket, JiraIntegrationStatus, JiraProductMapping, JiraProjectCatalog, JiraUserMapping, Product, RoadmapItem, SyncRun, TeamMember } from "../types/api";
+import { formatCurrency, formatHours } from "../lib/utils";
+import type {
+  Bucket,
+  JiraIntegrationStatus,
+  JiraProductMapping,
+  JiraProjectCatalog,
+  JiraUserMapping,
+  Product,
+  RoadmapActualRow,
+  RoadmapItem,
+  SyncRun,
+  TeamMember,
+} from "../types/api";
 
 export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
@@ -21,6 +33,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [productMappings, setProductMappings] = useState<JiraProductMapping[]>([]);
   const [jiraCatalog, setJiraCatalog] = useState<JiraProjectCatalog[]>([]);
   const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([]);
+  const [roadmapGaps, setRoadmapGaps] = useState<RoadmapActualRow[]>([]);
   const [syncRuns, setSyncRuns] = useState<SyncRun[]>([]);
   const [jiraStatus, setJiraStatus] = useState<JiraIntegrationStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,7 +44,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [notice, setNotice] = useState<string | null>(null);
 
   async function loadData() {
-    const [members, productRows, bucketRows, users, jiraProducts, catalogRows, roadmapRows, runs, status] = await Promise.all([
+    const [members, productRows, bucketRows, users, jiraProducts, catalogRows, roadmapRows, gapRows, runs, status] = await Promise.all([
       api.teamMembers(),
       api.products(),
       api.buckets(),
@@ -39,6 +52,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       api.productMappings(),
       api.jiraProjectCatalog(),
       api.roadmapItems(),
+      api.roadmapActualGaps(fiscalYear),
       api.syncRuns(),
       api.jiraIntegrationStatus(),
     ]);
@@ -49,6 +63,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     setProductMappings(jiraProducts);
     setJiraCatalog(catalogRows);
     setRoadmapItems(roadmapRows);
+    setRoadmapGaps(gapRows);
     setSyncRuns(runs);
     setJiraStatus(status);
   }
@@ -57,7 +72,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load integration data"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [fiscalYear]);
 
   async function runLiveSync() {
     setLiveSyncing(true);
@@ -127,8 +142,20 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     }
   }
 
+  async function updateRoadmapTicketMapping(ticketKey: string, roadmapItemId: number | null) {
+    setError(null);
+    setNotice(null);
+    try {
+      await api.updateRoadmapTicketMapping(ticketKey, { roadmap_item_id: roadmapItemId });
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update ticket Roadmap Item mapping");
+    }
+  }
+
   const catalogLastCheckedAt = useMemo(() => latestCatalogCheckedAt(jiraCatalog), [jiraCatalog]);
   const sortedRoadmapItems = useMemo(() => sortRoadmapItems(roadmapItems), [roadmapItems]);
+  const roadmapGapTickets = useMemo(() => expandRoadmapGapTickets(roadmapGaps), [roadmapGaps]);
 
   if (loading) return <LoadingBlock />;
   if (error && !jiraStatus) return <ErrorBlock message={error} />;
@@ -325,6 +352,63 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         </Table>
       </MappingTable>
 
+      <MappingTable title="Roadmap Actual Gaps" unmapped={roadmapGapTickets.length} badgeLabel="gaps">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Ticket</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Team Member</TableHead>
+              <TableHead>Bucket</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Roadmap Item</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {roadmapGapTickets.length ? (
+              roadmapGapTickets.map((gap) => (
+                <TableRow key={gap.key}>
+                  <TableCell>
+                    <div className="font-medium text-primary">{gap.ticketKey}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatHours(gap.row.actual_hours)} / {formatCurrency(gap.row.actual_cost)}
+                    </div>
+                  </TableCell>
+                  <TableCell>{gap.row.product}</TableCell>
+                  <TableCell>{gap.row.team_member}</TableCell>
+                  <TableCell>{gap.row.bucket}</TableCell>
+                  <TableCell>
+                    <Badge className={gap.row.mapping_status === "ambiguous" ? "border-warning/50 text-warning" : "border-muted text-muted-foreground"}>
+                      {gap.row.mapping_status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <select
+                      className="h-9 w-full min-w-64 rounded-md border border-input bg-background px-2 text-sm"
+                      defaultValue=""
+                      onChange={(event) => void updateRoadmapTicketMapping(gap.ticketKey, event.target.value ? Number(event.target.value) : null)}
+                    >
+                      <option value="">Map to Roadmap Item</option>
+                      {sortedRoadmapItems.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.jira_issue_key} - {item.title}
+                        </option>
+                      ))}
+                    </select>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell className="py-6 text-sm text-muted-foreground" colSpan={6}>
+                  No Roadmap Actual gaps for {fiscalYearLabel}.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </MappingTable>
+
       <Card>
         <CardHeader>
           <CardTitle>Sync History</CardTitle>
@@ -415,13 +499,13 @@ function StatusCard({ label, value, tone = "default" }: { label: string; value: 
   );
 }
 
-function MappingTable({ title, unmapped, children }: { title: string; unmapped: number; children: ReactNode }) {
+function MappingTable({ title, unmapped, badgeLabel = "unmapped", children }: { title: string; unmapped: number; badgeLabel?: string; children: ReactNode }) {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">{title}</h2>
         <Badge className={unmapped ? "border-destructive/40 text-destructive" : "border-primary/40 text-primary"}>
-          {unmapped} unmapped
+          {unmapped} {badgeLabel}
         </Badge>
       </div>
       <div className="overflow-hidden rounded-lg border bg-card">
@@ -438,6 +522,16 @@ function sortRoadmapItems(items: RoadmapItem[]) {
     if (leftUnmapped !== rightUnmapped) return leftUnmapped ? -1 : 1;
     return left.jira_issue_key.localeCompare(right.jira_issue_key);
   });
+}
+
+function expandRoadmapGapTickets(rows: RoadmapActualRow[]) {
+  return rows.flatMap((row) =>
+    row.ticket_keys.map((ticketKey) => ({
+      key: `${row.mapping_status}:${row.product_id}:${row.team_member_id}:${row.bucket_id}:${ticketKey}`,
+      ticketKey,
+      row,
+    })),
+  );
 }
 
 function formatDate(value: string) {

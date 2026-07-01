@@ -39,7 +39,7 @@ from app.services.jira_projects import (
     update_product_jira_space,
 )
 from app.services import jira_projects
-from app.services.roadmap import roadmap_actual_rows, update_roadmap_item_mapping
+from app.services.roadmap import _replace_roadmap_issue_links, map_roadmap_ticket, roadmap_actual_rows, update_roadmap_item_mapping
 
 
 def test_fiscal_year_mapping():
@@ -278,6 +278,59 @@ def test_roadmap_item_mapping_updates_product_and_bucket():
         assert cleared["product"] is None
         assert cleared["bucket_id"] is None
         assert cleared["bucket"] is None
+
+
+def test_manual_roadmap_ticket_mapping_replaces_existing_links():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        first_item = RoadmapItem(
+            source="jira_product_discovery",
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="First feature",
+        )
+        second_item = RoadmapItem(
+            source="jira_product_discovery",
+            jira_issue_id="10002",
+            jira_issue_key="ROADMAP-2",
+            title="Second feature",
+        )
+        db.add_all([first_item, second_item])
+        db.flush()
+        db.add(RoadmapItemIssueLink(roadmap_item_id=first_item.id, jira_issue_key="SIS-1", source="jira_issue_link"))
+        db.flush()
+
+        mapped = map_roadmap_ticket(db, "sis-1", second_item.id)
+
+        links = db.scalars(select(RoadmapItemIssueLink).where(RoadmapItemIssueLink.jira_issue_key == "SIS-1")).all()
+        assert mapped["roadmap_item_key"] == "ROADMAP-2"
+        assert len(links) == 1
+        assert links[0].roadmap_item_id == second_item.id
+        assert links[0].source == "manual"
+
+
+def test_roadmap_sync_preserves_manual_ticket_links():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        item = RoadmapItem(
+            source="jira_product_discovery",
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="Program billing feature",
+        )
+        db.add(item)
+        db.flush()
+        db.add(RoadmapItemIssueLink(roadmap_item_id=item.id, jira_issue_key="SIS-1", source="manual"))
+        db.flush()
+
+        linked = _replace_roadmap_issue_links(db, item, tuple())
+
+        links = db.scalars(select(RoadmapItemIssueLink).where(RoadmapItemIssueLink.jira_issue_key == "SIS-1")).all()
+        assert linked == 0
+        assert len(links) == 1
+        assert links[0].source == "manual"
 
 
 def test_product_budget_is_fiscal_year_specific():

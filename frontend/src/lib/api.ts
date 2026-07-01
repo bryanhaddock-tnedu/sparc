@@ -39,6 +39,8 @@ import type {
   RoadmapItem,
   RoadmapItemMapPayload,
   RoadmapSyncResult,
+  RoadmapTicketMapPayload,
+  RoadmapTicketMapResult,
   SyncRun,
   SystemScanResult,
   TeamImportResult,
@@ -277,6 +279,13 @@ export const api = {
   roadmapItems: () => request<RoadmapItem[]>("/api/integrations/jira-rovo/roadmap/items"),
   updateRoadmapItemMapping: (itemId: number, payload: RoadmapItemMapPayload) =>
     request<RoadmapItem>(`/api/integrations/jira-rovo/roadmap/items/${itemId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  roadmapActualGaps: (fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<RoadmapActualRow[]>(`/api/integrations/jira-rovo/roadmap/actual-gaps?fiscal_year=${fiscalYear}`),
+  updateRoadmapTicketMapping: (ticketKey: string, payload: RoadmapTicketMapPayload) =>
+    request<RoadmapTicketMapResult>(`/api/integrations/jira-rovo/roadmap/ticket-links/${encodeURIComponent(ticketKey)}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),

@@ -14,9 +14,12 @@ from app.schemas import (
     JiraRovoSyncResponse,
     JiraUserMapRequest,
     JiraUserMappingResponse,
+    RoadmapActualRowResponse,
     RoadmapItemMapRequest,
     RoadmapItemResponse,
     RoadmapSyncResponse,
+    RoadmapTicketMapRequest,
+    RoadmapTicketMapResponse,
     SyncRunResponse,
 )
 from app.services.jira_projects import list_jira_project_catalog, refresh_jira_project_catalog, update_jira_project_catalog_visibility
@@ -32,7 +35,14 @@ from app.services.jira_rovo import (
     run_live_jira_rovo_sync,
     run_mock_jira_rovo_sync,
 )
-from app.services.roadmap import DEFAULT_ROADMAP_PROJECT_KEY, list_roadmap_items, run_live_roadmap_sync, update_roadmap_item_mapping
+from app.services.roadmap import (
+    DEFAULT_ROADMAP_PROJECT_KEY,
+    list_roadmap_items,
+    map_roadmap_ticket,
+    roadmap_actual_gap_rows,
+    run_live_roadmap_sync,
+    update_roadmap_item_mapping,
+)
 
 router = APIRouter(prefix="/integrations/jira-rovo", tags=["jira-rovo"])
 
@@ -109,6 +119,26 @@ def update_roadmap_item_mapping_endpoint(
             product_id=payload.product_id,
             bucket_id=payload.bucket_id,
         )
+        db.commit()
+        return result
+    except ValueError as exc:
+        db.rollback()
+        raise bad_request(str(exc)) from exc
+
+
+@router.get("/roadmap/actual-gaps", response_model=list[RoadmapActualRowResponse])
+def get_roadmap_actual_gaps(fiscal_year: int = 2027, db: Session = Depends(get_db)) -> list[dict[str, object]]:
+    return roadmap_actual_gap_rows(db, fiscal_year)
+
+
+@router.put("/roadmap/ticket-links/{ticket_key}", response_model=RoadmapTicketMapResponse)
+def update_roadmap_ticket_mapping(
+    ticket_key: str,
+    payload: RoadmapTicketMapRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        result = map_roadmap_ticket(db, ticket_key, payload.roadmap_item_id)
         db.commit()
         return result
     except ValueError as exc:

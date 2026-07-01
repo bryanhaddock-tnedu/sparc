@@ -192,6 +192,17 @@ export interface RoadmapItemMapPayload {
   bucket_id: number | null;
 }
 
+export interface RoadmapTicketMapPayload {
+  roadmap_item_id: number | null;
+}
+
+export interface RoadmapTicketMapResult {
+  ticket_key: string;
+  roadmap_item_id: number | null;
+  roadmap_item_key: string | null;
+  roadmap_item_title: string | null;
+}
+
 export interface RoadmapActualRow {
   roadmap_item_id: number | null;
   roadmap_item_key: string | null;

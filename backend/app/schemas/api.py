@@ -743,6 +743,17 @@ class RoadmapItemMapRequest(BaseModel):
     bucket_id: int | None
 
 
+class RoadmapTicketMapRequest(BaseModel):
+    roadmap_item_id: int | None
+
+
+class RoadmapTicketMapResponse(BaseModel):
+    ticket_key: str
+    roadmap_item_id: int | None
+    roadmap_item_key: str | None
+    roadmap_item_title: str | None
+
+
 class RoadmapActualRowResponse(BaseModel):
     roadmap_item_id: int | None
     roadmap_item_key: str | None
