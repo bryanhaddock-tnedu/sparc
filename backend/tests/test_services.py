@@ -40,12 +40,14 @@ from app.services.jira_projects import (
 )
 from app.services import jira_projects
 from app.services.roadmap import (
+    RoadmapIssuePayload,
     UNSCOPED_ROADMAP_FISCAL_YEAR,
     _has_fiscal_year_label,
     _normalize_roadmap_issue,
     _replace_roadmap_issue_links,
     _remove_stale_roadmap_items_from_fiscal_year,
     _roadmap_fiscal_year_label,
+    _upsert_roadmap_item,
     list_roadmap_items,
     map_roadmap_ticket,
     product_roadmap_items,
@@ -302,13 +304,14 @@ def test_roadmap_issue_normalization_uses_fiscal_year_label_and_agency_office():
             "summary": "Program billing feature",
             "labels": ["FY27", "billing"],
             "customfield_12345": {"value": "Academics"},
+            "customfield_45678": {"value": "Enhancements"},
             "status": {"name": "In Progress", "statusCategory": {"name": "In Progress"}},
             "issuetype": {"name": "Idea"},
             "issuelinks": [],
         },
     }
 
-    payload = _normalize_roadmap_issue("https://tndoe.atlassian.net", issue, ["customfield_12345"])
+    payload = _normalize_roadmap_issue("https://tndoe.atlassian.net", issue, ["customfield_12345"], ["customfield_45678"])
 
     assert _roadmap_fiscal_year_label(2027) == "FY27"
     assert _has_fiscal_year_label(payload.labels, 2027)
@@ -316,6 +319,32 @@ def test_roadmap_issue_normalization_uses_fiscal_year_label_and_agency_office():
     assert payload.issue_key == "ROADMAP-1"
     assert payload.issue_type == "Idea"
     assert payload.program_area == "Academics"
+    assert payload.category == "Enhancements"
+
+
+def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        enhance = db.scalar(select(Bucket).where(Bucket.code == "ENHANCE"))
+        payload = RoadmapIssuePayload(
+            issue_id="10001",
+            issue_key="ROADMAP-1",
+            title="Program billing feature",
+            status="In Progress",
+            status_category="In Progress",
+            issue_type="Idea",
+            labels=("FY27",),
+            program_area="Academics",
+            category="Enhancements",
+            source_url="https://tndoe.atlassian.net/browse/ROADMAP-1",
+            links=tuple(),
+        )
+
+        item = _upsert_roadmap_item(db, payload, 2027)
+
+        assert item.bucket_id == enhance.id
 
 
 def test_stale_roadmap_items_move_out_of_selected_fiscal_year():
