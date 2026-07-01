@@ -77,6 +77,9 @@ type RoadmapForecastComparisonRow = {
   actualCost: number;
   remainingHours: number;
   percentUsed: number | null;
+  suggestedDeltaHours: number;
+  suggestedForecastHours: number;
+  recommendation: "none" | "monitor" | "resolve_gaps" | "add_forecast" | "increase_forecast";
   status: "on_track" | "near_forecast" | "over_forecast" | "no_forecast" | "mapping_gaps";
 };
 
@@ -807,10 +810,11 @@ function RoadmapForecastComparisonSection({
       actualHours: current.actualHours + row.actualHours,
       actualCost: current.actualCost + row.actualCost,
       remainingHours: current.remainingHours + row.remainingHours,
+      suggestedDeltaHours: current.suggestedDeltaHours + row.suggestedDeltaHours,
       tickets: current.tickets + row.tickets,
       gapTickets: current.gapTickets + row.gapTickets,
     }),
-    { forecastHours: 0, actualHours: 0, actualCost: 0, remainingHours: 0, tickets: 0, gapTickets: 0 },
+    { forecastHours: 0, actualHours: 0, actualCost: 0, remainingHours: 0, suggestedDeltaHours: 0, tickets: 0, gapTickets: 0 },
   );
   const totalPercentUsed = totals.forecastHours > 0 ? (totals.actualHours / totals.forecastHours) * 100 : null;
 
@@ -833,10 +837,11 @@ function RoadmapForecastComparisonSection({
           Forecast rows are not split by Roadmap Item status or Program Area yet, so those filters are reflected on the actuals side of this comparison.
         </div>
       ) : null}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
         <SummaryMetric label="Forecast Hrs" value={formatHours(totals.forecastHours)} />
         <SummaryMetric label="Roadmap Actual Hrs" value={formatHours(totals.actualHours)} />
         <SummaryMetric label="Remaining Hrs" value={formatSignedHours(totals.remainingHours)} tone={totals.remainingHours < 0 ? "warn" : "default"} />
+        <SummaryMetric label="Suggested Add Hrs" value={formatHours(totals.suggestedDeltaHours)} tone={totals.suggestedDeltaHours > 0 ? "warn" : "default"} />
         <SummaryMetric label="Actual Cost" value={formatCurrency(totals.actualCost)} />
         <SummaryMetric label="% Used" value={formatPercent(totalPercentUsed)} tone={totalPercentUsed !== null && totalPercentUsed >= 100 ? "warn" : "default"} />
         <SummaryMetric label="Gap Tickets" value={String(totals.gapTickets)} tone={totals.gapTickets ? "warn" : "default"} />
@@ -854,7 +859,9 @@ function RoadmapForecastComparisonSection({
                 <TableHead className="text-right">Forecast Hrs</TableHead>
                 <TableHead className="text-right">Actual Hrs</TableHead>
                 <TableHead className="text-right">Remaining Hrs</TableHead>
+                <TableHead className="text-right">Suggested Add</TableHead>
                 <TableHead className="text-right">% Used</TableHead>
+                <TableHead>Review</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -875,7 +882,13 @@ function RoadmapForecastComparisonSection({
                     <TableCell className={`numeric-cell text-right font-semibold ${row.remainingHours < 0 ? "text-warning" : "text-primary"}`}>
                       {formatSignedHours(row.remainingHours)}
                     </TableCell>
+                    <TableCell className={`numeric-cell text-right font-semibold ${row.suggestedDeltaHours > 0 ? "text-warning" : "text-muted-foreground"}`}>
+                      {formatHours(row.suggestedDeltaHours)}
+                    </TableCell>
                     <TableCell className="numeric-cell text-right">{formatPercent(row.percentUsed)}</TableCell>
+                    <TableCell>
+                      <RoadmapForecastRecommendationBadge recommendation={row.recommendation} />
+                    </TableCell>
                     <TableCell>
                       <RoadmapForecastStatusBadge status={row.status} />
                     </TableCell>
@@ -883,7 +896,7 @@ function RoadmapForecastComparisonSection({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell className="py-5 text-sm text-muted-foreground" colSpan={10}>
+                  <TableCell className="py-5 text-sm text-muted-foreground" colSpan={12}>
                     No roadmap actuals match the selected filters yet.
                   </TableCell>
                 </TableRow>
@@ -905,6 +918,18 @@ function RoadmapForecastStatusBadge({ status }: { status: RoadmapForecastCompari
     mapping_gaps: { label: "Mapping gaps", className: "border-warning/50 text-warning" },
   };
   const display = statusMap[status];
+  return <Badge className={display.className}>{display.label}</Badge>;
+}
+
+function RoadmapForecastRecommendationBadge({ recommendation }: { recommendation: RoadmapForecastComparisonRow["recommendation"] }) {
+  const recommendationMap: Record<RoadmapForecastComparisonRow["recommendation"], { label: string; className: string }> = {
+    none: { label: "No change", className: "border-primary/40 text-primary" },
+    monitor: { label: "Monitor", className: "border-warning/50 text-warning" },
+    resolve_gaps: { label: "Resolve gaps", className: "border-warning/50 text-warning" },
+    add_forecast: { label: "Add forecast", className: "border-destructive/40 text-destructive" },
+    increase_forecast: { label: "Increase forecast", className: "border-destructive/40 text-destructive" },
+  };
+  const display = recommendationMap[recommendation];
   return <Badge className={display.className}>{display.label}</Badge>;
 }
 
@@ -1303,6 +1328,8 @@ function buildRoadmapForecastComparison(actualRows: RoadmapActualRow[], reported
       const forecastHours = forecastHoursByProductBucket.get(row.id) ?? 0;
       const remainingHours = forecastHours - row.actualHours;
       const percentUsed = forecastHours > 0 ? (row.actualHours / forecastHours) * 100 : null;
+      const suggestedDeltaHours = Math.max(row.actualHours - forecastHours, 0);
+      const status = forecastComparisonStatus(forecastHours, row.actualHours, row.gapTickets.size);
       return {
         id: row.id,
         product: row.product,
@@ -1318,7 +1345,10 @@ function buildRoadmapForecastComparison(actualRows: RoadmapActualRow[], reported
         actualCost: row.actualCost,
         remainingHours,
         percentUsed,
-        status: forecastComparisonStatus(forecastHours, row.actualHours, row.gapTickets.size),
+        suggestedDeltaHours,
+        suggestedForecastHours: forecastHours + suggestedDeltaHours,
+        recommendation: forecastRecommendation(status),
+        status,
       };
     })
     .sort((left, right) => {
@@ -1326,6 +1356,21 @@ function buildRoadmapForecastComparison(actualRows: RoadmapActualRow[], reported
       const rightRisk = forecastComparisonRiskRank(right.status);
       return leftRisk - rightRisk || right.actualHours - left.actualHours || left.product.localeCompare(right.product);
     });
+}
+
+function forecastRecommendation(status: RoadmapForecastComparisonRow["status"]): RoadmapForecastComparisonRow["recommendation"] {
+  switch (status) {
+    case "no_forecast":
+      return "add_forecast";
+    case "over_forecast":
+      return "increase_forecast";
+    case "mapping_gaps":
+      return "resolve_gaps";
+    case "near_forecast":
+      return "monitor";
+    case "on_track":
+      return "none";
+  }
 }
 
 type RoadmapForecastComparisonAccumulator = {
@@ -1572,7 +1617,10 @@ function roadmapForecastComparisonCsvRows(rows: RoadmapForecastComparisonRow[]) 
       "roadmap_actual_hours",
       "roadmap_actual_cost",
       "remaining_hours",
+      "suggested_add_hours",
+      "suggested_forecast_hours",
       "percent_used",
+      "recommendation",
       "status",
     ],
     ...rows.map((row) => [
@@ -1588,7 +1636,10 @@ function roadmapForecastComparisonCsvRows(rows: RoadmapForecastComparisonRow[]) 
       roundCsvNumber(row.actualHours),
       roundCsvNumber(row.actualCost),
       roundCsvNumber(row.remainingHours),
+      roundCsvNumber(row.suggestedDeltaHours),
+      roundCsvNumber(row.suggestedForecastHours),
       row.percentUsed === null ? "" : roundCsvNumber(row.percentUsed),
+      row.recommendation,
       row.status,
     ]),
   ];
