@@ -389,7 +389,7 @@ function RoadmapForecastPlanner({
         {roadmapGroups.length ? (
           roadmapGroups.map((group) => {
             return (
-              <div key={group.roadmap_item_id} className="overflow-hidden rounded-lg border">
+              <div key={group.group_key} className="overflow-hidden rounded-lg border">
                 <div className="flex flex-col gap-3 border-b bg-secondary/30 p-3 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -590,6 +590,7 @@ type PlannerRoadmapGroup = {
   actual_hours: number;
   deliverables: RoadmapPlannerDeliverable[];
   forecast_hours: number;
+  group_key: string;
   roadmap_item_id: number;
   roadmap_item_key: string;
   roadmap_item_status: string | null;
@@ -602,15 +603,17 @@ type PlannerRoadmapGroup = {
 };
 
 function groupPlannerRows(rows: TeamRoadmapForecastRow[]) {
-  const groups = new Map<number, PlannerRoadmapGroup>();
+  const groups = new Map<string, PlannerRoadmapGroup>();
   rows.forEach((row) => {
-    const existing = groups.get(row.roadmap_item_id);
+    const groupKey = row.roadmap_item_key || String(row.roadmap_item_id);
+    const existing = groups.get(groupKey);
     const group =
       existing ??
       {
         actual_hours: 0,
         deliverables: [],
         forecast_hours: 0,
+        group_key: groupKey,
         roadmap_item_id: row.roadmap_item_id,
         roadmap_item_key: row.roadmap_item_key,
         roadmap_item_status: row.roadmap_item_status,
@@ -626,7 +629,7 @@ function groupPlannerRows(rows: TeamRoadmapForecastRow[]) {
     group.actual_hours += row.actual_hours;
     group.ticket_count += row.ticket_count;
     group.deliverables = uniqueDeliverables([...group.deliverables, ...row.deliverables]);
-    groups.set(row.roadmap_item_id, group);
+    groups.set(groupKey, group);
   });
   return [...groups.values()].map((group) => ({
     ...group,
