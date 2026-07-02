@@ -294,7 +294,7 @@ def _serialize_planner_row(item: RoadmapItem, product: Product | None, bucket: B
         "product_slug": product_url_slug(product) if product else None,
         "bucket_id": bucket.id if bucket else None,
         "bucket": bucket.name if bucket else None,
-        "deliverables": [_serialize_deliverable_link(link, item) for link in _planner_component_links(item)],
+        "deliverables": [_serialize_deliverable_link(link, item) for link in _context_component_links(item, product, bucket)],
         "forecast_hours": Decimal("0"),
         "actual_hours": Decimal("0"),
         "worklog_count": 0,
@@ -303,8 +303,18 @@ def _serialize_planner_row(item: RoadmapItem, product: Product | None, bucket: B
     }
 
 
-def _planner_component_links(item: RoadmapItem) -> list[RoadmapItemIssueLink]:
-    return sorted(item.issue_links, key=lambda item_link: item_link.jira_issue_key)
+def _context_component_links(item: RoadmapItem, product: Product | None, bucket: Bucket | None) -> list[RoadmapItemIssueLink]:
+    links = sorted(item.issue_links, key=lambda item_link: item_link.jira_issue_key)
+    if product is None:
+        return links
+    matching_links: list[RoadmapItemIssueLink] = []
+    for link in links:
+        effective_bucket = link.bucket or item.bucket
+        product_matches = link.product is not None and link.product.id == product.id
+        bucket_matches = bucket is None or (effective_bucket is not None and effective_bucket.id == bucket.id)
+        if product_matches and bucket_matches:
+            matching_links.append(link)
+    return matching_links
 
 
 def _serialize_deliverable_link(link: RoadmapItemIssueLink, item: RoadmapItem) -> dict[str, object]:

@@ -363,7 +363,7 @@ function RoadmapForecastPlanner({
         <div>
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">Roadmap Forecast Planner</h2>
           <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
-            Assign Team Members to team-owned Roadmap Items and enter monthly forecast hours. Saved allocations roll up to the normal Product/Bucket forecast.
+            Assign Team Members to team-owned Roadmap Items and enter monthly forecast hours. Each editable row rolls up to the Product/Bucket shown on that row.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -412,7 +412,7 @@ function RoadmapForecastPlanner({
                     </div>
                     <PlannerDeliverables row={row} />
                     <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span>{row.product ?? "Needs product mapping"}</span>
+                      <span className="font-semibold text-primary">Forecasts to {row.product ?? "Needs product mapping"}</span>
                       <span>/</span>
                       <span>{row.bucket ?? "Needs bucket/category"}</span>
                       {row.program_area ? (
@@ -531,13 +531,15 @@ function RoadmapForecastPlanner({
 
 function PlannerDeliverables({ row }: { row: TeamRoadmapForecastRow }) {
   if (!row.deliverables.length) return null;
+  const label = row.deliverables.length === 1 ? "Deliverable" : `Deliverables for ${row.product ?? "this row"}`;
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2">
-      <span className="text-[10px] font-semibold uppercase text-muted-foreground">Deliverables ({row.deliverables.length})</span>
+      <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+        {label} ({row.deliverables.length})
+      </span>
       {row.deliverables.map((deliverable) => (
         <div key={deliverable.id} className="flex max-w-xl min-w-0 gap-1 rounded-md border bg-background px-2 py-1 text-xs">
           <span className="shrink-0 font-semibold text-primary">{deliverable.jira_issue_key}</span>
-          {deliverable.product ? <span className="shrink-0 text-muted-foreground">{deliverable.product}</span> : null}
           {deliverable.jira_issue_summary ? (
             <span className="truncate text-muted-foreground" title={deliverable.jira_issue_summary}>
               {deliverable.jira_issue_summary}

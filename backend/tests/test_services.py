@@ -243,7 +243,7 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
         assert cleared["rows"][0]["forecast_hours"] == Decimal("0")
 
 
-def test_team_roadmap_forecast_plan_shows_all_linked_components_for_parent_item():
+def test_team_roadmap_forecast_plan_scopes_linked_components_to_row_product():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
@@ -300,8 +300,9 @@ def test_team_roadmap_forecast_plan_shows_all_linked_components_for_parent_item(
 
         assert len(rows) == 2
         assert {row["product"] for row in rows} == {"EPSO", "SWORD"}
-        for row in rows:
-            assert [deliverable["jira_issue_key"] for deliverable in row["deliverables"]] == ["EPSO-54", "SWORD-974"]
+        rows_by_product = {row["product"]: row for row in rows}
+        assert [deliverable["jira_issue_key"] for deliverable in rows_by_product["EPSO"]["deliverables"]] == ["EPSO-54"]
+        assert [deliverable["jira_issue_key"] for deliverable in rows_by_product["SWORD"]["deliverables"]] == ["SWORD-974"]
 
 
 def test_product_roadmap_items_include_forecast_months():
