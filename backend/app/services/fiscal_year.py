@@ -26,6 +26,10 @@ def fiscal_year_for_date(value: date) -> int:
     return value.year + 1 if value.month >= 7 else value.year
 
 
+def current_fiscal_year(today: date | None = None) -> int:
+    return fiscal_year_for_date(today or date.today())
+
+
 def fiscal_sequence_for_date(value: date) -> int:
     return value.month - 6 if value.month >= 7 else value.month + 6
 

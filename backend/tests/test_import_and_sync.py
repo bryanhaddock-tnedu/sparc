@@ -125,6 +125,7 @@ def test_live_sync_uses_product_jira_space_mapping(monkeypatch):
         )
         db.flush()
 
+        monkeypatch.setattr("app.services.jira_rovo.current_live_sync_fiscal_year", lambda: 2026)
         monkeypatch.setattr(
             "app.services.jira_rovo.fetch_live_jira_worklogs",
             lambda _db, _fiscal_year: [
@@ -154,6 +155,24 @@ def test_live_sync_uses_product_jira_space_mapping(monkeypatch):
         assert actual is not None
         assert actual.product_id == product.id
         assert actual.team_member_id == member.id
+
+
+def test_live_sync_ignores_requested_year_and_uses_current_fiscal_year(monkeypatch):
+    with session() as db:
+        seen_fiscal_years: list[int] = []
+
+        monkeypatch.setattr("app.services.jira_rovo.current_live_sync_fiscal_year", lambda: 2027)
+        monkeypatch.setattr(
+            "app.services.jira_rovo.fetch_live_jira_worklogs",
+            lambda _db, fiscal_year: seen_fiscal_years.append(fiscal_year) or [],
+        )
+
+        result = run_live_jira_rovo_sync(db, 2026)
+
+        assert seen_fiscal_years == [2027]
+        assert result["fiscal_year"] == 2027
+        assert result["requested_fiscal_year"] == 2026
+        assert result["uses_current_fiscal_year"] is True
 
 
 def test_live_sync_deletes_jira_actuals_for_removed_worklogs(monkeypatch):
@@ -213,6 +232,7 @@ def test_live_sync_deletes_jira_actuals_for_removed_worklogs(monkeypatch):
             ),
         ]
 
+        monkeypatch.setattr("app.services.jira_rovo.current_live_sync_fiscal_year", lambda: 2026)
         monkeypatch.setattr("app.services.jira_rovo.fetch_live_jira_worklogs", lambda _db, _fiscal_year: current_worklogs)
         first = run_live_jira_rovo_sync(db, 2026)
         current_worklogs = current_worklogs[:1]

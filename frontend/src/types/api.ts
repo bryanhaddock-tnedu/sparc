@@ -755,6 +755,9 @@ export interface SyncRun {
 
 export interface JiraRovoSyncResult {
   source: string;
+  fiscal_year?: number | null;
+  requested_fiscal_year?: number | null;
+  uses_current_fiscal_year?: boolean;
   sync_run: SyncRun;
   imported_worklogs: number;
   skipped_unmapped_worklogs: number;

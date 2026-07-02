@@ -848,6 +848,9 @@ class ForecastRecommendationDecisionResponse(BaseModel):
 
 class JiraRovoSyncResponse(BaseModel):
     source: str
+    fiscal_year: int | None = None
+    requested_fiscal_year: int | None = None
+    uses_current_fiscal_year: bool = False
     sync_run: SyncRunResponse
     imported_worklogs: int
     skipped_unmapped_worklogs: int

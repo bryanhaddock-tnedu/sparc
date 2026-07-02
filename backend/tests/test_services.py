@@ -29,7 +29,7 @@ from app.models import (
 from app.schemas import ProductCreate, TeamMemberCreate
 from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_work_type_breakdown, product_bucket_tables, product_summary
 from app.services.costs import calculate_cost
-from app.services.fiscal_year import fiscal_sequence_for_date, fiscal_year_for_date, get_fiscal_month
+from app.services.fiscal_year import current_fiscal_year, fiscal_sequence_for_date, fiscal_year_for_date, get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
 from app.services.forecast_recommendations import (
     create_forecast_recommendation_decision,
@@ -69,6 +69,7 @@ def test_fiscal_year_mapping():
     assert fiscal_sequence_for_date(date(2025, 7, 1)) == 1
     assert fiscal_year_for_date(date(2026, 6, 30)) == 2026
     assert fiscal_sequence_for_date(date(2026, 6, 30)) == 12
+    assert current_fiscal_year(date(2026, 7, 1)) == 2027
 
 
 def test_cost_calculation():

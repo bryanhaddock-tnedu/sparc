@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.models import ActualEntry, Bucket, FiscalMonth, JiraProductMapping, JiraUserMapping, Product, ProductJiraSpace, SyncRun, TeamMember
 from app.models.entities import utcnow
 from app.services.estimation_policy import WORK_TYPE_ALIASES, normalize_lookup_value
-from app.services.fiscal_year import ensure_fiscal_months, fiscal_sequence_for_date, fiscal_year_for_date
+from app.services.fiscal_year import current_fiscal_year, ensure_fiscal_months, fiscal_sequence_for_date, fiscal_year_for_date
 from app.services.jira_projects import _raise_for_jira_response
 
 WORK_TYPE_FIELD_NAMES = {
@@ -160,7 +160,12 @@ def jira_integration_status() -> dict[str, object]:
     }
 
 
-def run_live_jira_rovo_sync(db: Session, fiscal_year: int) -> dict[str, object]:
+def current_live_sync_fiscal_year() -> int:
+    return current_fiscal_year()
+
+
+def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = None) -> dict[str, object]:
+    fiscal_year = current_live_sync_fiscal_year()
     sync_run = SyncRun(source="jira", mode="live", status="running")
     db.add(sync_run)
     db.flush()
@@ -237,6 +242,9 @@ def run_live_jira_rovo_sync(db: Session, fiscal_year: int) -> dict[str, object]:
     db.flush()
     return {
         "source": "jira",
+        "fiscal_year": fiscal_year,
+        "requested_fiscal_year": requested_fiscal_year,
+        "uses_current_fiscal_year": True,
         "sync_run": serialize_sync_run(sync_run),
         "imported_worklogs": imported,
         "skipped_unmapped_worklogs": skipped_unmapped,

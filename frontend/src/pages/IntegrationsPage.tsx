@@ -9,7 +9,7 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
-import { useFiscalYear } from "../lib/fiscalYear";
+import { fiscalYearRangeLabel as formatFiscalYearRangeLabel, useFiscalYear } from "../lib/fiscalYear";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type {
   Bucket,
@@ -215,8 +215,13 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     try {
       const result = await api.syncLiveJiraRovo(fiscalYear);
       await loadData();
+      const syncedFiscalYear = result.fiscal_year ?? fiscalYear;
+      const selectedYearNote =
+        result.requested_fiscal_year && result.requested_fiscal_year !== syncedFiscalYear
+          ? ` Selected view was FY${result.requested_fiscal_year}; live Jira Actuals stay on the current fiscal year.`
+          : "";
       setNotice(
-        `Jira actuals synced: ${result.imported_worklogs} worklogs imported, ${result.deleted_worklogs} stale worklogs removed, ${result.skipped_unmapped_worklogs} skipped for mapping.`,
+        `Jira actuals synced for FY${syncedFiscalYear} (${formatFiscalYearRangeLabel(syncedFiscalYear)}): ${result.imported_worklogs} worklogs imported, ${result.deleted_worklogs} stale worklogs removed, ${result.skipped_unmapped_worklogs} skipped for mapping.${selectedYearNote}`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to run live Jira sync");
@@ -413,7 +418,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         <div>
           {embedded ? <h2 className="text-xl font-semibold">Jira Sync</h2> : <h1 className="text-2xl font-semibold">Jira Sync</h1>}
           <p className="mt-1 text-sm text-muted-foreground">
-            Live Jira actual-hours sync for {fiscalYearLabel} ({fiscalYearRangeLabel}). Roadmap Item mapping is global.
+            Live Jira actual-hours sync is limited to the current fiscal year. Roadmap views follow {fiscalYearLabel} ({fiscalYearRangeLabel}).
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
