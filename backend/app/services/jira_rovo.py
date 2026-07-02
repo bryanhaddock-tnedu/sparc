@@ -175,7 +175,7 @@ def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = Non
 
     try:
         worklogs = fetch_live_jira_worklogs(db, fiscal_year)
-        current_worklog_keys = {_worklog_identity(worklog) for worklog in worklogs}
+        current_worklog_ids = {_worklog_id(worklog) for worklog in worklogs if _worklog_id(worklog)}
         for worklog in worklogs:
             fiscal_month = _ensure_month_for_worklog(db, fiscal_year_for_date(worklog.worked_on), worklog.worked_on)
             bucket = db.scalar(select(Bucket).where(Bucket.code == worklog.bucket_code))
@@ -226,7 +226,7 @@ def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = Non
                 existing.worked_on = worklog.worked_on
             imported += 1
 
-        deleted += _delete_stale_live_actuals(db, fiscal_year, current_worklog_keys)
+        deleted += _delete_stale_live_actuals(db, fiscal_year, current_worklog_ids)
         sync_run.status = "completed"
         sync_run.imported_count = imported
         sync_run.skipped_count = skipped_unmapped
@@ -291,41 +291,30 @@ def _existing_live_actual(db: Session, worklog: MockWorklog) -> ActualEntry | No
     )
 
 
-def _delete_stale_live_actuals(db: Session, fiscal_year: int, current_worklog_keys: set[tuple[str, str]]) -> int:
-    active_project_keys = {
-        key
-        for key in db.scalars(
-            select(ProductJiraSpace.jira_project_key).where(ProductJiraSpace.is_active.is_(True))
-        ).all()
-        if key
-    }
-    if not active_project_keys:
-        return 0
-
+def _delete_stale_live_actuals(db: Session, fiscal_year: int, current_worklog_ids: set[str]) -> int:
     entries = db.scalars(
         select(ActualEntry)
         .join(ActualEntry.fiscal_month)
         .where(
             ActualEntry.source == "jira",
             FiscalMonth.fiscal_year == fiscal_year,
-            ActualEntry.source_project_key.in_(active_project_keys),
         )
     ).all()
     deleted = 0
     for entry in entries:
-        if _actual_entry_identity(entry) in current_worklog_keys:
+        if _actual_entry_worklog_id(entry) in current_worklog_ids:
             continue
         db.delete(entry)
         deleted += 1
     return deleted
 
 
-def _worklog_identity(worklog: MockWorklog) -> tuple[str, str]:
-    return (str(worklog.issue_id or "").strip(), str(worklog.worklog_id or "").strip())
+def _worklog_id(worklog: MockWorklog) -> str:
+    return str(worklog.worklog_id or "").strip()
 
 
-def _actual_entry_identity(entry: ActualEntry) -> tuple[str, str]:
-    return (str(entry.source_issue_id or "").strip(), str(entry.source_worklog_id or "").strip())
+def _actual_entry_worklog_id(entry: ActualEntry) -> str:
+    return str(entry.source_worklog_id or "").strip()
 
 
 def list_unmapped_users(db: Session) -> list[dict[str, object]]:
@@ -644,13 +633,16 @@ def _normalize_jira_worklog(
     hours = (seconds / Decimal("3600")).quantize(Decimal("0.01"))
     if hours <= 0:
         return None
+    worklog_id = str(worklog.get("id") or "").strip()
+    if not worklog_id:
+        return None
 
     project_key = str(project.get("key") or "").strip().upper()
     if not project_key:
         return None
 
     return MockWorklog(
-        worklog_id=str(worklog.get("id") or ""),
+        worklog_id=worklog_id,
         issue_id=str(issue.get("id") or issue.get("key") or ""),
         ticket_key=str(issue.get("key") or ""),
         ticket_summary=str(fields.get("summary") or ""),

@@ -7,7 +7,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db.seed import _seed_buckets
-from app.models import ActualEntry, Base, JiraProductMapping, JiraUserMapping, Product, ProductJiraSpace, SyncRun, TeamMember
+from app.models import ActualEntry, Base, Bucket, JiraProductMapping, JiraUserMapping, Product, ProductJiraSpace, SyncRun, TeamMember
+from app.services.fiscal_year import get_fiscal_month
 from app.services.jira_rovo import MockWorklog, map_jira_product, map_jira_user, run_live_jira_rovo_sync, run_mock_jira_rovo_sync
 from app.services.team_import import import_team_members
 
@@ -244,6 +245,53 @@ def test_live_sync_deletes_jira_actuals_for_removed_worklogs(monkeypatch):
         assert second["imported_worklogs"] == 1
         assert second["deleted_worklogs"] == 1
         assert [entry.source_worklog_id for entry in remaining] == ["live-wl-1"]
+
+
+def test_live_sync_deletes_stale_jira_actuals_even_when_project_mapping_changed(monkeypatch):
+    with session() as db:
+        _seed_buckets(db)
+        product = Product(name="Live Product")
+        member = TeamMember(name="Live User", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        assert bucket is not None
+        fiscal_month = get_fiscal_month(db, 2027, 1)
+        db.add(
+            ProductJiraSpace(
+                product_id=product.id,
+                jira_project_key="CURRENT",
+                jira_project_name="Current Jira Project",
+                is_active=True,
+                validation_status="valid",
+            )
+        )
+        db.add(
+            ActualEntry(
+                product_id=product.id,
+                team_member_id=member.id,
+                bucket_id=bucket.id,
+                fiscal_month_id=fiscal_month.id,
+                hours=Decimal("1.00"),
+                source="jira",
+                source_issue_id="900266",
+                source_ticket_key="TNSD-266",
+                source_worklog_id="deleted-wl-266",
+                source_account_id="acct-live",
+                source_project_key="TNSD",
+                worked_on=date(2026, 7, 1),
+            )
+        )
+        db.flush()
+
+        monkeypatch.setattr("app.services.jira_rovo.current_live_sync_fiscal_year", lambda: 2027)
+        monkeypatch.setattr("app.services.jira_rovo.fetch_live_jira_worklogs", lambda _db, _fiscal_year: [])
+
+        result = run_live_jira_rovo_sync(db, 2027)
+        remaining = db.scalars(select(ActualEntry).where(ActualEntry.source == "jira")).all()
+
+        assert result["deleted_worklogs"] == 1
+        assert remaining == []
 
 
 def _add_mock_sync_mappings(db: Session) -> tuple[dict[str, Product], dict[str, TeamMember]]:
