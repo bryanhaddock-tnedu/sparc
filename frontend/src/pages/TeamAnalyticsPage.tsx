@@ -1,5 +1,5 @@
 import { ArrowLeft, Plus, Save } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
@@ -31,6 +31,7 @@ import { formatHours } from "../lib/utils";
 import type {
   DeliveryFlowIssue,
   RoadmapForecastAllocationUpsertPayload,
+  RoadmapPlannerDeliverable,
   ReportedValueRow,
   TeamMember,
   TeamMemberStoryPointMetric,
@@ -301,6 +302,7 @@ function RoadmapForecastPlanner({
   const allocationTotal = plan.rows.reduce((total, row) => total + row.forecast_hours, 0);
   const actualTotal = plan.rows.reduce((total, row) => total + row.actual_hours, 0);
   const scheduledRowCount = plan.rows.filter(rowHasRoadmapSchedule).length;
+  const roadmapGroups = useMemo(() => groupPlannerRows(plan.rows), [plan.rows]);
 
   useEffect(() => {
     const nextDraft: Record<string, string> = {};
@@ -363,7 +365,7 @@ function RoadmapForecastPlanner({
         <div>
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">Roadmap Forecast Planner</h2>
           <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
-            Assign Team Members to team-owned Roadmap Items and enter monthly forecast hours. Each editable row rolls up to the Product/Bucket shown on that row.
+            Assign Team Members to team-owned Roadmap Items and enter monthly forecast hours. Each Forecast Target rolls up to its Product/Bucket.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -384,76 +386,41 @@ function RoadmapForecastPlanner({
       ) : null}
 
       <div className="mt-4 space-y-3">
-        {plan.rows.length ? (
-          plan.rows.map((row) => {
-            const rowKey = plannerRowKey(row);
-            const memberIds = rowMembers[rowKey] ?? [];
-            const canForecast = row.product_id != null && row.bucket_id != null;
-            const availableMembers = plan.team_members.filter((member) => !memberIds.includes(member.id));
+        {roadmapGroups.length ? (
+          roadmapGroups.map((group) => {
             return (
-              <div key={rowKey} className="overflow-hidden rounded-lg border">
+              <div key={group.roadmap_item_id} className="overflow-hidden rounded-lg border">
                 <div className="flex flex-col gap-3 border-b bg-secondary/30 p-3 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      {row.source_url ? (
-                        <a className="font-semibold text-primary hover:underline" href={row.source_url} rel="noreferrer" target="_blank">
-                          {row.roadmap_item_key}
+                      {group.source_url ? (
+                        <a className="font-semibold text-primary hover:underline" href={group.source_url} rel="noreferrer" target="_blank">
+                          {group.roadmap_item_key}
                         </a>
                       ) : (
-                        <span className="font-semibold text-primary">{row.roadmap_item_key}</span>
+                        <span className="font-semibold text-primary">{group.roadmap_item_key}</span>
                       )}
-                      {row.roadmap_item_status ? <Badge className="border-primary/30 text-primary">{row.roadmap_item_status}</Badge> : null}
-                      <Badge className={row.source_team_matches ? "border-[color:var(--spark-cyan)] text-primary" : "border-muted text-muted-foreground"}>
-                        {row.source_team_matches ? row.source_team ?? plan.team : "Inferred from product team"}
+                      {group.roadmap_item_status ? <Badge className="border-primary/30 text-primary">{group.roadmap_item_status}</Badge> : null}
+                      <Badge className={group.source_team_matches ? "border-[color:var(--spark-cyan)] text-primary" : "border-muted text-muted-foreground"}>
+                        {group.source_team_matches ? group.source_team ?? plan.team : "Inferred from product team"}
                       </Badge>
                     </div>
-                    <div className="mt-1 truncate text-sm font-medium" title={row.roadmap_item_title}>
-                      {row.roadmap_item_title}
+                    <div className="mt-1 truncate text-sm font-medium" title={group.roadmap_item_title}>
+                      {group.roadmap_item_title}
                     </div>
-                    <PlannerDeliverables row={row} />
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span className="font-semibold text-primary">Forecasts to {row.product ?? "Needs product mapping"}</span>
-                      <span>/</span>
-                      <span>{row.bucket ?? "Needs bucket/category"}</span>
-                      {row.program_area ? (
-                        <>
-                          <span>/</span>
-                          <span>{row.program_area}</span>
-                        </>
-                      ) : null}
-                    </div>
+                    <PlannerDeliverables deliverables={group.deliverables} label="Deliverables" showProduct />
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                    <PlannerMetric label="Forecast" value={formatHours(row.forecast_hours)} />
-                    <PlannerMetric label="Actual" value={formatHours(row.actual_hours)} />
-                    <PlannerMetric label="Tickets" value={String(row.ticket_count)} />
-                    <div className="flex gap-2">
-                      <select
-                        aria-label={`Add Team Member to ${row.roadmap_item_key}`}
-                        className="h-9 min-w-56 rounded-md border border-input bg-background px-3 text-sm"
-                        disabled={!canForecast || !availableMembers.length}
-                        value={selectedMembers[rowKey] ?? ""}
-                        onChange={(event) => setSelectedMembers((current) => ({ ...current, [rowKey]: event.target.value }))}
-                      >
-                        <option value="">{canForecast ? "Add Team Member" : "Map product and bucket first"}</option>
-                        {availableMembers.map((member) => (
-                          <option key={member.id} value={member.id}>
-                            {member.name}
-                          </option>
-                        ))}
-                      </select>
-                      <Button disabled={!canForecast || !selectedMembers[rowKey]} onClick={() => addMember(row)} size="sm" type="button" variant="outline">
-                        <Plus className="h-4 w-4" />
-                        Add
-                      </Button>
-                    </div>
+                    <PlannerMetric label="Forecast" value={formatHours(group.forecast_hours)} />
+                    <PlannerMetric label="Actual" value={formatHours(group.actual_hours)} />
+                    <PlannerMetric label="Tickets" value={String(group.ticket_count)} />
                   </div>
                 </div>
 
                 <div className="overflow-hidden">
                   <Table className="table-fixed">
                     <colgroup>
-                      <col className="w-32 md:w-40" />
+                      <col className="w-36 md:w-44" />
                       {plan.months.map((month) => (
                         <col key={month.id} />
                       ))}
@@ -461,11 +428,11 @@ function RoadmapForecastPlanner({
                     </colgroup>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="px-2">Team Member</TableHead>
+                        <TableHead className="px-2">Target / Team Member</TableHead>
                         {plan.months.map((month) => (
                           <TableHead
                             key={month.id}
-                            className={`px-1 text-center text-[11px] ${roadmapMonthIsActive(row, month) ? "bg-[color:var(--spark-cyan)]/20 text-primary" : ""}`}
+                            className={`px-1 text-center text-[11px] ${roadmapMonthIsActive(group.rows[0], month) ? "bg-[color:var(--spark-cyan)]/20 text-primary" : ""}`}
                           >
                             {month.label}
                           </TableHead>
@@ -474,45 +441,96 @@ function RoadmapForecastPlanner({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {memberIds.length ? (
-                        memberIds.map((memberId) => (
-                          <TableRow key={`${rowKey}:${memberId}`}>
-                            <TableCell className="truncate px-2 font-medium">{memberName(memberId, plan.team_members)}</TableCell>
-                            {plan.months.map((month) => {
-                              const key = plannerCellKey(row, memberId, month.sequence);
-                              const isRoadmapMonth = roadmapMonthIsActive(row, month);
-                              return (
-                                <TableCell key={month.id} className={`px-1 py-2 ${isRoadmapMonth ? "bg-[color:var(--spark-cyan)]/10" : ""}`}>
-                                  <Input
-                                    aria-label={`${row.roadmap_item_key} ${memberName(memberId, plan.team_members)} ${month.label} forecast hours`}
-                                    className={`numeric-cell h-8 w-full min-w-0 px-1 text-right text-xs sm:text-sm ${isRoadmapMonth ? "border-[color:var(--spark-cyan)] bg-background" : ""}`}
-                                    disabled={!canForecast || saving}
-                                    inputMode="decimal"
-                                    pattern="[0-9]*[.]?[0-9]*"
-                                    type="text"
-                                    value={draftHours[key] ?? ""}
-                                    onChange={(event) => updateCell(row, memberId, month.sequence, event.target.value)}
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Enter") {
-                                        event.currentTarget.blur();
-                                      }
-                                    }}
-                                  />
+                      {group.rows.map((row) => {
+                        const rowKey = plannerRowKey(row);
+                        const memberIds = rowMembers[rowKey] ?? [];
+                        const canForecast = row.product_id != null && row.bucket_id != null;
+                        const availableMembers = plan.team_members.filter((member) => !memberIds.includes(member.id));
+                        return (
+                          <Fragment key={rowKey}>
+                            <TableRow className="bg-secondary/20 hover:bg-secondary/20">
+                              <TableCell className="px-3 py-3" colSpan={plan.months.length + 2}>
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                  <div className="min-w-0">
+                                    <div className="text-[10px] font-semibold uppercase text-muted-foreground">Forecast Target</div>
+                                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                                      <span className="font-semibold text-primary">{row.product ?? "Needs product mapping"}</span>
+                                      <span>/</span>
+                                      <span>{row.bucket ?? "Needs bucket/category"}</span>
+                                      {row.program_area ? (
+                                        <>
+                                          <span>/</span>
+                                          <span>{row.program_area}</span>
+                                        </>
+                                      ) : null}
+                                    </div>
+                                    <PlannerDeliverables deliverables={row.deliverables} label="Target deliverables" />
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <select
+                                      aria-label={`Add Team Member to ${row.roadmap_item_key} ${row.product ?? ""}`}
+                                      className="h-9 min-w-56 rounded-md border border-input bg-background px-3 text-sm"
+                                      disabled={!canForecast || !availableMembers.length}
+                                      value={selectedMembers[rowKey] ?? ""}
+                                      onChange={(event) => setSelectedMembers((current) => ({ ...current, [rowKey]: event.target.value }))}
+                                    >
+                                      <option value="">{canForecast ? "Add Team Member" : "Map product and bucket first"}</option>
+                                      {availableMembers.map((member) => (
+                                        <option key={member.id} value={member.id}>
+                                          {member.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <Button disabled={!canForecast || !selectedMembers[rowKey]} onClick={() => addMember(row)} size="sm" type="button" variant="outline">
+                                      <Plus className="h-4 w-4" />
+                                      Add
+                                    </Button>
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                            {memberIds.length ? (
+                              memberIds.map((memberId) => (
+                                <TableRow key={`${rowKey}:${memberId}`}>
+                                  <TableCell className="truncate px-2 font-medium">{memberName(memberId, plan.team_members)}</TableCell>
+                                  {plan.months.map((month) => {
+                                    const key = plannerCellKey(row, memberId, month.sequence);
+                                    const isRoadmapMonth = roadmapMonthIsActive(row, month);
+                                    return (
+                                      <TableCell key={month.id} className={`px-1 py-2 ${isRoadmapMonth ? "bg-[color:var(--spark-cyan)]/10" : ""}`}>
+                                        <Input
+                                          aria-label={`${row.roadmap_item_key} ${memberName(memberId, plan.team_members)} ${month.label} forecast hours`}
+                                          className={`numeric-cell h-8 w-full min-w-0 px-1 text-right text-xs sm:text-sm ${isRoadmapMonth ? "border-[color:var(--spark-cyan)] bg-background" : ""}`}
+                                          disabled={!canForecast || saving}
+                                          inputMode="decimal"
+                                          pattern="[0-9]*[.]?[0-9]*"
+                                          type="text"
+                                          value={draftHours[key] ?? ""}
+                                          onChange={(event) => updateCell(row, memberId, month.sequence, event.target.value)}
+                                          onKeyDown={(event) => {
+                                            if (event.key === "Enter") {
+                                              event.currentTarget.blur();
+                                            }
+                                          }}
+                                        />
+                                      </TableCell>
+                                    );
+                                  })}
+                                  <TableCell className="numeric-cell px-1 text-right text-xs font-semibold sm:text-sm">
+                                    {formatHours(memberRowTotal(row, memberId, plan.months, draftHours))}
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                            ) : (
+                              <TableRow>
+                                <TableCell className="py-4 text-muted-foreground" colSpan={plan.months.length + 2}>
+                                  No Team Members allocated yet.
                                 </TableCell>
-                              );
-                            })}
-                            <TableCell className="numeric-cell px-1 text-right text-xs font-semibold sm:text-sm">
-                              {formatHours(memberRowTotal(row, memberId, plan.months, draftHours))}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell className="py-4 text-muted-foreground" colSpan={plan.months.length + 2}>
-                            No Team Members allocated yet.
-                          </TableCell>
-                        </TableRow>
-                      )}
+                              </TableRow>
+                            )}
+                          </Fragment>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -529,17 +547,25 @@ function RoadmapForecastPlanner({
   );
 }
 
-function PlannerDeliverables({ row }: { row: TeamRoadmapForecastRow }) {
-  if (!row.deliverables.length) return null;
-  const label = row.deliverables.length === 1 ? "Deliverable" : `Deliverables for ${row.product ?? "this row"}`;
+function PlannerDeliverables({
+  deliverables,
+  label,
+  showProduct = false,
+}: {
+  deliverables: RoadmapPlannerDeliverable[];
+  label: string;
+  showProduct?: boolean;
+}) {
+  if (!deliverables.length) return null;
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2">
       <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-        {label} ({row.deliverables.length})
+        {label} ({deliverables.length})
       </span>
-      {row.deliverables.map((deliverable) => (
+      {deliverables.map((deliverable) => (
         <div key={deliverable.id} className="flex max-w-xl min-w-0 gap-1 rounded-md border bg-background px-2 py-1 text-xs">
           <span className="shrink-0 font-semibold text-primary">{deliverable.jira_issue_key}</span>
+          {showProduct && deliverable.product ? <span className="shrink-0 text-muted-foreground">{deliverable.product}</span> : null}
           {deliverable.jira_issue_summary ? (
             <span className="truncate text-muted-foreground" title={deliverable.jira_issue_summary}>
               {deliverable.jira_issue_summary}
@@ -558,6 +584,67 @@ function PlannerMetric({ label, value }: { label: string; value: string }) {
       <div className="numeric-cell text-sm font-semibold text-primary">{value}</div>
     </div>
   );
+}
+
+type PlannerRoadmapGroup = {
+  actual_hours: number;
+  deliverables: RoadmapPlannerDeliverable[];
+  forecast_hours: number;
+  roadmap_item_id: number;
+  roadmap_item_key: string;
+  roadmap_item_status: string | null;
+  roadmap_item_title: string;
+  rows: TeamRoadmapForecastRow[];
+  source_team: string | null;
+  source_team_matches: boolean;
+  source_url: string | null;
+  ticket_count: number;
+};
+
+function groupPlannerRows(rows: TeamRoadmapForecastRow[]) {
+  const groups = new Map<number, PlannerRoadmapGroup>();
+  rows.forEach((row) => {
+    const existing = groups.get(row.roadmap_item_id);
+    const group =
+      existing ??
+      {
+        actual_hours: 0,
+        deliverables: [],
+        forecast_hours: 0,
+        roadmap_item_id: row.roadmap_item_id,
+        roadmap_item_key: row.roadmap_item_key,
+        roadmap_item_status: row.roadmap_item_status,
+        roadmap_item_title: row.roadmap_item_title,
+        rows: [],
+        source_team: row.source_team,
+        source_team_matches: row.source_team_matches,
+        source_url: row.source_url,
+        ticket_count: 0,
+      };
+    group.rows.push(row);
+    group.forecast_hours += row.forecast_hours;
+    group.actual_hours += row.actual_hours;
+    group.ticket_count += row.ticket_count;
+    group.deliverables = uniqueDeliverables([...group.deliverables, ...row.deliverables]);
+    groups.set(row.roadmap_item_id, group);
+  });
+  return [...groups.values()].map((group) => ({
+    ...group,
+    deliverables: uniqueDeliverables(group.deliverables),
+    rows: [...group.rows].sort((left, right) => forecastTargetLabel(left).localeCompare(forecastTargetLabel(right))),
+  }));
+}
+
+function uniqueDeliverables(deliverables: RoadmapPlannerDeliverable[]) {
+  const byKey = new Map<string, RoadmapPlannerDeliverable>();
+  deliverables.forEach((deliverable) => {
+    byKey.set(String(deliverable.id ?? deliverable.jira_issue_key), deliverable);
+  });
+  return [...byKey.values()].sort((left, right) => left.jira_issue_key.localeCompare(right.jira_issue_key));
+}
+
+function forecastTargetLabel(row: TeamRoadmapForecastRow) {
+  return `${row.product ?? "Needs product mapping"} ${row.bucket ?? "Needs bucket/category"}`;
 }
 
 function plannerRowKey(row: TeamRoadmapForecastRow) {
