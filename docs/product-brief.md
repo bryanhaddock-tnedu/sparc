@@ -106,6 +106,7 @@ Build these primary routes:
 - `/teams/:teamSlug` — Team Analytics
 - `/team-members/:teamMemberSlug` — Team Member Detail
 - `/team` — Team Management
+- `/reports` — Enterprise Reports
 
 ## Dashboard Requirements
 
@@ -331,6 +332,30 @@ Rules:
 - Engineering Work Done should represent Jira statuses such as Ready for UAT, Ready for Acceptance, Dev Complete, or Code Complete.
 - Business Acceptance should represent Jira statuses such as In UAT, Business Acceptance, Business Review, Awaiting Acceptance, or Signoff.
 - Delivery-flow aging should use the latest Jira updated date until SPARC captures explicit Jira status-transition dates.
+
+## Enterprise Reports Page Requirements
+
+Enterprise Reports should provide adjustable labor cost rollups without becoming a project management view.
+
+Initial report:
+
+- Labor Cost Report
+
+Supported dimensions:
+
+- Person
+- Team
+- Product
+- Bucket
+
+Rules:
+
+- Reports are scoped to the selected Fiscal Year.
+- Users can select which dimension is the lead column and optionally add second and third dimensions.
+- Cost values are calculated from Forecast or Actual hours multiplied by Team Member bill rate.
+- Product and Person values link to their detail pages.
+- Reports must be viewable in SPARC and exportable as `.xlsx`.
+- Export filenames should use the report name and current date in `yyyymmdd` format, for example `labor-cost-report-20260702.xlsx`.
 
 ## Backend Requirements
 

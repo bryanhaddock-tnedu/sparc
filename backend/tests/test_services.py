@@ -1,7 +1,9 @@
 from datetime import date
 from decimal import Decimal
+from io import BytesIO
 
 import pytest
+from openpyxl import load_workbook
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -38,6 +40,7 @@ from app.services.forecast_recommendations import (
     create_forecast_recommendation_decision,
     list_forecast_recommendation_decisions,
 )
+from app.services.reporting import build_labor_cost_report, build_labor_cost_report_workbook
 from app.services.jira_projects import (
     JiraProjectPayload,
     add_product_jira_space,
@@ -79,6 +82,78 @@ def test_fiscal_year_mapping():
 
 def test_cost_calculation():
     assert calculate_cost(Decimal("12.5"), Decimal("100.00")) == 1250.0
+
+
+def test_labor_cost_report_rolls_up_by_team_and_bucket():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Core Infrastructure", slug="core-infrastructure")
+        member = TeamMember(name="Akhil Musani", slug="akhil-musani", role="QA", team="Product Maintenance", bill_rate=Decimal("80"))
+        db.add_all([product, member])
+        db.flush()
+
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_code="NET_NEW",
+            fiscal_year=2027,
+            month_sequence=1,
+            hours=10,
+        )
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_code="NET_NEW",
+            fiscal_year=2027,
+            month_sequence=2,
+            hours=5,
+        )
+
+        report = build_labor_cost_report(db, 2027, dimensions=["team", "bucket"], sort_metric="forecast_cost")
+
+        assert report["dimensions"] == [{"key": "team", "label": "Team"}, {"key": "bucket", "label": "Bucket"}]
+        assert len(report["rows"]) == 1
+        row = report["rows"][0]
+        assert [value["label"] for value in row["dimension_values"]] == ["Product Maintenance", "Net New"]
+        assert row["forecast_hours"] == 15
+        assert row["forecast_cost"] == 1200
+        assert report["totals"]["forecast_cost"] == 1200
+
+
+def test_labor_cost_report_workbook_exports_xlsx():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="SWORD", slug="sword")
+        member = TeamMember(name="Akhil Musani", slug="akhil-musani", role="QA", team="QA", bill_rate=Decimal("80"))
+        db.add_all([product, member])
+        db.flush()
+
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_code="ENHANCE",
+            fiscal_year=2027,
+            month_sequence=1,
+            hours=4,
+        )
+
+        workbook_bytes = build_labor_cost_report_workbook(db, 2027, dimensions=["product", "bucket"], sort_metric="forecast_cost")
+        workbook = load_workbook(BytesIO(workbook_bytes.getvalue()), data_only=True)
+        worksheet = workbook["Labor Cost"]
+
+        assert worksheet["A1"].value == "SPARC Labor Cost Report"
+        assert worksheet["A4"].value == "Product"
+        assert worksheet["B4"].value == "Bucket"
+        assert worksheet["A5"].value == "SWORD"
+        assert worksheet["B5"].value == "Enhance"
+        assert worksheet["D5"].value == 320
 
 
 def test_forecast_upsert_uniqueness():

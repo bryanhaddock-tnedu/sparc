@@ -623,6 +623,44 @@ export interface DeliveryFlowIssue {
   updated_days_ago: number | null;
 }
 
+export type LaborCostReportDimension = "person" | "team" | "product" | "bucket";
+
+export type LaborCostReportOptionalDimension = LaborCostReportDimension | "none";
+
+export type LaborCostReportMetric = "forecast_cost" | "actual_cost" | "variance_cost" | "forecast_hours" | "actual_hours";
+
+export interface LaborCostReportDimensionValue {
+  key: LaborCostReportDimension;
+  label: string;
+  href: string | null;
+}
+
+export interface LaborCostReportDimensionConfig {
+  key: LaborCostReportDimension;
+  label: string;
+}
+
+export interface LaborCostReportTotals {
+  forecast_hours: number;
+  actual_hours: number;
+  forecast_cost: number;
+  actual_cost: number;
+  variance_cost: number;
+}
+
+export interface LaborCostReportRow extends LaborCostReportTotals {
+  dimension_values: LaborCostReportDimensionValue[];
+}
+
+export interface LaborCostReport {
+  fiscal_year: number;
+  dimensions: LaborCostReportDimensionConfig[];
+  sort_metric: LaborCostReportMetric;
+  rows: LaborCostReportRow[];
+  totals: LaborCostReportTotals;
+  generated_at: string;
+}
+
 export interface ProductSummary {
   product: Product;
   fiscal_year: number;

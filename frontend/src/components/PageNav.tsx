@@ -1,14 +1,15 @@
-import { Settings, LayoutDashboard, Package, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, Settings, LayoutDashboard, Package, Users, type LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Button } from "./ui/button";
 
-type PageNavKey = "dashboard" | "products" | "team" | "admin";
+type PageNavKey = "dashboard" | "products" | "team" | "reports" | "admin";
 
 const navLinks: Array<{ key: PageNavKey; label: string; href: string; icon: LucideIcon; iconOnly?: boolean }> = [
   { key: "dashboard", label: "Dashboard", href: "/", icon: LayoutDashboard },
   { key: "products", label: "Products", href: "/products/settings", icon: Package },
   { key: "team", label: "Team", href: "/team", icon: Users },
+  { key: "reports", label: "Reports", href: "/reports", icon: BarChart3 },
   { key: "admin", label: "Admin", href: "/admin", icon: Settings, iconOnly: true },
 ];
 

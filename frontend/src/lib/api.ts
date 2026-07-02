@@ -24,6 +24,10 @@ import type {
   JiraProjectCatalogSyncResult,
   JiraProjectCatalogUpdatePayload,
   JiraRovoSyncResult,
+  LaborCostReport,
+  LaborCostReportDimension,
+  LaborCostReportMetric,
+  LaborCostReportOptionalDimension,
   JiraUserMapping,
   Product,
   ProductBucketTables,
@@ -72,6 +76,13 @@ type RoadmapActualParams = {
   monthSequence?: number | null;
 };
 
+type LaborCostReportParams = {
+  lead: LaborCostReportDimension;
+  second?: LaborCostReportOptionalDimension;
+  third?: LaborCostReportOptionalDimension;
+  sort?: LaborCostReportMetric;
+};
+
 function dashboardQuery(fiscalYear: number, params: DashboardScopeParams = {}) {
   const search = new URLSearchParams({ fiscal_year: String(fiscalYear) });
   if (params.monthSequence != null) search.set("month_sequence", String(params.monthSequence));
@@ -81,6 +92,17 @@ function dashboardQuery(fiscalYear: number, params: DashboardScopeParams = {}) {
 function roadmapActualQuery(fiscalYear: number, params: RoadmapActualParams = {}) {
   const search = new URLSearchParams({ fiscal_year: String(fiscalYear) });
   if (params.monthSequence != null) search.set("month_sequence", String(params.monthSequence));
+  return search.toString();
+}
+
+function laborCostReportQuery(fiscalYear: number, params: LaborCostReportParams) {
+  const search = new URLSearchParams({
+    fiscal_year: String(fiscalYear),
+    lead: params.lead,
+    second: params.second ?? "none",
+    third: params.third ?? "none",
+    sort: params.sort ?? "forecast_cost",
+  });
   return search.toString();
 }
 
@@ -115,7 +137,7 @@ async function upload<T>(path: string, formData: FormData): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function download(path: string): Promise<{ blob: Blob; filename: string }> {
+async function download(path: string, fallbackFilename = "sparc-download"): Promise<{ blob: Blob; filename: string }> {
   const response = await fetch(`${API_BASE_URL}${path}`, { credentials: "include" });
   if (!response.ok) {
     const message = await responseErrorMessage(response);
@@ -123,7 +145,7 @@ async function download(path: string): Promise<{ blob: Blob; filename: string }>
   }
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const match = disposition.match(/filename="?([^"]+)"?/i);
-  const filename = match?.[1] ?? "sparc-admin-data.zip";
+  const filename = match?.[1] ?? fallbackFilename;
   return { blob: await response.blob(), filename };
 }
 
@@ -155,7 +177,7 @@ export const api = {
   exportAdminData: (datasets: string[]) => {
     const params = new URLSearchParams();
     datasets.forEach((dataset) => params.append("datasets", dataset));
-    return download(`/api/admin-data/export${params.toString() ? `?${params.toString()}` : ""}`);
+    return download(`/api/admin-data/export${params.toString() ? `?${params.toString()}` : ""}`, "sparc-admin-data.zip");
   },
   importAdminData: (file: File, datasets: string[]) => {
     const params = new URLSearchParams();
@@ -378,4 +400,8 @@ export const api = {
   teamMemberStoryPointMetrics: (fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<TeamMemberStoryPointMetric[]>(`/api/estimations/story-point-metrics?fiscal_year=${fiscalYear}`),
   deliveryFlowIssues: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<DeliveryFlowIssue[]>(`/api/estimations/delivery-flow?fiscal_year=${fiscalYear}`),
+  laborCostReport: (fiscalYear = DEFAULT_FISCAL_YEAR, params: LaborCostReportParams) =>
+    request<LaborCostReport>(`/api/reports/labor-cost?${laborCostReportQuery(fiscalYear, params)}`),
+  exportLaborCostReport: (fiscalYear = DEFAULT_FISCAL_YEAR, params: LaborCostReportParams) =>
+    download(`/api/reports/labor-cost.xlsx?${laborCostReportQuery(fiscalYear, params)}`, `sparc-labor-cost-FY${fiscalYear}.xlsx`),
 };
