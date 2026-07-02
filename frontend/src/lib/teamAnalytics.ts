@@ -107,6 +107,7 @@ export type TeamRankingResult = {
 export type TeamAnalyticsBreakdownRow = {
   id: number | string;
   label: string;
+  product_slug?: string | null;
   forecastHours: number;
   actualHours: number;
   percentOfActual: number;
@@ -284,7 +285,13 @@ export function buildSingleTeamAnalytics(teamName: string, members: TeamMember[]
   const fytdRows = buildActualPeriodRows(teamRows, fiscalYear).fytd.rows;
   const actualHours = roundHours(sumRows(fytdRows, "actual_hours"));
   const forecastHours = roundHours(sumRows(teamRows, "forecast_hours"));
-  const productRows = aggregateBreakdown(teamRows, fytdRows, (row) => row.product_id, (row) => row.product);
+  const productRows = aggregateBreakdown(
+    teamRows,
+    fytdRows,
+    (row) => row.product_id,
+    (row) => row.product,
+    (row) => row.product_slug,
+  );
   const workTypeRows = aggregateBreakdown(teamRows, fytdRows, (row) => row.bucket_id, (row) => row.bucket);
   const roleRows = aggregateRoleBreakdown(teamRows, fytdRows, memberById);
 
@@ -428,17 +435,20 @@ function aggregateBreakdown(
   actualRows: ReportedValueRow[],
   idForRow: (row: ReportedValueRow) => number | string,
   labelForRow: (row: ReportedValueRow) => string,
+  slugForRow?: (row: ReportedValueRow) => string | null,
 ): TeamAnalyticsBreakdownRow[] {
   const rowsById = new Map<number | string, TeamAnalyticsBreakdownRow>();
   for (const row of forecastRows) {
     const id = idForRow(row);
-    const existing = rowsById.get(id) ?? { id, label: labelForRow(row), forecastHours: 0, actualHours: 0, percentOfActual: 0 };
+    const existing = rowsById.get(id) ?? { id, label: labelForRow(row), product_slug: slugForRow?.(row) ?? null, forecastHours: 0, actualHours: 0, percentOfActual: 0 };
+    if (!existing.product_slug && slugForRow) existing.product_slug = slugForRow(row);
     existing.forecastHours += row.forecast_hours;
     rowsById.set(id, existing);
   }
   for (const row of actualRows) {
     const id = idForRow(row);
-    const existing = rowsById.get(id) ?? { id, label: labelForRow(row), forecastHours: 0, actualHours: 0, percentOfActual: 0 };
+    const existing = rowsById.get(id) ?? { id, label: labelForRow(row), product_slug: slugForRow?.(row) ?? null, forecastHours: 0, actualHours: 0, percentOfActual: 0 };
+    if (!existing.product_slug && slugForRow) existing.product_slug = slugForRow(row);
     existing.actualHours += row.actual_hours;
     rowsById.set(id, existing);
   }

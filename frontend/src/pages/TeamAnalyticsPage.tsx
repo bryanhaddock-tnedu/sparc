@@ -13,6 +13,7 @@ import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
+import { productDetailPath } from "../lib/routes";
 import {
   DELIVERY_FLOW_STAGE_LABELS,
   DELIVERY_FLOW_STAGE_ORDER,
@@ -148,7 +149,7 @@ export function TeamAnalyticsPage() {
             title="Team Member Rankings"
           />
           <div className="grid gap-4 xl:grid-cols-3">
-            <TeamBreakdownTable rows={analytics.products} title="Product Mix" />
+            <TeamBreakdownTable linkProducts rows={analytics.products} title="Product Mix" />
             <TeamBreakdownTable rows={analytics.workTypes} title="Work Type Mix" />
             <TeamBreakdownTable rows={analytics.roles} title="Role Mix" />
           </div>
@@ -454,7 +455,13 @@ function RoadmapForecastPlanner({
                                   <div className="min-w-0">
                                     <div className="text-[10px] font-semibold uppercase text-muted-foreground">Forecast Target</div>
                                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                                      <span className="font-semibold text-primary">{row.product ?? "Needs product mapping"}</span>
+                                      {row.product ? (
+                                        <ProductNameLink className="font-semibold text-primary hover:underline" productId={row.product_id} productSlug={row.product_slug}>
+                                          {row.product}
+                                        </ProductNameLink>
+                                      ) : (
+                                        <span className="font-semibold text-primary">Needs product mapping</span>
+                                      )}
                                       <span>/</span>
                                       <span>{row.bucket ?? "Needs bucket/category"}</span>
                                       {row.program_area ? (
@@ -565,7 +572,15 @@ function PlannerDeliverables({
       {deliverables.map((deliverable) => (
         <div key={deliverable.id} className="flex max-w-xl min-w-0 gap-1 rounded-md border bg-background px-2 py-1 text-xs">
           <span className="shrink-0 font-semibold text-primary">{deliverable.jira_issue_key}</span>
-          {showProduct && deliverable.product ? <span className="shrink-0 text-muted-foreground">{deliverable.product}</span> : null}
+          {showProduct && deliverable.product ? (
+            <ProductNameLink
+              className="shrink-0 text-muted-foreground hover:text-primary hover:underline"
+              productId={deliverable.product_id}
+              productSlug={deliverable.product_slug}
+            >
+              {deliverable.product}
+            </ProductNameLink>
+          ) : null}
           {deliverable.jira_issue_summary ? (
             <span className="truncate text-muted-foreground" title={deliverable.jira_issue_summary}>
               {deliverable.jira_issue_summary}
@@ -734,26 +749,33 @@ function roadmapPlannerEntries(
 }
 
 function TeamSummaryCards({ analytics }: { analytics: TeamAnalytics }) {
+  const primaryProduct = analytics.products[0];
   return (
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
       <MetricCard density="compact" label="Active Members" value={formatHours(analytics.activeMembers)} />
       <MetricCard density="compact" label="FYTD Actual Hrs" tone="good" value={formatHours(analytics.actualHours)} />
       <MetricCard density="compact" label="FY Forecast Hrs" value={formatHours(analytics.forecastHours)} />
       <MetricCard density="compact" label="Products Supported" value={formatHours(analytics.productsSupported)} />
-      <SummaryTextCard label="Primary Product" value={analytics.primaryProduct} />
+      <SummaryTextCard label="Primary Product" to={primaryProduct ? breakdownProductPath(primaryProduct) : undefined} value={analytics.primaryProduct} />
       <SummaryTextCard label="Primary Work Type" value={analytics.primaryWorkType} />
     </section>
   );
 }
 
-function SummaryTextCard({ label, value }: { label: string; value: string }) {
+function SummaryTextCard({ label, value, to }: { label: string; value: string; to?: string }) {
   return (
     <div className="grid min-h-[78px] grid-rows-[1rem_1fr] gap-1 rounded-lg border bg-card p-3">
       <div className="truncate text-[11px] font-semibold uppercase text-muted-foreground" title={label}>
         {label}
       </div>
       <div className="flex min-w-0 items-center text-base font-semibold leading-tight text-primary" title={value}>
-        <span className="line-clamp-2">{value}</span>
+        {to ? (
+          <Link className="line-clamp-2 hover:underline" to={to}>
+            {value}
+          </Link>
+        ) : (
+          <span className="line-clamp-2">{value}</span>
+        )}
       </div>
     </div>
   );
@@ -787,7 +809,7 @@ function TeamMonthlyForecastActualCard({ analytics }: { analytics: TeamAnalytics
   );
 }
 
-function TeamBreakdownTable({ rows, title }: { rows: TeamAnalyticsBreakdownRow[]; title: string }) {
+function TeamBreakdownTable({ rows, title, linkProducts = false }: { rows: TeamAnalyticsBreakdownRow[]; title: string; linkProducts?: boolean }) {
   const maxActual = Math.max(...rows.map((row) => row.actualHours), 0);
   return (
     <section className="overflow-hidden rounded-lg border bg-card">
@@ -807,7 +829,15 @@ function TeamBreakdownTable({ rows, title }: { rows: TeamAnalyticsBreakdownRow[]
             rows.slice(0, 8).map((row) => (
               <TableRow key={row.id}>
                 <TableCell>
-                  <div className="font-medium text-foreground">{row.label}</div>
+                  <div className="font-medium text-foreground">
+                    {linkProducts ? (
+                      <Link className="text-primary hover:underline" to={breakdownProductPath(row)}>
+                        {row.label}
+                      </Link>
+                    ) : (
+                      row.label
+                    )}
+                  </div>
                   <div className="mt-1 h-2 overflow-hidden rounded-full bg-secondary">
                     <div
                       className="h-full rounded-full bg-[color:var(--spark-cyan)]"
@@ -830,4 +860,29 @@ function TeamBreakdownTable({ rows, title }: { rows: TeamAnalyticsBreakdownRow[]
       </Table>
     </section>
   );
+}
+
+function ProductNameLink({
+  children,
+  className,
+  productId,
+  productSlug,
+}: {
+  children: string;
+  className?: string;
+  productId?: number | null;
+  productSlug?: string | null;
+}) {
+  if (productId == null && !productSlug) {
+    return <span className={className}>{children}</span>;
+  }
+  return (
+    <Link className={className} to={productDetailPath({ product_id: productId ?? undefined, product_slug: productSlug })}>
+      {children}
+    </Link>
+  );
+}
+
+function breakdownProductPath(row: TeamAnalyticsBreakdownRow) {
+  return productDetailPath({ product_id: typeof row.id === "number" ? row.id : undefined, product_slug: row.product_slug });
 }
