@@ -559,12 +559,47 @@ def test_roadmap_date_field_discovery_matches_product_discovery_schedule_names()
         {"id": "customfield_10002", "name": "Delivery Start"},
         {"id": "customfield_10003", "name": "Target"},
         {"id": "customfield_10004", "name": "Roadmap Schedule"},
+        {"id": "customfield_10005", "name": "Project start"},
+        {"id": "customfield_10006", "name": "Project target"},
     ]
 
-    assert _jira_date_field_ids_by_name(fields, {"start date"}, role="start") == ["customfield_10002", "customfield_10004"]
-    assert _jira_date_field_ids_by_name(fields, {"target date"}, role="end") == ["customfield_10003", "customfield_10004"]
+    assert _jira_date_field_ids_by_name(fields, {"start date"}, role="start") == ["customfield_10002", "customfield_10004", "customfield_10005"]
+    assert _jira_date_field_ids_by_name(fields, {"target date"}, role="end") == ["customfield_10003", "customfield_10004", "customfield_10006"]
     assert _parse_jira_date({"startDate": "2026-09-01", "targetDate": "2026-11-30"}, preferred_keys=("start", "startDate", "from")) == date(2026, 9, 1)
     assert _parse_jira_date([{"startDate": "2026-09-01", "targetDate": "2026-11-30"}], preferred_keys=("target", "targetDate", "end")) == date(2026, 11, 30)
+    assert _parse_jira_date({"value": "Jul-Sep, 2026"}, preferred_keys=("start",), range_position="start") == date(2026, 7, 1)
+    assert _parse_jira_date({"value": "Jul-Sep, 2026"}, preferred_keys=("start",), range_position="end") == date(2026, 9, 30)
+
+
+def test_roadmap_project_start_month_range_sets_schedule_months():
+    issue = {
+        "id": "100180",
+        "key": "ROADMAP-180",
+        "fields": {
+            "summary": "TDOE Application Portfolio Annual Maintenance",
+            "labels": ["FY27"],
+            "customfield_12345": {"value": "Operations"},
+            "customfield_45678": {"value": "Maintenance"},
+            "customfield_77777": {"value": "Product Maintenance"},
+            "customfield_99999": {"value": "Jul-Sep, 2026"},
+            "status": {"name": "Backlog", "statusCategory": {"name": "To Do"}},
+            "issuetype": {"name": "Idea"},
+            "issuelinks": [],
+        },
+    }
+
+    payload = _normalize_roadmap_issue(
+        "https://tndoe.atlassian.net",
+        issue,
+        ["customfield_12345"],
+        ["customfield_45678"],
+        ["customfield_77777"],
+        ["customfield_99999"],
+        [],
+    )
+
+    assert payload.roadmap_start_date == date(2026, 7, 1)
+    assert payload.roadmap_end_date == date(2026, 9, 30)
 
 
 def test_roadmap_category_maps_to_sparc_bucket_on_upsert():

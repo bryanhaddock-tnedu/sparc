@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 import hashlib
+import re
 
 import httpx
 from sqlalchemy import select
@@ -40,6 +41,9 @@ ROADMAP_RANGE_FIELD_NAMES = {
     "delivery dates",
     "delivery schedule",
     "delivery timeline",
+    "project dates",
+    "project schedule",
+    "project timeline",
     "roadmap dates",
     "roadmap schedule",
     "roadmap timeline",
@@ -56,6 +60,8 @@ ROADMAP_START_FIELD_NAMES = {
     "delivery start date",
     "planned start",
     "planned start date",
+    "project start",
+    "project start date",
     "roadmap start",
     "roadmap start date",
     "scheduled start",
@@ -82,6 +88,16 @@ ROADMAP_END_FIELD_NAMES = {
     "finish date",
     "planned end",
     "planned end date",
+    "project completion",
+    "project completion date",
+    "project due",
+    "project due date",
+    "project end",
+    "project end date",
+    "project finish",
+    "project finish date",
+    "project target",
+    "project target date",
     "roadmap end",
     "roadmap end date",
     "scheduled end",
@@ -91,6 +107,36 @@ ROADMAP_END_FIELD_NAMES = {
     "target end",
     "target end date",
 }
+MONTH_NAME_LOOKUP = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+MONTH_NAME_PATTERN = (
+    r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+    r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?"
+)
 ROADMAP_CATEGORY_ALIASES = {
     **WORK_TYPE_ALIASES,
     "enhancements": "ENHANCE",
@@ -680,6 +726,25 @@ def _normalize_roadmap_issue(
     issue_key = _normalize_issue_key(str(issue.get("key") or ""))
     links = tuple(_extract_issue_links(fields, issue_key, category_field_ids))
     labels = _labels_from_issue(issue)
+    roadmap_start_date = _roadmap_date_from_issue_fields(
+        fields,
+        start_date_field_ids or [],
+        preferred_keys=("start", "startDate", "from"),
+        range_position="start",
+    )
+    roadmap_end_date = _roadmap_date_from_issue_fields(
+        fields,
+        end_date_field_ids or [],
+        preferred_keys=("end", "endDate", "target", "targetDate", "due", "dueDate", "to"),
+        range_position="end",
+    )
+    if roadmap_end_date is None and roadmap_start_date is not None:
+        roadmap_end_date = _roadmap_date_from_issue_fields(
+            fields,
+            start_date_field_ids or [],
+            preferred_keys=("start", "startDate", "from"),
+            range_position="end",
+        )
     return RoadmapIssuePayload(
         issue_id=str(issue.get("id") or issue_key),
         issue_key=issue_key,
@@ -691,8 +756,8 @@ def _normalize_roadmap_issue(
         program_area=_program_area_from_issue_fields(fields, agency_office_field_ids),
         category=_category_from_issue_fields(fields, category_field_ids),
         source_team=_team_from_issue_fields(fields, team_field_ids),
-        roadmap_start_date=_roadmap_date_from_issue_fields(fields, start_date_field_ids or [], preferred_keys=("start", "startDate", "from")),
-        roadmap_end_date=_roadmap_date_from_issue_fields(fields, end_date_field_ids or [], preferred_keys=("end", "endDate", "target", "targetDate", "due", "dueDate", "to")),
+        roadmap_start_date=roadmap_start_date,
+        roadmap_end_date=roadmap_end_date,
         source_url=f"{site_url}/browse/{issue_key}" if issue_key else None,
         links=links,
     )
@@ -932,7 +997,7 @@ def _looks_like_roadmap_date_field(field_name: str, *, role: str) -> bool:
     )
     if any(term in name for term in range_terms):
         return True
-    context_terms = ("date", "delivery", "roadmap", "planned", "schedule", "target", "timeline")
+    context_terms = ("date", "delivery", "planned", "project", "roadmap", "schedule", "target", "timeline")
     if role == "start":
         role_terms = ("begin", "start")
     else:
@@ -964,15 +1029,21 @@ def _team_from_issue_fields(fields: dict[str, object], team_field_ids: list[str]
     return None
 
 
-def _roadmap_date_from_issue_fields(fields: dict[str, object], date_field_ids: list[str], *, preferred_keys: tuple[str, ...]) -> date | None:
+def _roadmap_date_from_issue_fields(
+    fields: dict[str, object],
+    date_field_ids: list[str],
+    *,
+    preferred_keys: tuple[str, ...],
+    range_position: str,
+) -> date | None:
     for field_id in date_field_ids:
-        parsed = _parse_jira_date(fields.get(field_id), preferred_keys=preferred_keys)
+        parsed = _parse_jira_date(fields.get(field_id), preferred_keys=preferred_keys, range_position=range_position)
         if parsed is not None:
             return parsed
     return None
 
 
-def _parse_jira_date(value: object, *, preferred_keys: tuple[str, ...] = tuple()) -> date | None:
+def _parse_jira_date(value: object, *, preferred_keys: tuple[str, ...] = tuple(), range_position: str = "start") -> date | None:
     if value is None:
         return None
     if isinstance(value, date) and not isinstance(value, datetime):
@@ -981,7 +1052,7 @@ def _parse_jira_date(value: object, *, preferred_keys: tuple[str, ...] = tuple()
         return value.date()
     if isinstance(value, (list, tuple)):
         for item in value:
-            parsed = _parse_jira_date(item, preferred_keys=preferred_keys)
+            parsed = _parse_jira_date(item, preferred_keys=preferred_keys, range_position=range_position)
             if parsed is not None:
                 return parsed
         return None
@@ -1006,17 +1077,20 @@ def _parse_jira_date(value: object, *, preferred_keys: tuple[str, ...] = tuple()
             normalized_key = _normalize_jira_field_key(key)
             if normalized_key not in normalized_values:
                 continue
-            parsed = _parse_jira_date(normalized_values[normalized_key], preferred_keys=preferred_keys)
+            parsed = _parse_jira_date(normalized_values[normalized_key], preferred_keys=preferred_keys, range_position=range_position)
             if parsed is not None:
                 return parsed
         for nested_value in value.values():
-            parsed = _parse_jira_date(nested_value, preferred_keys=preferred_keys)
+            parsed = _parse_jira_date(nested_value, preferred_keys=preferred_keys, range_position=range_position)
             if parsed is not None:
                 return parsed
         return None
     raw = str(value).strip()
     if not raw:
         return None
+    parsed_text_date = _parse_jira_text_date(raw, range_position=range_position)
+    if parsed_text_date is not None:
+        return parsed_text_date
     for candidate in (raw, raw.replace("Z", "+00:00")):
         try:
             return date.fromisoformat(candidate[:10])
@@ -1027,6 +1101,37 @@ def _parse_jira_date(value: object, *, preferred_keys: tuple[str, ...] = tuple()
         except ValueError:
             continue
     return None
+
+
+def _parse_jira_text_date(raw: str, *, range_position: str) -> date | None:
+    for date_format in ("%b %d, %Y", "%B %d, %Y", "%b %d %Y", "%B %d %Y", "%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return datetime.strptime(raw, date_format).date()
+        except ValueError:
+            continue
+
+    normalized = raw.replace("\u2013", "-").replace("\u2014", "-")
+    years = [int(match.group(0)) for match in re.finditer(r"\b20\d{2}\b", normalized)]
+    month_matches = list(re.finditer(MONTH_NAME_PATTERN, normalized, flags=re.IGNORECASE))
+    if not years or not month_matches:
+        return None
+
+    selected_month_match = month_matches[-1] if range_position == "end" else month_matches[0]
+    month_number = MONTH_NAME_LOOKUP[selected_month_match.group(0).casefold()]
+    year = years[-1] if range_position == "end" else years[0]
+    if len(years) == 1 and len(month_matches) > 1:
+        first_month = MONTH_NAME_LOOKUP[month_matches[0].group(0).casefold()]
+        last_month = MONTH_NAME_LOOKUP[month_matches[-1].group(0).casefold()]
+        if range_position == "end" and first_month > last_month:
+            year += 1
+    day = _last_day_of_month(year, month_number) if range_position == "end" else 1
+    return date(year, month_number, day)
+
+
+def _last_day_of_month(year: int, month: int) -> int:
+    if month == 12:
+        return 31
+    return (date(year, month + 1, 1) - date(year, month, 1)).days
 
 
 def _normalize_jira_field_key(key: str) -> str:
