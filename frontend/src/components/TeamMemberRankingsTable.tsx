@@ -2,7 +2,8 @@ import { Link } from "react-router-dom";
 
 import { teamMemberDetailPath } from "../lib/routes";
 import { TEAM_RANKING_DIMENSIONS, type TeamMemberRankingRow, type TeamRankingDimension } from "../lib/teamAnalytics";
-import { formatHours } from "../lib/utils";
+import { formatBillRate } from "../lib/teamMembers";
+import { formatCurrency, formatHours } from "../lib/utils";
 import { Badge } from "./ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 
@@ -10,7 +11,6 @@ type TeamMemberRankingsTableProps = {
   description?: string;
   dimension: TeamRankingDimension;
   emptyMessage?: string;
-  limit?: number;
   onDimensionChange: (dimension: TeamRankingDimension) => void;
   rows: TeamMemberRankingRow[];
   showTeam?: boolean;
@@ -21,15 +21,12 @@ export function TeamMemberRankingsTable({
   description,
   dimension,
   emptyMessage = "No ranking data available yet.",
-  limit = 12,
   onDimensionChange,
   rows,
   showTeam = true,
   title,
 }: TeamMemberRankingsTableProps) {
-  const rankedRows = [...rows]
-    .sort((left, right) => compareRankingRows(left, right, dimension))
-    .slice(0, limit);
+  const rankedRows = [...rows].sort((left, right) => compareRankingRows(left, right, dimension));
   const selectedDimension = TEAM_RANKING_DIMENSIONS.find((option) => option.key === dimension)?.label ?? "Metric";
 
   return (
@@ -38,6 +35,7 @@ export function TeamMemberRankingsTable({
         <div>
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">{title}</h2>
           {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+          <p className="mt-1 text-xs text-muted-foreground">Showing all {rankedRows.length} rostered Team Members.</p>
         </div>
         <label className="space-y-1">
           <span className="block text-xs font-semibold uppercase text-muted-foreground">Rank By</span>
@@ -56,17 +54,24 @@ export function TeamMemberRankingsTable({
         </label>
       </div>
       <div className="overflow-x-auto">
-        <Table>
+        <Table className="min-w-[1500px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-12">Rank</TableHead>
               <TableHead>Team Member</TableHead>
               <TableHead>Role</TableHead>
               {showTeam ? <TableHead>Team</TableHead> : null}
-              <TableHead className="text-right">{selectedDimension}</TableHead>
-              <TableHead className="text-right">FYTD Actual</TableHead>
+              <TableHead className="text-right">Bill Rate</TableHead>
+              <TableHead className="text-right">Annual Hrs</TableHead>
+              <TableHead className="text-right">Annual Cap</TableHead>
+              <TableHead className="text-right">FY Forecast Hrs</TableHead>
+              <TableHead className="text-right">Forecast $</TableHead>
+              <TableHead className="text-right">Cap Coverage</TableHead>
+              <TableHead className="text-right">FYTD Actual Hrs</TableHead>
+              <TableHead className="text-right">FYTD Actual $</TableHead>
               <TableHead className="text-right">Tickets</TableHead>
               <TableHead className="text-right">SP / Hr</TableHead>
+              <TableHead className="text-right">Rank Metric</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -82,15 +87,24 @@ export function TeamMemberRankingsTable({
                   </TableCell>
                   <TableCell>{row.role}</TableCell>
                   {showTeam ? <TableCell>{row.team}</TableCell> : null}
-                  <TableCell className="numeric-cell text-right font-semibold text-primary">{formatRankingValue(row, dimension)}</TableCell>
+                  <TableCell className="numeric-cell text-right font-medium text-primary">{formatBillRate(row.billRate, row.employmentType, { includeUnit: true })}</TableCell>
+                  <TableCell className="numeric-cell text-right">{formatHours(row.annualCapacityHours)}</TableCell>
+                  <TableCell className="numeric-cell text-right font-medium">{formatCurrency(row.annualCostCap)}</TableCell>
+                  <TableCell className="numeric-cell text-right font-semibold text-primary">{formatHours(row.fyForecastHours)}</TableCell>
+                  <TableCell className="numeric-cell text-right font-medium text-primary">{formatCurrency(row.fyForecastCost)}</TableCell>
+                  <TableCell className="numeric-cell text-right">{formatPercent(row.forecastCapCoveragePercent)}</TableCell>
                   <TableCell className="numeric-cell text-right">{formatHours(row.fytdActualHours)}</TableCell>
+                  <TableCell className="numeric-cell text-right">{formatCurrency(row.fytdActualCost)}</TableCell>
                   <TableCell className="numeric-cell text-right">{row.ticketsTouched}</TableCell>
                   <TableCell className="numeric-cell text-right">{formatNullableHours(row.storyPointsPerLoggedHour)}</TableCell>
+                  <TableCell className="numeric-cell text-right font-semibold text-primary" title={selectedDimension}>
+                    {formatRankingValue(row, dimension)}
+                  </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell className="py-5 text-muted-foreground" colSpan={showTeam ? 8 : 7}>
+                <TableCell className="py-5 text-muted-foreground" colSpan={showTeam ? 15 : 14}>
                   {emptyMessage}
                 </TableCell>
               </TableRow>
@@ -149,4 +163,8 @@ function formatRankingValue(row: TeamMemberRankingRow, dimension: TeamRankingDim
 
 function formatNullableHours(value: number | null) {
   return value == null ? "N/A" : formatHours(value);
+}
+
+function formatPercent(value: number | null) {
+  return value == null ? "N/A" : `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
 }

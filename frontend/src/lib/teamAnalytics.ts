@@ -2,6 +2,7 @@ import type { DeliveryFlowIssue, ReportedValueRow, TeamMember, TeamMemberStoryPo
 
 export const UNASSIGNED_TEAM = "Unassigned";
 export const FISCAL_MONTH_LABELS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+export const ANNUAL_WORK_HOURS = 1950;
 
 export type TeamRankingPeriod = "current" | "previous" | "fytd";
 export type TeamRankingDimension =
@@ -81,11 +82,18 @@ export type TeamMemberRankingRow = {
   role: string;
   team: string;
   status: string;
+  employmentType: string;
+  billRate: number;
+  annualCapacityHours: number;
+  annualCostCap: number;
   currentActualHours: number;
   previousActualHours: number;
   fytdActualHours: number;
+  fytdActualCost: number;
   avgMonthlyActualHours: number;
   fyForecastHours: number;
+  fyForecastCost: number;
+  forecastCapCoveragePercent: number | null;
   fytdForecastHours: number;
   fytdVarianceHours: number;
   productsSupported: number;
@@ -243,6 +251,9 @@ export function buildTeamMemberRankingRows(
   const elapsedMonths = fiscalMonthsElapsed(fiscalYear);
   return scopedMembers.map((member) => {
     const fytdActual = fytdActualByMemberId.get(member.id) ?? 0;
+    const fyForecast = fyForecastByMemberId.get(member.id) ?? 0;
+    const billRate = member.bill_rate ?? 0;
+    const annualCostCap = ANNUAL_WORK_HOURS * billRate;
     const fytdForecast = fytdForecastByMemberId.get(member.id) ?? 0;
     const storyMetric = storyMetricByMemberId.get(member.id);
     const storyPoints = storyMetric?.story_points ?? 0;
@@ -255,11 +266,18 @@ export function buildTeamMemberRankingRows(
       role: member.role,
       team: teamDisplayName(member.team),
       status: member.status,
+      employmentType: member.employment_type,
+      billRate,
+      annualCapacityHours: ANNUAL_WORK_HOURS,
+      annualCostCap: roundMoney(annualCostCap),
       currentActualHours: roundHours(currentActualByMemberId.get(member.id) ?? 0),
       previousActualHours: roundHours(previousActualByMemberId.get(member.id) ?? 0),
       fytdActualHours: roundHours(fytdActual),
+      fytdActualCost: roundMoney(fytdActual * billRate),
       avgMonthlyActualHours: elapsedMonths > 0 ? roundHours(fytdActual / elapsedMonths) : 0,
-      fyForecastHours: roundHours(fyForecastByMemberId.get(member.id) ?? 0),
+      fyForecastHours: roundHours(fyForecast),
+      fyForecastCost: roundMoney(fyForecast * billRate),
+      forecastCapCoveragePercent: annualCostCap > 0 ? roundPercent((fyForecast * billRate / annualCostCap) * 100) : null,
       fytdForecastHours: roundHours(fytdForecast),
       fytdVarianceHours: roundHours(fytdActual - fytdForecast),
       productsSupported: productIdsByMemberId.get(member.id)?.size ?? 0,
@@ -272,6 +290,14 @@ export function buildTeamMemberRankingRows(
       storyPointsPerLoggedHour: issueLoggedHours > 0 ? Math.round((storyPoints / issueLoggedHours) * 100) / 100 : null,
     };
   });
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function roundPercent(value: number) {
+  return Math.round(value * 10) / 10;
 }
 
 export function buildSingleTeamAnalytics(teamName: string, members: TeamMember[], rows: ReportedValueRow[], fiscalYear: number): TeamAnalytics {
