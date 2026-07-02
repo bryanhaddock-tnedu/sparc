@@ -3,12 +3,12 @@ import { Link } from "react-router-dom";
 
 import { teamMemberDetailPath } from "../lib/routes";
 import { TEAM_RANKING_DIMENSIONS, type TeamMemberRankingRow, type TeamRankingDimension } from "../lib/teamAnalytics";
-import { formatBillRate, isFteEmploymentType } from "../lib/teamMembers";
+import { formatBillRate, isContractorEmploymentType, isFteEmploymentType, isVendorEmploymentType } from "../lib/teamMembers";
 import { formatCurrency, formatHours } from "../lib/utils";
 import { Badge } from "./ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 
-type EmploymentTypeFilter = "all" | "fte" | "contractor";
+type EmploymentTypeFilter = "all" | "fte" | "contractor" | "vendor";
 
 type TeamMemberRankingsTableProps = {
   description?: string;
@@ -62,6 +62,7 @@ export function TeamMemberRankingsTable({
               <option value="all">All</option>
               <option value="fte">FTE</option>
               <option value="contractor">Contractor</option>
+              <option value="vendor">Vendor</option>
             </select>
           </label>
           <label className="space-y-1">
@@ -150,16 +151,22 @@ export function TeamMemberRankingsTable({
 
 function employmentTypeMatchesFilter(employmentType: string, filter: EmploymentTypeFilter) {
   if (filter === "all") return true;
-  const isFte = isFteEmploymentType(employmentType);
-  return filter === "fte" ? isFte : !isFte;
+  if (filter === "fte") return isFteEmploymentType(employmentType);
+  if (filter === "vendor") return isVendorEmploymentType(employmentType);
+  return isContractorEmploymentType(employmentType);
 }
 
 function employmentTypeLabel(employmentType: string) {
-  return isFteEmploymentType(employmentType) ? "FTE" : "Contractor";
+  if (isFteEmploymentType(employmentType)) return "FTE";
+  if (isVendorEmploymentType(employmentType)) return "Vendor";
+  if (isContractorEmploymentType(employmentType)) return "Contractor";
+  return employmentType || "Unspecified";
 }
 
 function employmentBadgeClass(employmentType: string) {
-  return isFteEmploymentType(employmentType) ? "border-primary/40 text-primary" : "border-[color:var(--spark-cyan)] text-primary";
+  if (isFteEmploymentType(employmentType)) return "border-primary/40 text-primary";
+  if (isVendorEmploymentType(employmentType)) return "border-[color:var(--spark-orange)] text-primary";
+  return "border-[color:var(--spark-cyan)] text-primary";
 }
 
 function compareRankingRows(left: TeamMemberRankingRow, right: TeamMemberRankingRow, dimension: TeamRankingDimension) {
