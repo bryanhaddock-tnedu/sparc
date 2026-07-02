@@ -666,7 +666,7 @@ def test_roadmap_schedule_reads_product_discovery_rendered_field_names():
     )
 
     assert payload.roadmap_start_date == date(2026, 7, 1)
-    assert payload.roadmap_end_date == date(2026, 12, 31)
+    assert payload.roadmap_end_date == date(2026, 9, 30)
 
 
 def test_roadmap_schedule_reads_product_discovery_iso_month_ranges():
@@ -699,7 +699,7 @@ def test_roadmap_schedule_reads_product_discovery_iso_month_ranges():
     )
 
     assert payload.roadmap_start_date == date(2026, 7, 1)
-    assert payload.roadmap_end_date == date(2026, 12, 31)
+    assert payload.roadmap_end_date == date(2026, 9, 30)
 
 
 def test_roadmap_category_maps_to_sparc_bucket_on_upsert():

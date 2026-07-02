@@ -772,19 +772,18 @@ def _normalize_roadmap_issue(
         preferred_keys=("start", "startDate", "from"),
         range_position="start",
     ) or _roadmap_date_from_any_issue_field_sources(field_sources, range_position="start")
-    roadmap_end_date = _roadmap_date_from_issue_field_sources(
+    roadmap_start_range_end = _roadmap_date_from_issue_field_sources(
+        field_sources,
+        start_date_ids,
+        preferred_keys=("end", "endDate", "target", "targetDate", "to", "start", "startDate", "from"),
+        range_position="end",
+    )
+    roadmap_end_date = roadmap_start_range_end or _roadmap_date_from_issue_field_sources(
         field_sources,
         end_date_ids,
         preferred_keys=("end", "endDate", "target", "targetDate", "due", "dueDate", "to"),
         range_position="end",
     ) or _roadmap_date_from_any_issue_field_sources(field_sources, range_position="end")
-    if roadmap_end_date is None and roadmap_start_date is not None:
-        roadmap_end_date = _roadmap_date_from_issue_field_sources(
-            field_sources,
-            start_date_ids,
-            preferred_keys=("start", "startDate", "from"),
-            range_position="end",
-        )
     return RoadmapIssuePayload(
         issue_id=str(issue.get("id") or issue_key),
         issue_key=issue_key,
