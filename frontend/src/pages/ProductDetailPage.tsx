@@ -33,6 +33,7 @@ import type {
 const PIE_COLORS = ["#2CCCD3", "#D2D755", "#E87722", "#5E7975"];
 const COST_VARIANCE_HELP =
   "Actual cost minus forecast cost. Negative means actuals are under forecast; positive means actuals exceeded forecast.";
+const FISCAL_MONTH_LABELS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
 interface ProductRoleCostRow {
   role: string;
@@ -457,6 +458,7 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
   const linkedTickets = items.reduce((total, item) => total + item.linked_issue_count, 0);
   const forecastHours = items.reduce((total, item) => total + (item.forecast_hours ?? 0), 0);
   const plannedItems = items.filter((item) => (item.forecast_hours ?? 0) > 0).length;
+  const scheduledItems = items.filter((item) => item.roadmap_start_date || item.roadmap_end_date).length;
   const plannerTeams = Array.from(new Set(items.map((item) => item.source_team).filter((team): team is string => Boolean(team)))).sort();
   const programAreas = new Set(items.map((item) => item.program_area || "Unassigned"));
   const mappedActualHours = Array.from(actualsByRoadmapItem.values()).reduce((total, row) => total + row.actualHours, 0);
@@ -474,11 +476,12 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
         <div>
           <h2 className="text-lg font-semibold">Roadmap Items</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Roadmap Items mapped to this product. Monthly timing appears after a team enters roadmap forecast hours.
+            Roadmap schedule comes from Jira. Forecast months come from the SPARC team roadmap forecast plan.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
           <RoadmapItemMetric label="Items" value={String(items.length)} />
+          <RoadmapItemMetric label="Scheduled" value={String(scheduledItems)} />
           <RoadmapItemMetric label="Tickets" value={String(linkedTickets)} />
           <RoadmapItemMetric label="Forecast Hrs" value={formatHours(forecastHours)} />
           <RoadmapItemMetric label="Actual Hrs" value={formatHours(mappedActualHours)} />
@@ -487,12 +490,20 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
           <RoadmapItemMetric label="Programs" value={String(programAreas.size)} />
         </div>
       </div>
+      {items.length && scheduledItems === 0 ? (
+        <div className="rounded-lg border border-warning/30 bg-warning/10 p-3">
+          <div className="text-sm font-semibold text-primary">No Jira roadmap dates synced yet</div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Roadmap Items are mapped, but SPARC has not captured Jira start/end or target dates for them yet. Dates will appear after the next roadmap sync.
+          </p>
+        </div>
+      ) : null}
       {items.length && plannedItems === 0 ? (
         <div className="flex flex-col justify-between gap-3 rounded-lg border border-[color:var(--spark-cyan)]/40 bg-[color:var(--spark-cyan)]/10 p-3 sm:flex-row sm:items-center">
           <div>
-            <div className="text-sm font-semibold text-primary">No roadmap months planned yet</div>
+            <div className="text-sm font-semibold text-primary">No SPARC forecast months planned yet</div>
             <p className="mt-1 text-sm text-muted-foreground">
-              These roadmap items are mapped to this product, but no monthly Team Member forecast has been entered for them.
+              These roadmap items are mapped to this product, but no monthly Team Member forecast has been entered in SPARC.
             </p>
           </div>
           {plannerTeams.length ? (
@@ -510,7 +521,7 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
       ) : null}
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1360px] text-sm">
+          <table className="w-full min-w-[1520px] text-sm">
             <thead>
               <tr className="border-b bg-secondary/60">
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Roadmap Item</th>
@@ -518,7 +529,8 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bucket</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Jira Category</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Program Area</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Planned Months</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Roadmap Schedule</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Forecast Months</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Forecast Hrs</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Forecast Members</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Linked Tickets</th>
@@ -552,6 +564,9 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
                       <td className="px-3 py-3">{item.source_category || "Not set"}</td>
                       <td className="px-3 py-3">{item.program_area || "Unassigned"}</td>
                       <td className="px-3 py-3">
+                        <RoadmapScheduleMonthBand item={item} />
+                      </td>
+                      <td className="px-3 py-3">
                         <RoadmapForecastMonthChips months={item.forecast_months ?? []} />
                       </td>
                       <td className="numeric-cell px-3 py-3 text-right font-semibold">{formatHours(item.forecast_hours)}</td>
@@ -564,7 +579,7 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
                 })
               ) : (
                 <tr>
-                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={11}>
+                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={12}>
                     No Roadmap Items are mapped to this product yet. Use Admin / Jira / Roadmap Item Mapping to attach Roadmap Items to this product.
                   </td>
                 </tr>
@@ -577,9 +592,34 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
   );
 }
 
+function RoadmapScheduleMonthBand({ item }: { item: RoadmapItem }) {
+  const activeMonths = roadmapScheduleMonthSequences(item);
+  const title = activeMonths.length
+    ? FISCAL_MONTH_LABELS.filter((_, index) => activeMonths.includes(index + 1)).join(", ")
+    : "No Jira roadmap dates synced";
+  return (
+    <div className="grid w-[27rem] grid-cols-12 overflow-hidden rounded-md border border-border" title={title}>
+      {FISCAL_MONTH_LABELS.map((month, index) => {
+        const sequence = index + 1;
+        const isActive = activeMonths.includes(sequence);
+        return (
+          <div
+            key={month}
+            className={`border-r px-1.5 py-1 text-center text-[10px] font-semibold uppercase last:border-r-0 ${
+              isActive ? "bg-[color:var(--spark-cyan)] text-primary" : "bg-secondary/50 text-muted-foreground"
+            }`}
+          >
+            {month}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function RoadmapForecastMonthChips({ months }: { months: RoadmapItem["forecast_months"] }) {
   if (!months.length) {
-    return <span className="text-sm text-muted-foreground">Not planned</span>;
+    return <span className="text-sm text-muted-foreground">Not forecasted</span>;
   }
 
   return (
@@ -591,6 +631,34 @@ function RoadmapForecastMonthChips({ months }: { months: RoadmapItem["forecast_m
       ))}
     </div>
   );
+}
+
+function roadmapScheduleMonthSequences(item: RoadmapItem) {
+  const start = parseDateOnly(item.roadmap_start_date);
+  const end = parseDateOnly(item.roadmap_end_date) ?? start;
+  if (!start && !end) return [];
+  const first = start ?? end;
+  const last = end ?? start;
+  if (!first || !last) return [];
+  const from = first <= last ? first : last;
+  const to = first <= last ? last : first;
+  return FISCAL_MONTH_LABELS.map((_, index) => index + 1).filter((sequence) => {
+    const monthDate = fiscalMonthDate(item.fiscal_year, sequence);
+    return monthDate >= new Date(from.getFullYear(), from.getMonth(), 1) && monthDate <= new Date(to.getFullYear(), to.getMonth(), 1);
+  });
+}
+
+function parseDateOnly(value: string | null | undefined) {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  return new Date(year, month - 1, day);
+}
+
+function fiscalMonthDate(fiscalYear: number, sequence: number) {
+  const calendarMonth = ((sequence + 5) % 12) + 1;
+  const calendarYear = sequence <= 6 ? fiscalYear - 1 : fiscalYear;
+  return new Date(calendarYear, calendarMonth - 1, 1);
 }
 
 function RoadmapItemMetric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warn" }) {

@@ -762,6 +762,8 @@ class RoadmapItemResponse(BaseModel):
     program_area: str | None
     source_category: str | None = None
     source_team: str | None = None
+    roadmap_start_date: date | None = None
+    roadmap_end_date: date | None = None
     source_url: str | None
     linked_issue_count: int
     linked_issues: list[RoadmapItemLinkedIssueResponse] = Field(default_factory=list)

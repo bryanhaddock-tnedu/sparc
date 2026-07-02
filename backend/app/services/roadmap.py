@@ -1,5 +1,6 @@
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date, datetime
 from decimal import Decimal
 import hashlib
 
@@ -35,6 +36,28 @@ ROADMAP_DELIVERABLE_ISSUE_TYPES = {"deliverable"}
 AGENCY_OFFICE_FIELD_NAMES = {"agency office"}
 CATEGORY_FIELD_NAMES = {"category"}
 TEAM_FIELD_NAMES = {"team"}
+ROADMAP_RANGE_FIELD_NAMES = {"roadmap dates", "schedule", "target dates", "timeline", "timeframe"}
+ROADMAP_START_FIELD_NAMES = {
+    *ROADMAP_RANGE_FIELD_NAMES,
+    "start",
+    "start date",
+    "target start",
+    "target start date",
+    "roadmap start",
+    "planned start",
+    "planned start date",
+}
+ROADMAP_END_FIELD_NAMES = {
+    *ROADMAP_RANGE_FIELD_NAMES,
+    "end",
+    "end date",
+    "target end",
+    "target end date",
+    "target date",
+    "roadmap end",
+    "planned end",
+    "planned end date",
+}
 ROADMAP_CATEGORY_ALIASES = {
     **WORK_TYPE_ALIASES,
     "enhancements": "ENHANCE",
@@ -71,6 +94,8 @@ class RoadmapIssuePayload:
     source_team: str | None
     source_url: str | None
     links: tuple[RoadmapIssueLinkPayload, ...]
+    roadmap_start_date: date | None = None
+    roadmap_end_date: date | None = None
 
 
 def serialize_roadmap_item(item: RoadmapItem, *, product_id: int | None = None) -> dict[str, object]:
@@ -93,6 +118,8 @@ def serialize_roadmap_item(item: RoadmapItem, *, product_id: int | None = None) 
         "program_area": item.program_area,
         "source_category": item.source_category,
         "source_team": item.source_team,
+        "roadmap_start_date": item.roadmap_start_date,
+        "roadmap_end_date": item.roadmap_end_date,
         "source_url": item.source_url,
         "linked_issue_count": len(scoped_links),
         "linked_issues": [_serialize_roadmap_issue_link(link) for link in scoped_links],
@@ -320,13 +347,34 @@ def fetch_live_roadmap_items(roadmap_project_key: str, fiscal_year: int) -> list
     jql = f'project = "{roadmap_project_key}" AND issuetype in ("Idea") AND labels = "{fiscal_year_label}" ORDER BY updated ASC'
     with httpx.Client(timeout=45, auth=(settings.jira_api_email, settings.jira_api_token)) as client:
         field_ids = _fetch_roadmap_field_ids(client, site_url)
-        fields = ["summary", "status", "issuetype", "labels", "issuelinks", *field_ids["agency_office"], *field_ids["category"], *field_ids["team"]]
+        fields = [
+            "summary",
+            "status",
+            "issuetype",
+            "labels",
+            "issuelinks",
+            *field_ids["agency_office"],
+            *field_ids["category"],
+            *field_ids["team"],
+            *field_ids["start_date"],
+            *field_ids["end_date"],
+        ]
         issues = _search_jira_issues(client, site_url, jql, fields)
         payloads: list[RoadmapIssuePayload] = []
         for issue in issues:
             labels = _labels_from_issue(issue)
             if _is_roadmap_item_issue_type(_issue_type_name(issue)) and _has_fiscal_year_label(labels, fiscal_year):
-                payloads.append(_normalize_roadmap_issue(site_url, issue, field_ids["agency_office"], field_ids["category"], field_ids["team"]))
+                payloads.append(
+                    _normalize_roadmap_issue(
+                        site_url,
+                        issue,
+                        field_ids["agency_office"],
+                        field_ids["category"],
+                        field_ids["team"],
+                        field_ids["start_date"],
+                        field_ids["end_date"],
+                    )
+                )
         return _enrich_roadmap_payload_links(client, site_url, payloads, field_ids["category"])
 
 
@@ -425,6 +473,8 @@ def _upsert_roadmap_item(db: Session, payload: RoadmapIssuePayload, fiscal_year:
         item.program_area = payload.program_area
     item.source_category = payload.category
     item.source_team = payload.source_team
+    item.roadmap_start_date = payload.roadmap_start_date
+    item.roadmap_end_date = payload.roadmap_end_date
     bucket_id = _bucket_id_from_category(db, payload.category)
     if bucket_id is not None:
         item.bucket_id = bucket_id
@@ -591,6 +641,8 @@ def _normalize_roadmap_issue(
     agency_office_field_ids: list[str],
     category_field_ids: list[str],
     team_field_ids: list[str],
+    start_date_field_ids: list[str] | None = None,
+    end_date_field_ids: list[str] | None = None,
 ) -> RoadmapIssuePayload:
     fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
     status = fields.get("status") if isinstance(fields.get("status"), dict) else {}
@@ -610,6 +662,8 @@ def _normalize_roadmap_issue(
         program_area=_program_area_from_issue_fields(fields, agency_office_field_ids),
         category=_category_from_issue_fields(fields, category_field_ids),
         source_team=_team_from_issue_fields(fields, team_field_ids),
+        roadmap_start_date=_roadmap_date_from_issue_fields(fields, start_date_field_ids or [], preferred_keys=("start", "startDate", "from")),
+        roadmap_end_date=_roadmap_date_from_issue_fields(fields, end_date_field_ids or [], preferred_keys=("end", "endDate", "to")),
         source_url=f"{site_url}/browse/{issue_key}" if issue_key else None,
         links=links,
     )
@@ -728,6 +782,8 @@ def _enrich_roadmap_payload_links(
                 program_area=payload.program_area,
                 category=payload.category,
                 source_team=payload.source_team,
+                roadmap_start_date=payload.roadmap_start_date,
+                roadmap_end_date=payload.roadmap_end_date,
                 source_url=payload.source_url,
                 links=enriched_links,
             )
@@ -785,11 +841,13 @@ def _fetch_roadmap_field_ids(client: httpx.Client, site_url: str) -> dict[str, l
     _raise_for_jira_response(response)
     fields = response.json()
     if not isinstance(fields, list):
-        return {"agency_office": [], "category": [], "team": []}
+        return {"agency_office": [], "category": [], "team": [], "start_date": [], "end_date": []}
     return {
         "agency_office": _jira_field_ids_by_name(fields, AGENCY_OFFICE_FIELD_NAMES),
         "category": _jira_field_ids_by_name(fields, CATEGORY_FIELD_NAMES),
         "team": _jira_field_ids_by_name(fields, TEAM_FIELD_NAMES),
+        "start_date": _jira_field_ids_by_name(fields, ROADMAP_START_FIELD_NAMES),
+        "end_date": _jira_field_ids_by_name(fields, ROADMAP_END_FIELD_NAMES),
     }
 
 
@@ -824,6 +882,42 @@ def _team_from_issue_fields(fields: dict[str, object], team_field_ids: list[str]
         value = _jira_field_text(fields.get(field_id))
         if value:
             return value
+    return None
+
+
+def _roadmap_date_from_issue_fields(fields: dict[str, object], date_field_ids: list[str], *, preferred_keys: tuple[str, ...]) -> date | None:
+    for field_id in date_field_ids:
+        parsed = _parse_jira_date(fields.get(field_id), preferred_keys=preferred_keys)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _parse_jira_date(value: object, *, preferred_keys: tuple[str, ...] = tuple()) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, dict):
+        for key in (*preferred_keys, "value", "date", "start", "end"):
+            parsed = _parse_jira_date(value.get(key), preferred_keys=preferred_keys)
+            if parsed is not None:
+                return parsed
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    for candidate in (raw, raw.replace("Z", "+00:00")):
+        try:
+            return date.fromisoformat(candidate[:10])
+        except ValueError:
+            pass
+        try:
+            return datetime.fromisoformat(candidate).date()
+        except ValueError:
+            continue
     return None
 
 
@@ -865,6 +959,8 @@ def _roadmap_payload_hash(payload: RoadmapIssuePayload) -> str:
             payload.program_area or "",
             payload.category or "",
             payload.source_team or "",
+            payload.roadmap_start_date.isoformat() if payload.roadmap_start_date else "",
+            payload.roadmap_end_date.isoformat() if payload.roadmap_end_date else "",
             ",".join(
                 sorted(
                     "|".join(

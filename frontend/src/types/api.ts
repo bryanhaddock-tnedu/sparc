@@ -183,6 +183,8 @@ export interface RoadmapItem {
   program_area: string | null;
   source_category: string | null;
   source_team: string | null;
+  roadmap_start_date: string | null;
+  roadmap_end_date: string | null;
   source_url: string | null;
   linked_issue_count: number;
   linked_issues: RoadmapItemLinkedIssue[];

@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -437,13 +438,22 @@ def test_roadmap_issue_normalization_uses_fiscal_year_label_and_agency_office():
             "customfield_12345": {"value": "Academics"},
             "customfield_45678": {"value": "Enhancements"},
             "customfield_77777": {"value": "Product Maintenance"},
+            "customfield_88888": {"start": "2026-09-01", "end": "2026-11-30"},
             "status": {"name": "In Progress", "statusCategory": {"name": "In Progress"}},
             "issuetype": {"name": "Idea"},
             "issuelinks": [],
         },
     }
 
-    payload = _normalize_roadmap_issue("https://tndoe.atlassian.net", issue, ["customfield_12345"], ["customfield_45678"], ["customfield_77777"])
+    payload = _normalize_roadmap_issue(
+        "https://tndoe.atlassian.net",
+        issue,
+        ["customfield_12345"],
+        ["customfield_45678"],
+        ["customfield_77777"],
+        ["customfield_88888"],
+        ["customfield_88888"],
+    )
 
     assert _roadmap_fiscal_year_label(2027) == "FY27"
     assert _has_fiscal_year_label(payload.labels, 2027)
@@ -453,6 +463,8 @@ def test_roadmap_issue_normalization_uses_fiscal_year_label_and_agency_office():
     assert payload.program_area == "Academics"
     assert payload.category == "Enhancements"
     assert payload.source_team == "Product Maintenance"
+    assert payload.roadmap_start_date == date(2026, 9, 1)
+    assert payload.roadmap_end_date == date(2026, 11, 30)
 
 
 def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
@@ -474,6 +486,8 @@ def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
             source_team="Product Maintenance",
             source_url="https://tndoe.atlassian.net/browse/ROADMAP-1",
             links=tuple(),
+            roadmap_start_date=date(2026, 9, 1),
+            roadmap_end_date=date(2026, 11, 30),
         )
 
         item = _upsert_roadmap_item(db, payload, 2027)
@@ -481,6 +495,8 @@ def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
         assert item.bucket_id == enhance.id
         assert item.source_category == "Enhancements"
         assert item.source_team == "Product Maintenance"
+        assert item.roadmap_start_date == date(2026, 9, 1)
+        assert item.roadmap_end_date == date(2026, 11, 30)
 
 
 def test_stale_roadmap_items_move_out_of_selected_fiscal_year():
@@ -552,6 +568,8 @@ def test_product_roadmap_items_show_mapped_items_without_actuals_and_exclude_del
             status="In Progress",
             issue_type="Idea",
             program_area="Programs",
+            roadmap_start_date=date(2026, 9, 1),
+            roadmap_end_date=date(2026, 11, 30),
         )
         delivery_ticket = RoadmapItem(
             source="jira_product_discovery",
@@ -592,6 +610,8 @@ def test_product_roadmap_items_show_mapped_items_without_actuals_and_exclude_del
         assert [row["jira_issue_key"] for row in rows] == ["ROADMAP-1"]
         assert rows[0]["linked_issue_count"] == 2
         assert rows[0]["program_area"] == "Programs"
+        assert rows[0]["roadmap_start_date"] == date(2026, 9, 1)
+        assert rows[0]["roadmap_end_date"] == date(2026, 11, 30)
         assert [row["jira_issue_key"] for row in prior_year_rows] == ["ROADMAP-3"]
         assert {row["jira_issue_key"] for row in all_rows} == {"ROADMAP-1"}
 
