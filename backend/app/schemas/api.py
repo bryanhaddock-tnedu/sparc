@@ -737,6 +737,13 @@ class RoadmapItemLinkedIssueResponse(BaseModel):
     last_synced_at: datetime | None
 
 
+class RoadmapItemForecastMonthResponse(BaseModel):
+    month_sequence: int
+    month_label: str
+    forecast_hours: float
+    team_member_count: int
+
+
 class RoadmapItemResponse(BaseModel):
     id: int
     source: str
@@ -758,6 +765,9 @@ class RoadmapItemResponse(BaseModel):
     source_url: str | None
     linked_issue_count: int
     linked_issues: list[RoadmapItemLinkedIssueResponse] = Field(default_factory=list)
+    forecast_hours: float = 0
+    forecast_months: list[RoadmapItemForecastMonthResponse] = Field(default_factory=list)
+    forecast_team_member_count: int = 0
     last_synced_at: datetime | None
     created_at: datetime
     updated_at: datetime

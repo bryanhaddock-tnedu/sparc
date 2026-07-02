@@ -454,6 +454,7 @@ function SnapshotRow({ label, value }: { label: string; value: string }) {
 function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: RoadmapActualRow[]; items: RoadmapItem[] }) {
   const actualsByRoadmapItem = buildRoadmapItemActualSummaries(actualRows);
   const linkedTickets = items.reduce((total, item) => total + item.linked_issue_count, 0);
+  const forecastHours = items.reduce((total, item) => total + (item.forecast_hours ?? 0), 0);
   const programAreas = new Set(items.map((item) => item.program_area || "Unassigned"));
   const mappedActualHours = Array.from(actualsByRoadmapItem.values()).reduce((total, row) => total + row.actualHours, 0);
   const mappedActualCost = Array.from(actualsByRoadmapItem.values()).reduce((total, row) => total + row.actualCost, 0);
@@ -470,12 +471,13 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
         <div>
           <h2 className="text-lg font-semibold">Roadmap Items</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Roadmap Items mapped to this product. Actual billing appears separately after Jira worklogs are synced.
+            Roadmap Items mapped to this product. Forecast months come from the team roadmap forecast plan.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-7">
           <RoadmapItemMetric label="Items" value={String(items.length)} />
           <RoadmapItemMetric label="Tickets" value={String(linkedTickets)} />
+          <RoadmapItemMetric label="Forecast Hrs" value={formatHours(forecastHours)} />
           <RoadmapItemMetric label="Actual Hrs" value={formatHours(mappedActualHours)} />
           <RoadmapItemMetric label="Actual Cost" value={formatCurrency(mappedActualCost)} />
           <RoadmapItemMetric label="Gaps" value={String(gapTickets.size)} tone={gapTickets.size ? "warn" : "default"} />
@@ -484,7 +486,7 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
       </div>
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] text-sm">
+          <table className="w-full min-w-[1360px] text-sm">
             <thead>
               <tr className="border-b bg-secondary/60">
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Roadmap Item</th>
@@ -492,10 +494,12 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bucket</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Jira Category</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Program Area</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Forecast Months</th>
+                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Forecast Hrs</th>
+                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Forecast Members</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Linked Tickets</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actual Hrs</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actual Cost</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Team Members</th>
               </tr>
             </thead>
             <tbody>
@@ -523,16 +527,20 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
                       <td className="px-3 py-3">{item.bucket ?? "Unmapped"}</td>
                       <td className="px-3 py-3">{item.source_category || "Not set"}</td>
                       <td className="px-3 py-3">{item.program_area || "Unassigned"}</td>
+                      <td className="px-3 py-3">
+                        <RoadmapForecastMonthChips months={item.forecast_months ?? []} />
+                      </td>
+                      <td className="numeric-cell px-3 py-3 text-right font-semibold">{formatHours(item.forecast_hours)}</td>
+                      <td className="numeric-cell px-3 py-3 text-right font-semibold">{item.forecast_team_member_count ?? 0}</td>
                       <td className="numeric-cell px-3 py-3 text-right font-semibold">{item.linked_issue_count}</td>
                       <td className="numeric-cell px-3 py-3 text-right font-semibold">{formatHours(actualSummary?.actualHours ?? 0)}</td>
                       <td className="numeric-cell px-3 py-3 text-right font-semibold text-primary">{formatCurrency(actualSummary?.actualCost ?? 0)}</td>
-                      <td className="numeric-cell px-3 py-3 text-right">{actualSummary?.teamMembers.size ?? 0}</td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={9}>
+                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={11}>
                     No Roadmap Items are mapped to this product yet. Use Admin / Jira / Roadmap Item Mapping to attach Roadmap Items to this product.
                   </td>
                 </tr>
@@ -542,6 +550,22 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
         </div>
       </div>
     </section>
+  );
+}
+
+function RoadmapForecastMonthChips({ months }: { months: RoadmapItem["forecast_months"] }) {
+  if (!months.length) {
+    return <span className="text-sm text-muted-foreground">Not planned</span>;
+  }
+
+  return (
+    <div className="flex max-w-[20rem] flex-wrap gap-1">
+      {months.map((month) => (
+        <Badge key={month.month_sequence} className="border-accent/50 bg-accent/10 text-primary">
+          {month.month_label} {formatHours(month.forecast_hours)}
+        </Badge>
+      ))}
+    </div>
   );
 }
 

@@ -186,9 +186,19 @@ export interface RoadmapItem {
   source_url: string | null;
   linked_issue_count: number;
   linked_issues: RoadmapItemLinkedIssue[];
+  forecast_hours: number;
+  forecast_months: RoadmapItemForecastMonth[];
+  forecast_team_member_count: number;
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RoadmapItemForecastMonth {
+  month_sequence: number;
+  month_label: string;
+  forecast_hours: number;
+  team_member_count: number;
 }
 
 export interface RoadmapItemLinkedIssue {

@@ -217,6 +217,52 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
         assert cleared["rows"][0]["forecast_hours"] == Decimal("0")
 
 
+def test_product_roadmap_items_include_forecast_months():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Core Infrastructure", slug="core-infrastructure")
+        member = TeamMember(name="Akhil Musani", slug="akhil-musani", role="QA", team="Product Maintenance", bill_rate=Decimal("70"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        month = get_fiscal_month(db, 2027, 1)
+        assert bucket is not None
+        roadmap_item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            product_id=product.id,
+            bucket_id=bucket.id,
+            jira_issue_id="100180",
+            jira_issue_key="ROADMAP-180",
+            title="TDOE Application Portfolio Annual Maintenance",
+            issue_type="Idea",
+        )
+        db.add(roadmap_item)
+        db.flush()
+        db.add(
+            RoadmapForecastAllocation(
+                roadmap_item_id=roadmap_item.id,
+                product_id=product.id,
+                team_member_id=member.id,
+                bucket_id=bucket.id,
+                fiscal_month_id=month.id,
+                hours=Decimal("12.50"),
+            )
+        )
+        db.flush()
+
+        rows = product_roadmap_items(db, product.id, 2027)
+
+        assert len(rows) == 1
+        assert rows[0]["forecast_hours"] == 12.5
+        assert rows[0]["forecast_team_member_count"] == 1
+        assert rows[0]["forecast_months"] == [
+            {"month_sequence": 1, "month_label": "Jul", "forecast_hours": 12.5, "team_member_count": 1}
+        ]
+
+
 def test_product_summary_includes_budget_tracker_metrics():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

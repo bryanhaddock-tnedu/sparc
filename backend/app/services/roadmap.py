@@ -8,7 +8,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import get_settings
-from app.models import ActualEntry, Bucket, FiscalMonth, Product, ProductJiraSpace, RoadmapItem, RoadmapItemIssueLink, SyncRun
+from app.models import (
+    ActualEntry,
+    Bucket,
+    FiscalMonth,
+    Product,
+    ProductJiraSpace,
+    RoadmapForecastAllocation,
+    RoadmapItem,
+    RoadmapItemIssueLink,
+    SyncRun,
+)
 from app.services.costs import calculate_cost, round_hours
 from app.services.estimation_policy import WORK_TYPE_ALIASES, normalize_lookup_value
 from app.services.jira_projects import _raise_for_jira_response
@@ -86,6 +96,9 @@ def serialize_roadmap_item(item: RoadmapItem, *, product_id: int | None = None) 
         "source_url": item.source_url,
         "linked_issue_count": len(scoped_links),
         "linked_issues": [_serialize_roadmap_issue_link(link) for link in scoped_links],
+        "forecast_hours": 0,
+        "forecast_months": [],
+        "forecast_team_member_count": 0,
         "last_synced_at": item.last_synced_at,
         "created_at": item.created_at,
         "updated_at": item.updated_at,
@@ -127,7 +140,59 @@ def product_roadmap_items(db: Session, product_id: int, fiscal_year: int) -> lis
     ]
     items_by_id = {item.id: item for item in [*direct_items, *deliverable_parent_items]}
     items = sorted(items_by_id.values(), key=lambda item: item.jira_issue_key)
-    return [serialize_roadmap_item(item, product_id=product_id) for item in items if _is_roadmap_item_issue_type(item.issue_type)]
+    serialized_items = [serialize_roadmap_item(item, product_id=product_id) for item in items if _is_roadmap_item_issue_type(item.issue_type)]
+    _attach_product_roadmap_forecast_summaries(db, serialized_items, product_id, fiscal_year)
+    return serialized_items
+
+
+def _attach_product_roadmap_forecast_summaries(
+    db: Session,
+    serialized_items: list[dict[str, object]],
+    product_id: int,
+    fiscal_year: int,
+) -> None:
+    if not serialized_items:
+        return
+
+    item_ids = {int(item["id"]) for item in serialized_items}
+    item_hours: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    item_members: defaultdict[int, set[int]] = defaultdict(set)
+    month_hours: defaultdict[tuple[int, int], Decimal] = defaultdict(lambda: Decimal("0"))
+    month_members: defaultdict[tuple[int, int], set[int]] = defaultdict(set)
+    month_labels: dict[tuple[int, int], str] = {}
+
+    allocations = db.scalars(
+        select(RoadmapForecastAllocation)
+        .join(RoadmapForecastAllocation.fiscal_month)
+        .options(joinedload(RoadmapForecastAllocation.fiscal_month))
+        .where(
+            RoadmapForecastAllocation.roadmap_item_id.in_(item_ids),
+            RoadmapForecastAllocation.product_id == product_id,
+            FiscalMonth.fiscal_year == fiscal_year,
+        )
+    ).all()
+    for allocation in allocations:
+        item_hours[allocation.roadmap_item_id] += allocation.hours
+        item_members[allocation.roadmap_item_id].add(allocation.team_member_id)
+        month_key = (allocation.roadmap_item_id, allocation.fiscal_month.sequence)
+        month_hours[month_key] += allocation.hours
+        month_members[month_key].add(allocation.team_member_id)
+        month_labels[month_key] = allocation.fiscal_month.label
+
+    for item in serialized_items:
+        item_id = int(item["id"])
+        item["forecast_hours"] = round_hours(item_hours[item_id])
+        item["forecast_team_member_count"] = len(item_members[item_id])
+        item["forecast_months"] = [
+            {
+                "month_sequence": month_sequence,
+                "month_label": month_labels[(item_id, month_sequence)],
+                "forecast_hours": round_hours(hours),
+                "team_member_count": len(month_members[(item_id, month_sequence)]),
+            }
+            for (roadmap_item_id, month_sequence), hours in sorted(month_hours.items(), key=lambda entry: entry[0][1])
+            if roadmap_item_id == item_id
+        ]
 
 
 def update_roadmap_item_mapping(
