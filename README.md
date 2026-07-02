@@ -62,6 +62,6 @@ npm --prefix frontend run dev
 - Deployment notes live in `docs/deployment.md`.
 - STAGE deployment direction lives in `docs/stage-environment-plan.md`.
 - Seeding is reference-only: buckets, FY2026 months from July 2025 through June 2026, and baseline app settings. It does not create demo products, people, forecasts, actuals, or Jira mappings.
-- Jira sync is app-owned and server-side. Configure `JIRA_SITE_URL`, `JIRA_API_EMAIL`, and `JIRA_API_TOKEN` in `.env`, restart Compose, then use Product Settings to map SPARC products to Jira projects before running live sync.
+- Jira sync is app-owned and server-side. Configure `JIRA_SITE_URL`, `JIRA_API_EMAIL`, and `JIRA_API_TOKEN` in `.env`, restart Compose, then use Product Settings to map SPARC products to Jira projects before running live sync. Live Jira Actuals sync also runs automatically once every morning at `07:30` Central by default.
 - STAGE is expected to run containerized on Kubernetes with Azure PostgreSQL and Key Vault-backed secrets.
 - For STAGE, set `AUTO_CREATE_SCHEMA=false` and run `alembic upgrade head` against Azure PostgreSQL before the app starts.

@@ -24,6 +24,9 @@ Key Vault / container environment values:
 - `JIRA_SITE_URL`
 - `JIRA_API_EMAIL`
 - `JIRA_API_TOKEN`
+- `JIRA_AUTO_SYNC_ENABLED=true`
+- `JIRA_AUTO_SYNC_TIME=07:30`
+- `JIRA_AUTO_SYNC_TIMEZONE=America/Chicago`
 
 Container constants for stage:
 
@@ -50,6 +53,12 @@ Optional for `docker-compose.stage.yml`:
 - `SPARC_BUILD_VERSION=<git-sha-or-release-version>`
 
 The stage compose file builds the frontend for same-origin API calls, so `VITE_API_BASE_URL` is intentionally blank there.
+
+## Daily Jira Actuals Sync
+
+SPARC runs the live Jira Actuals sync automatically from the app container once every morning. By default, the scheduler runs at `07:30` in `America/Chicago`, which keeps the sync before 8am Central time. The scheduler uses the same server-side Jira integration code as the Admin Jira Sync button and only syncs the current fiscal year.
+
+The automatic run skips when Jira credentials are missing or when a live Jira sync already ran on the same Central-time date. Manual sync remains available from Admin.
 
 ## Frontend Versioning
 

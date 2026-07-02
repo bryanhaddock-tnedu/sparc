@@ -1,6 +1,7 @@
-from datetime import date
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 import pytest
 from openpyxl import load_workbook
@@ -28,6 +29,7 @@ from app.models import (
     RoadmapForecastAllocation,
     RoadmapItem,
     RoadmapItemIssueLink,
+    SyncRun,
     TeamMember,
 )
 from app.schemas import ProductCreate, TeamMemberCreate
@@ -49,6 +51,7 @@ from app.services.jira_projects import (
     update_jira_project_catalog_visibility,
     update_product_jira_space,
 )
+from app.services.jira_auto_sync import has_live_sync_for_local_date, is_daily_sync_catch_up_window, next_daily_run_at
 from app.services import jira_projects
 from app.services.roadmap import (
     RoadmapIssueLinkPayload,
@@ -78,6 +81,54 @@ def test_fiscal_year_mapping():
     assert fiscal_year_for_date(date(2026, 6, 30)) == 2026
     assert fiscal_sequence_for_date(date(2026, 6, 30)) == 12
     assert current_fiscal_year(date(2026, 7, 1)) == 2027
+
+
+def test_next_daily_jira_sync_runs_before_8am_central():
+    run_time = time(hour=7, minute=30)
+    timezone_name = "America/Chicago"
+
+    before_schedule = datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc)
+    next_run = next_daily_run_at(before_schedule, run_time, timezone_name)
+    next_run_local = next_run.astimezone(ZoneInfo(timezone_name))
+
+    assert next_run_local.date() == date(2026, 7, 2)
+    assert next_run_local.time() == run_time
+    assert next_run_local.hour < 8
+
+    after_schedule = datetime(2026, 7, 2, 13, 0, tzinfo=timezone.utc)
+    following_run = next_daily_run_at(after_schedule, run_time, timezone_name).astimezone(ZoneInfo(timezone_name))
+
+    assert following_run.date() == date(2026, 7, 3)
+    assert following_run.time() == run_time
+
+
+def test_daily_jira_sync_catches_up_before_8am_central():
+    run_time = time(hour=7, minute=30)
+    timezone_name = "America/Chicago"
+
+    before_cutoff = datetime(2026, 7, 2, 12, 45, tzinfo=timezone.utc)
+    at_cutoff = datetime(2026, 7, 2, 13, 0, tzinfo=timezone.utc)
+
+    assert is_daily_sync_catch_up_window(before_cutoff, run_time, timezone_name)
+    assert not is_daily_sync_catch_up_window(at_cutoff, run_time, timezone_name)
+
+
+def test_scheduled_jira_sync_detects_existing_central_day_run():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(
+            SyncRun(
+                source="jira",
+                mode="live",
+                status="completed",
+                started_at=datetime(2026, 7, 2, 12, 20, tzinfo=timezone.utc),
+            )
+        )
+        db.flush()
+
+        assert has_live_sync_for_local_date(db, date(2026, 7, 2), "America/Chicago")
+        assert not has_live_sync_for_local_date(db, date(2026, 7, 3), "America/Chicago")
 
 
 def test_cost_calculation():

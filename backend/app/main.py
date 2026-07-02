@@ -14,6 +14,7 @@ from app.api import api_router
 from app.config import get_settings
 from app.db.seed import seed_database
 from app.db.session import SessionLocal, create_database
+from app.services.jira_auto_sync import start_jira_auto_sync_scheduler, stop_jira_auto_sync_scheduler
 
 settings = get_settings()
 logger = logging.getLogger("sparc")
@@ -36,7 +37,11 @@ async def lifespan(app: FastAPI):
         settings.auto_create_schema,
         settings.seed_on_startup,
     )
-    yield
+    jira_auto_sync_task = start_jira_auto_sync_scheduler(SessionLocal, settings)
+    try:
+        yield
+    finally:
+        await stop_jira_auto_sync_scheduler(jira_auto_sync_task)
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)

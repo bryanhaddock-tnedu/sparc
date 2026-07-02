@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     jira_site_url: str | None = None
     jira_api_email: str | None = None
     jira_api_token: str | None = None
+    jira_auto_sync_enabled: bool = Field(default=True, validation_alias=AliasChoices("JIRA_AUTO_SYNC_ENABLED", "SPARC_JIRA_AUTO_SYNC_ENABLED"))
+    jira_auto_sync_time: str = Field(default="07:30", validation_alias=AliasChoices("JIRA_AUTO_SYNC_TIME", "SPARC_JIRA_AUTO_SYNC_TIME"))
+    jira_auto_sync_timezone: str = Field(default="America/Chicago", validation_alias=AliasChoices("JIRA_AUTO_SYNC_TIMEZONE", "SPARC_JIRA_AUTO_SYNC_TIMEZONE"))
     auth_enabled: bool = Field(default=False, validation_alias=AliasChoices("AUTH_ENABLED", "SPARC_AUTH_ENABLED"))
     auth_username: str | None = Field(default=None, validation_alias=AliasChoices("AUTH_USERNAME", "SPARC_AUTH_USERNAME"))
     auth_password: str | None = Field(default=None, validation_alias=AliasChoices("AUTH_PASSWORD", "SPARC_AUTH_PASSWORD"))

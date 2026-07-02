@@ -484,6 +484,8 @@ The app should:
 
 Jira credentials must remain server-side. The app owns Jira access; AI tools should only call app codepaths.
 
+Live Jira Actuals sync must run automatically once every morning before 8am Central time. The default schedule is 7:30am `America/Chicago`. Automatic sync uses the same app-owned backend codepath as manual Jira Actuals sync, syncs the current fiscal year, and skips when a live sync already ran that Central-time day.
+
 Jira project/product mapping policy:
 
 - CCTE maps to Product `CCTE`.
