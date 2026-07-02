@@ -18,7 +18,7 @@ from app.services.aggregations import serialize_team_member
 from app.services.costs import round_hours
 from app.services.fiscal_year import ensure_fiscal_months, get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
-from app.services.roadmap import _is_roadmap_deliverable_issue_type, _is_roadmap_item_issue_type, roadmap_actual_rows
+from app.services.roadmap import _is_roadmap_item_issue_type, roadmap_actual_rows
 from app.services.slugs import product_url_slug, slugify, team_member_url_slug
 
 
@@ -214,12 +214,12 @@ def _product_ids_for_team(db: Session, team_name: str) -> set[int]:
 
 
 def _roadmap_contexts(item: RoadmapItem) -> list[tuple[Product | None, Bucket | None]]:
-    deliverable_contexts = [
+    linked_contexts = [
         (link.product, link.bucket or item.bucket)
         for link in item.issue_links
-        if _is_roadmap_deliverable_issue_type(link.issue_type) and (link.product is not None or link.bucket is not None)
+        if link.product is not None or link.bucket is not None
     ]
-    contexts = deliverable_contexts or [(item.product, item.bucket)]
+    contexts = linked_contexts or [(item.product, item.bucket)]
     deduped: dict[tuple[int | None, int | None], tuple[Product | None, Bucket | None]] = {}
     for product, bucket in contexts:
         deduped[(product.id if product else None, bucket.id if bucket else None)] = (product, bucket)
@@ -294,7 +294,7 @@ def _serialize_planner_row(item: RoadmapItem, product: Product | None, bucket: B
         "product_slug": product_url_slug(product) if product else None,
         "bucket_id": bucket.id if bucket else None,
         "bucket": bucket.name if bucket else None,
-        "deliverables": [_serialize_deliverable_link(link, item) for link in _context_deliverable_links(item, product, bucket)],
+        "deliverables": [_serialize_deliverable_link(link, item) for link in _planner_component_links(item)],
         "forecast_hours": Decimal("0"),
         "actual_hours": Decimal("0"),
         "worklog_count": 0,
@@ -303,23 +303,8 @@ def _serialize_planner_row(item: RoadmapItem, product: Product | None, bucket: B
     }
 
 
-def _context_deliverable_links(item: RoadmapItem, product: Product | None, bucket: Bucket | None) -> list[RoadmapItemIssueLink]:
-    links = [
-        link
-        for link in sorted(item.issue_links, key=lambda item_link: item_link.jira_issue_key)
-        if _is_roadmap_deliverable_issue_type(link.issue_type)
-    ]
-    if not links:
-        return []
-
-    matching_links: list[RoadmapItemIssueLink] = []
-    for link in links:
-        effective_bucket = link.bucket or item.bucket
-        product_matches = product is None or (link.product is not None and link.product.id == product.id)
-        bucket_matches = bucket is None or (effective_bucket is not None and effective_bucket.id == bucket.id)
-        if product_matches and bucket_matches:
-            matching_links.append(link)
-    return matching_links
+def _planner_component_links(item: RoadmapItem) -> list[RoadmapItemIssueLink]:
+    return sorted(item.issue_links, key=lambda item_link: item_link.jira_issue_key)
 
 
 def _serialize_deliverable_link(link: RoadmapItemIssueLink, item: RoadmapItem) -> dict[str, object]:

@@ -300,6 +300,7 @@ function RoadmapForecastPlanner({
   const existingCellKeys = useMemo(() => new Set(plan.rows.flatMap((row) => row.allocations.map((allocation) => plannerCellKey(row, allocation.team_member_id, allocation.month_sequence)))), [plan]);
   const allocationTotal = plan.rows.reduce((total, row) => total + row.forecast_hours, 0);
   const actualTotal = plan.rows.reduce((total, row) => total + row.actual_hours, 0);
+  const scheduledRowCount = plan.rows.filter(rowHasRoadmapSchedule).length;
 
   useEffect(() => {
     const nextDraft: Record<string, string> = {};
@@ -375,6 +376,13 @@ function RoadmapForecastPlanner({
         </div>
       </div>
 
+      {plan.rows.length > 0 && scheduledRowCount === 0 ? (
+        <div className="mt-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-muted-foreground">
+          <span className="font-semibold text-primary">No Jira roadmap months are synced yet.</span> Run the Roadmap sync after Jira has start/target dates, then SPARC
+          will tint the matching month columns.
+        </div>
+      ) : null}
+
       <div className="mt-4 space-y-3">
         {plan.rows.length ? (
           plan.rows.map((row) => {
@@ -403,7 +411,6 @@ function RoadmapForecastPlanner({
                       {row.roadmap_item_title}
                     </div>
                     <PlannerDeliverables row={row} />
-                    <PlannerRoadmapSchedule row={row} months={plan.months} />
                     <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                       <span>{row.product ?? "Needs product mapping"}</span>
                       <span>/</span>
@@ -517,10 +524,11 @@ function PlannerDeliverables({ row }: { row: TeamRoadmapForecastRow }) {
   if (!row.deliverables.length) return null;
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2">
-      <span className="text-[10px] font-semibold uppercase text-muted-foreground">Deliverables</span>
+      <span className="text-[10px] font-semibold uppercase text-muted-foreground">Deliverables ({row.deliverables.length})</span>
       {row.deliverables.map((deliverable) => (
         <div key={deliverable.id} className="flex max-w-xl min-w-0 gap-1 rounded-md border bg-background px-2 py-1 text-xs">
           <span className="shrink-0 font-semibold text-primary">{deliverable.jira_issue_key}</span>
+          {deliverable.product ? <span className="shrink-0 text-muted-foreground">{deliverable.product}</span> : null}
           {deliverable.jira_issue_summary ? (
             <span className="truncate text-muted-foreground" title={deliverable.jira_issue_summary}>
               {deliverable.jira_issue_summary}
@@ -528,35 +536,6 @@ function PlannerDeliverables({ row }: { row: TeamRoadmapForecastRow }) {
           ) : null}
         </div>
       ))}
-    </div>
-  );
-}
-
-function PlannerRoadmapSchedule({ row, months }: { row: TeamRoadmapForecastRow; months: TeamRoadmapForecastPlan["months"] }) {
-  const scheduledMonths = months.filter((month) => roadmapMonthIsActive(row, month));
-  const hasSchedule = scheduledMonths.length > 0;
-  const title = hasSchedule ? scheduledMonths.map((month) => month.label).join(", ") : "No Jira roadmap dates synced";
-  return (
-    <div className="mt-2 flex flex-col gap-1">
-      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase text-muted-foreground">
-        <span>Roadmap schedule</span>
-        {!hasSchedule ? <span className="normal-case text-muted-foreground">No Jira dates synced</span> : null}
-      </div>
-      <div className="grid max-w-xl grid-cols-12 overflow-hidden rounded-md border border-border" title={title}>
-        {months.map((month) => {
-          const isActive = roadmapMonthIsActive(row, month);
-          return (
-            <div
-              key={month.id}
-              className={`border-r px-1 py-1 text-center text-[10px] font-semibold uppercase last:border-r-0 ${
-                isActive ? "bg-[color:var(--spark-cyan)] text-primary" : "bg-secondary/50 text-muted-foreground"
-              }`}
-            >
-              {month.label}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -576,6 +555,10 @@ function plannerRowKey(row: TeamRoadmapForecastRow) {
 
 function plannerCellKey(row: TeamRoadmapForecastRow, teamMemberId: number, monthSequence: number) {
   return `${plannerRowKey(row)}:${teamMemberId}:${monthSequence}`;
+}
+
+function rowHasRoadmapSchedule(row: TeamRoadmapForecastRow) {
+  return Boolean(row.roadmap_start_date || row.roadmap_end_date);
 }
 
 function roadmapMonthIsActive(row: TeamRoadmapForecastRow, month: TeamRoadmapForecastPlan["months"][number]) {

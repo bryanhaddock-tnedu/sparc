@@ -36,27 +36,60 @@ ROADMAP_DELIVERABLE_ISSUE_TYPES = {"deliverable"}
 AGENCY_OFFICE_FIELD_NAMES = {"agency office"}
 CATEGORY_FIELD_NAMES = {"category"}
 TEAM_FIELD_NAMES = {"team"}
-ROADMAP_RANGE_FIELD_NAMES = {"roadmap dates", "schedule", "target dates", "timeline", "timeframe"}
+ROADMAP_RANGE_FIELD_NAMES = {
+    "delivery dates",
+    "delivery schedule",
+    "delivery timeline",
+    "roadmap dates",
+    "roadmap schedule",
+    "roadmap timeline",
+    "schedule",
+    "target dates",
+    "timeline",
+    "timeframe",
+}
 ROADMAP_START_FIELD_NAMES = {
     *ROADMAP_RANGE_FIELD_NAMES,
+    "begin",
+    "begin date",
+    "delivery start",
+    "delivery start date",
+    "planned start",
+    "planned start date",
+    "roadmap start",
+    "roadmap start date",
+    "scheduled start",
+    "scheduled start date",
     "start",
     "start date",
     "target start",
     "target start date",
-    "roadmap start",
-    "planned start",
-    "planned start date",
 }
 ROADMAP_END_FIELD_NAMES = {
     *ROADMAP_RANGE_FIELD_NAMES,
+    "completion",
+    "completion date",
+    "delivery due date",
+    "delivery end",
+    "delivery end date",
+    "delivery target",
+    "delivery target date",
+    "due",
+    "due date",
     "end",
     "end date",
-    "target end",
-    "target end date",
-    "target date",
-    "roadmap end",
+    "finish",
+    "finish date",
     "planned end",
     "planned end date",
+    "roadmap end",
+    "roadmap end date",
+    "scheduled end",
+    "scheduled end date",
+    "target",
+    "target date",
+    "target end",
+    "target end date",
 }
 ROADMAP_CATEGORY_ALIASES = {
     **WORK_TYPE_ALIASES,
@@ -160,11 +193,7 @@ def product_roadmap_items(db: Session, product_id: int, fiscal_year: int) -> lis
         .where(RoadmapItemIssueLink.product_id == product_id, RoadmapItem.fiscal_year == fiscal_year)
         .order_by(RoadmapItem.jira_issue_key)
     ).unique().all()
-    deliverable_parent_items = [
-        item
-        for item in deliverable_parent_items
-        if any(link.product_id == product_id and _is_roadmap_deliverable_issue_type(link.issue_type) for link in item.issue_links)
-    ]
+    deliverable_parent_items = [item for item in deliverable_parent_items if _has_product_linked_component(item, product_id)]
     items_by_id = {item.id: item for item in [*direct_items, *deliverable_parent_items]}
     items = sorted(items_by_id.values(), key=lambda item: item.jira_issue_key)
     serialized_items = [serialize_roadmap_item(item, product_id=product_id) for item in items if _is_roadmap_item_issue_type(item.issue_type)]
@@ -663,7 +692,7 @@ def _normalize_roadmap_issue(
         category=_category_from_issue_fields(fields, category_field_ids),
         source_team=_team_from_issue_fields(fields, team_field_ids),
         roadmap_start_date=_roadmap_date_from_issue_fields(fields, start_date_field_ids or [], preferred_keys=("start", "startDate", "from")),
-        roadmap_end_date=_roadmap_date_from_issue_fields(fields, end_date_field_ids or [], preferred_keys=("end", "endDate", "to")),
+        roadmap_end_date=_roadmap_date_from_issue_fields(fields, end_date_field_ids or [], preferred_keys=("end", "endDate", "target", "targetDate", "due", "dueDate", "to")),
         source_url=f"{site_url}/browse/{issue_key}" if issue_key else None,
         links=links,
     )
@@ -688,6 +717,10 @@ def _is_roadmap_deliverable_issue_type(issue_type: str | None) -> bool:
     return issue_type.strip().lower() in ROADMAP_DELIVERABLE_ISSUE_TYPES
 
 
+def _has_product_linked_component(item: RoadmapItem, product_id: int) -> bool:
+    return any(link.product_id == product_id for link in item.issue_links)
+
+
 def _scoped_roadmap_issue_links(item: RoadmapItem, product_id: int | None) -> list[RoadmapItemIssueLink]:
     links = sorted(item.issue_links, key=lambda link: link.jira_issue_key)
     if product_id is None:
@@ -699,6 +732,9 @@ def _scoped_roadmap_issue_links(item: RoadmapItem, product_id: int | None) -> li
     ]
     if deliverable_links:
         return deliverable_links
+    product_links = [link for link in links if link.product_id == product_id]
+    if product_links:
+        return product_links
     return links if item.product_id == product_id else []
 
 
@@ -846,8 +882,8 @@ def _fetch_roadmap_field_ids(client: httpx.Client, site_url: str) -> dict[str, l
         "agency_office": _jira_field_ids_by_name(fields, AGENCY_OFFICE_FIELD_NAMES),
         "category": _jira_field_ids_by_name(fields, CATEGORY_FIELD_NAMES),
         "team": _jira_field_ids_by_name(fields, TEAM_FIELD_NAMES),
-        "start_date": _jira_field_ids_by_name(fields, ROADMAP_START_FIELD_NAMES),
-        "end_date": _jira_field_ids_by_name(fields, ROADMAP_END_FIELD_NAMES),
+        "start_date": _jira_date_field_ids_by_name(fields, ROADMAP_START_FIELD_NAMES, role="start"),
+        "end_date": _jira_date_field_ids_by_name(fields, ROADMAP_END_FIELD_NAMES, role="end"),
     }
 
 
@@ -859,6 +895,49 @@ def _jira_field_ids_by_name(fields: list[object], names: set[str]) -> list[str]:
         and str(field.get("name") or "").strip().casefold() in names
         and field.get("id")
     ]
+
+
+def _jira_date_field_ids_by_name(fields: list[object], names: set[str], *, role: str) -> list[str]:
+    exact_matches = _jira_field_ids_by_name(fields, names)
+    seen = set(exact_matches)
+    fuzzy_matches: list[str] = []
+    for field in fields:
+        if not isinstance(field, dict) or not field.get("id"):
+            continue
+        field_id = str(field["id"])
+        if field_id in seen:
+            continue
+        field_name = str(field.get("name") or "").strip()
+        if _looks_like_roadmap_date_field(field_name, role=role):
+            fuzzy_matches.append(field_id)
+            seen.add(field_id)
+    return [*exact_matches, *fuzzy_matches]
+
+
+def _looks_like_roadmap_date_field(field_name: str, *, role: str) -> bool:
+    name = field_name.casefold()
+    if not name:
+        return False
+    range_terms = (
+        "delivery dates",
+        "delivery schedule",
+        "delivery timeline",
+        "roadmap dates",
+        "roadmap schedule",
+        "roadmap timeline",
+        "schedule",
+        "target dates",
+        "timeline",
+        "timeframe",
+    )
+    if any(term in name for term in range_terms):
+        return True
+    context_terms = ("date", "delivery", "roadmap", "planned", "schedule", "target", "timeline")
+    if role == "start":
+        role_terms = ("begin", "start")
+    else:
+        role_terms = ("completion", "due", "end", "finish", "target")
+    return any(term in name for term in role_terms) and any(term in name for term in context_terms)
 
 
 def _program_area_from_issue_fields(fields: dict[str, object], agency_office_field_ids: list[str]) -> str | None:
@@ -900,9 +979,38 @@ def _parse_jira_date(value: object, *, preferred_keys: tuple[str, ...] = tuple()
         return value
     if isinstance(value, datetime):
         return value.date()
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            parsed = _parse_jira_date(item, preferred_keys=preferred_keys)
+            if parsed is not None:
+                return parsed
+        return None
     if isinstance(value, dict):
-        for key in (*preferred_keys, "value", "date", "start", "end"):
-            parsed = _parse_jira_date(value.get(key), preferred_keys=preferred_keys)
+        keys = (
+            *preferred_keys,
+            "value",
+            "date",
+            "start",
+            "startDate",
+            "begin",
+            "beginDate",
+            "end",
+            "endDate",
+            "target",
+            "targetDate",
+            "due",
+            "dueDate",
+        )
+        normalized_values = {_normalize_jira_field_key(str(key)): nested_value for key, nested_value in value.items()}
+        for key in keys:
+            normalized_key = _normalize_jira_field_key(key)
+            if normalized_key not in normalized_values:
+                continue
+            parsed = _parse_jira_date(normalized_values[normalized_key], preferred_keys=preferred_keys)
+            if parsed is not None:
+                return parsed
+        for nested_value in value.values():
+            parsed = _parse_jira_date(nested_value, preferred_keys=preferred_keys)
             if parsed is not None:
                 return parsed
         return None
@@ -919,6 +1027,10 @@ def _parse_jira_date(value: object, *, preferred_keys: tuple[str, ...] = tuple()
         except ValueError:
             continue
     return None
+
+
+def _normalize_jira_field_key(key: str) -> str:
+    return "".join(character for character in key.casefold() if character.isalnum())
 
 
 def _bucket_id_from_category(db: Session, category: str | None) -> int | None:

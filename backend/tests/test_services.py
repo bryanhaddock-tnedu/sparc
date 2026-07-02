@@ -52,7 +52,9 @@ from app.services.roadmap import (
     RoadmapIssuePayload,
     UNSCOPED_ROADMAP_FISCAL_YEAR,
     _has_fiscal_year_label,
+    _jira_date_field_ids_by_name,
     _normalize_roadmap_issue,
+    _parse_jira_date,
     _replace_roadmap_issue_links,
     _remove_stale_roadmap_items_from_fiscal_year,
     _roadmap_fiscal_year_label,
@@ -239,6 +241,67 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
         assert db.scalar(select(RoadmapForecastAllocation)) is None
         assert db.scalar(select(ForecastEntry)).hours == Decimal("0")
         assert cleared["rows"][0]["forecast_hours"] == Decimal("0")
+
+
+def test_team_roadmap_forecast_plan_shows_all_linked_components_for_parent_item():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        epso = Product(name="EPSO", slug="epso")
+        sword = Product(name="SWORD", slug="sword")
+        member = TeamMember(name="Rojina Thapa", slug="rojina-thapa", role="QA", team="Product Maintenance", bill_rate=Decimal("70"))
+        db.add_all([epso, sword, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        assert bucket is not None
+        roadmap_item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            bucket_id=bucket.id,
+            jira_issue_id="100180",
+            jira_issue_key="ROADMAP-180",
+            title="TDOE Application Portfolio Annual Maintenance",
+            issue_type="Idea",
+            source_team="Product Maintenance",
+        )
+        db.add(roadmap_item)
+        db.flush()
+        db.add_all(
+            [
+                RoadmapItemIssueLink(
+                    roadmap_item_id=roadmap_item.id,
+                    product_id=epso.id,
+                    bucket_id=bucket.id,
+                    jira_issue_id="200054",
+                    jira_issue_key="EPSO-54",
+                    jira_issue_summary="FY27 EPSO Maintenance",
+                    jira_project_key="EPSO",
+                    relationship_type="Delivery",
+                    issue_type="Deliverable",
+                ),
+                RoadmapItemIssueLink(
+                    roadmap_item_id=roadmap_item.id,
+                    product_id=sword.id,
+                    bucket_id=bucket.id,
+                    jira_issue_id="200974",
+                    jira_issue_key="SWORD-974",
+                    jira_issue_summary="SWORD continuous maintenance",
+                    jira_project_key="SWORD",
+                    relationship_type="Delivery",
+                    issue_type="Story",
+                ),
+            ]
+        )
+        db.flush()
+
+        result = team_roadmap_forecast_plan(db, "product-maintenance", 2027)
+        rows = [row for row in result["rows"] if row["roadmap_item_key"] == "ROADMAP-180"]
+
+        assert len(rows) == 2
+        assert {row["product"] for row in rows} == {"EPSO", "SWORD"}
+        for row in rows:
+            assert [deliverable["jira_issue_key"] for deliverable in row["deliverables"]] == ["EPSO-54", "SWORD-974"]
 
 
 def test_product_roadmap_items_include_forecast_months():
@@ -488,6 +551,20 @@ def test_roadmap_issue_normalization_uses_fiscal_year_label_and_agency_office():
     assert payload.source_team == "Product Maintenance"
     assert payload.roadmap_start_date == date(2026, 9, 1)
     assert payload.roadmap_end_date == date(2026, 11, 30)
+
+
+def test_roadmap_date_field_discovery_matches_product_discovery_schedule_names():
+    fields = [
+        {"id": "customfield_10001", "name": "Team"},
+        {"id": "customfield_10002", "name": "Delivery Start"},
+        {"id": "customfield_10003", "name": "Target"},
+        {"id": "customfield_10004", "name": "Roadmap Schedule"},
+    ]
+
+    assert _jira_date_field_ids_by_name(fields, {"start date"}, role="start") == ["customfield_10002", "customfield_10004"]
+    assert _jira_date_field_ids_by_name(fields, {"target date"}, role="end") == ["customfield_10003", "customfield_10004"]
+    assert _parse_jira_date({"startDate": "2026-09-01", "targetDate": "2026-11-30"}, preferred_keys=("start", "startDate", "from")) == date(2026, 9, 1)
+    assert _parse_jira_date([{"startDate": "2026-09-01", "targetDate": "2026-11-30"}], preferred_keys=("target", "targetDate", "end")) == date(2026, 11, 30)
 
 
 def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
