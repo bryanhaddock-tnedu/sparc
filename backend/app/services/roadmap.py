@@ -425,16 +425,31 @@ def fetch_live_roadmap_items(roadmap_project_key: str, fiscal_year: int) -> list
         # Jira Product Discovery fields can be present in issue payloads even when the
         # field catalog does not expose them consistently. Roadmap issue volume is
         # small, so request all Idea fields and then extract the SPARC fields we need.
-        fields = ["*all"]
-        issues = _search_jira_issues(client, site_url, jql, fields)
+        fields = _unique_strings(
+            [
+                "*all",
+                "summary",
+                "labels",
+                "status",
+                "issuetype",
+                "issuelinks",
+                *field_ids["agency_office"],
+                *field_ids["category"],
+                *field_ids["team"],
+                *field_ids["start_date"],
+                *field_ids["end_date"],
+            ]
+        )
+        issues = _search_jira_issues(client, site_url, jql, fields, expand=["names", "renderedFields"])
         payloads: list[RoadmapIssuePayload] = []
         for issue in issues:
-            labels = _labels_from_issue(issue)
-            if _is_roadmap_item_issue_type(_issue_type_name(issue)) and _has_fiscal_year_label(labels, fiscal_year):
+            detailed_issue = _fetch_roadmap_issue_detail(client, site_url, issue)
+            labels = _labels_from_issue(detailed_issue)
+            if _is_roadmap_item_issue_type(_issue_type_name(detailed_issue)) and _has_fiscal_year_label(labels, fiscal_year):
                 payloads.append(
                     _normalize_roadmap_issue(
                         site_url,
-                        issue,
+                        detailed_issue,
                         field_ids["agency_office"],
                         field_ids["category"],
                         field_ids["team"],
@@ -443,6 +458,34 @@ def fetch_live_roadmap_items(roadmap_project_key: str, fiscal_year: int) -> list
                     )
                 )
         return _enrich_roadmap_payload_links(client, site_url, payloads, field_ids["category"])
+
+
+def _fetch_roadmap_issue_detail(client: httpx.Client, site_url: str, issue: dict[str, object]) -> dict[str, object]:
+    issue_key = _normalize_issue_key(str(issue.get("key") or issue.get("id") or ""))
+    if not issue_key:
+        return issue
+    try:
+        response = client.get(
+            f"{site_url.rstrip('/')}/rest/api/3/issue/{issue_key}",
+            params={"fields": "*all", "expand": "names,renderedFields"},
+            headers={"Accept": "application/json"},
+        )
+        _raise_for_jira_response(response)
+    except (ValueError, httpx.HTTPError):
+        return issue
+    detail = response.json()
+    if not isinstance(detail, dict):
+        return issue
+    return _merge_issue_detail(issue, detail)
+
+
+def _merge_issue_detail(base: dict[str, object], detail: dict[str, object]) -> dict[str, object]:
+    merged = {**base, **detail}
+    for key in ("fields", "renderedFields", "names"):
+        base_value = base.get(key) if isinstance(base.get(key), dict) else {}
+        detail_value = detail.get(key) if isinstance(detail.get(key), dict) else {}
+        merged[key] = {**base_value, **detail_value}
+    return merged
 
 
 def roadmap_actual_rows(
@@ -712,28 +755,33 @@ def _normalize_roadmap_issue(
     end_date_field_ids: list[str] | None = None,
 ) -> RoadmapIssuePayload:
     fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
+    rendered_fields = issue.get("renderedFields") if isinstance(issue.get("renderedFields"), dict) else {}
+    names = issue.get("names") if isinstance(issue.get("names"), dict) else {}
     status = fields.get("status") if isinstance(fields.get("status"), dict) else {}
     status_category = status.get("statusCategory") if isinstance(status.get("statusCategory"), dict) else {}
     issue_type = fields.get("issuetype") if isinstance(fields.get("issuetype"), dict) else {}
     issue_key = _normalize_issue_key(str(issue.get("key") or ""))
     links = tuple(_extract_issue_links(fields, issue_key, category_field_ids))
     labels = _labels_from_issue(issue)
-    roadmap_start_date = _roadmap_date_from_issue_fields(
-        fields,
-        start_date_field_ids or [],
+    field_sources = [fields, rendered_fields]
+    start_date_ids = _unique_strings([*(start_date_field_ids or []), *_roadmap_date_field_ids_from_issue_names(names, ROADMAP_START_FIELD_NAMES, role="start")])
+    end_date_ids = _unique_strings([*(end_date_field_ids or []), *_roadmap_date_field_ids_from_issue_names(names, ROADMAP_END_FIELD_NAMES, role="end")])
+    roadmap_start_date = _roadmap_date_from_issue_field_sources(
+        field_sources,
+        start_date_ids,
         preferred_keys=("start", "startDate", "from"),
         range_position="start",
-    ) or _roadmap_date_from_any_issue_field(fields, range_position="start")
-    roadmap_end_date = _roadmap_date_from_issue_fields(
-        fields,
-        end_date_field_ids or [],
+    ) or _roadmap_date_from_any_issue_field_sources(field_sources, range_position="start")
+    roadmap_end_date = _roadmap_date_from_issue_field_sources(
+        field_sources,
+        end_date_ids,
         preferred_keys=("end", "endDate", "target", "targetDate", "due", "dueDate", "to"),
         range_position="end",
-    ) or _roadmap_date_from_any_issue_field(fields, range_position="end")
+    ) or _roadmap_date_from_any_issue_field_sources(field_sources, range_position="end")
     if roadmap_end_date is None and roadmap_start_date is not None:
-        roadmap_end_date = _roadmap_date_from_issue_fields(
-            fields,
-            start_date_field_ids or [],
+        roadmap_end_date = _roadmap_date_from_issue_field_sources(
+            field_sources,
+            start_date_ids,
             preferred_keys=("start", "startDate", "from"),
             range_position="end",
         )
@@ -929,6 +977,17 @@ def _chunks(values: list[str], size: int) -> list[list[str]]:
     return [values[index : index + size] for index in range(0, len(values), size)]
 
 
+def _unique_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique_values: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        unique_values.append(value)
+    return unique_values
+
+
 def _fetch_roadmap_field_ids(client: httpx.Client, site_url: str) -> dict[str, list[str]]:
     response = client.get(f"{site_url.rstrip('/')}/rest/api/3/field", headers={"Accept": "application/json"})
     _raise_for_jira_response(response)
@@ -969,6 +1028,15 @@ def _jira_date_field_ids_by_name(fields: list[object], names: set[str], *, role:
             fuzzy_matches.append(field_id)
             seen.add(field_id)
     return [*exact_matches, *fuzzy_matches]
+
+
+def _roadmap_date_field_ids_from_issue_names(names: dict[str, object], field_names: set[str], *, role: str) -> list[str]:
+    fields = [
+        {"id": field_id, "name": field_name}
+        for field_id, field_name in names.items()
+        if isinstance(field_id, str) and isinstance(field_name, str)
+    ]
+    return _jira_date_field_ids_by_name(fields, field_names, role=role)
 
 
 def _looks_like_roadmap_date_field(field_name: str, *, role: str) -> bool:
@@ -1035,11 +1103,38 @@ def _roadmap_date_from_issue_fields(
     return None
 
 
+def _roadmap_date_from_issue_field_sources(
+    field_sources: list[dict[str, object]],
+    date_field_ids: list[str],
+    *,
+    preferred_keys: tuple[str, ...],
+    range_position: str,
+) -> date | None:
+    for fields in field_sources:
+        parsed = _roadmap_date_from_issue_fields(
+            fields,
+            date_field_ids,
+            preferred_keys=preferred_keys,
+            range_position=range_position,
+        )
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def _roadmap_date_from_any_issue_field(fields: dict[str, object], *, range_position: str) -> date | None:
     for raw_text in _jira_field_text_values(fields):
         if not re.search(MONTH_NAME_PATTERN, raw_text, flags=re.IGNORECASE) or not re.search(r"\b20\d{2}\b", raw_text):
             continue
         parsed = _parse_jira_text_date(raw_text, range_position=range_position)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _roadmap_date_from_any_issue_field_sources(field_sources: list[dict[str, object]], *, range_position: str) -> date | None:
+    for fields in field_sources:
+        parsed = _roadmap_date_from_any_issue_field(fields, range_position=range_position)
         if parsed is not None:
             return parsed
     return None
@@ -1135,6 +1230,14 @@ def _parse_jira_text_date(raw: str, *, range_position: str) -> date | None:
             continue
 
     normalized = raw.replace("\u2013", "-").replace("\u2014", "-")
+    iso_month_matches = list(re.finditer(r"\b(20\d{2})-(0?[1-9]|1[0-2])(?:-(0?[1-9]|[12]\d|3[01]))?\b", normalized))
+    if iso_month_matches:
+        selected = iso_month_matches[-1] if range_position == "end" else iso_month_matches[0]
+        year = int(selected.group(1))
+        month_number = int(selected.group(2))
+        day = int(selected.group(3)) if selected.group(3) else (_last_day_of_month(year, month_number) if range_position == "end" else 1)
+        return date(year, month_number, day)
+
     years = [int(match.group(0)) for match in re.finditer(r"\b20\d{2}\b", normalized)]
     month_matches = list(re.finditer(MONTH_NAME_PATTERN, normalized, flags=re.IGNORECASE))
     if not years or not month_matches:

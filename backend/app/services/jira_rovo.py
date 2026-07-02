@@ -532,16 +532,16 @@ def _fetch_work_type_field_ids(client: httpx.Client, site_url: str) -> list[str]
     ]
 
 
-def _search_jira_issues(client: httpx.Client, site_url: str, jql: str, fields: list[str]) -> list[dict[str, object]]:
+def _search_jira_issues(client: httpx.Client, site_url: str, jql: str, fields: list[str], expand: list[str] | None = None) -> list[dict[str, object]]:
     try:
-        return _search_jira_issues_enhanced(client, site_url, jql, fields)
+        return _search_jira_issues_enhanced(client, site_url, jql, fields, expand=expand)
     except ValueError as exc:
         if "404" not in str(exc):
             raise
-    return _search_jira_issues_legacy(client, site_url, jql, fields)
+    return _search_jira_issues_legacy(client, site_url, jql, fields, expand=expand)
 
 
-def _search_jira_issues_enhanced(client: httpx.Client, site_url: str, jql: str, fields: list[str]) -> list[dict[str, object]]:
+def _search_jira_issues_enhanced(client: httpx.Client, site_url: str, jql: str, fields: list[str], expand: list[str] | None = None) -> list[dict[str, object]]:
     issues: list[dict[str, object]] = []
     next_page_token: str | None = None
     while True:
@@ -550,6 +550,8 @@ def _search_jira_issues_enhanced(client: httpx.Client, site_url: str, jql: str, 
             "maxResults": 50,
             "fields": fields,
         }
+        if expand:
+            payload["expand"] = ",".join(expand)
         if next_page_token:
             payload["nextPageToken"] = next_page_token
         response = client.post(
@@ -568,13 +570,16 @@ def _search_jira_issues_enhanced(client: httpx.Client, site_url: str, jql: str, 
     return issues
 
 
-def _search_jira_issues_legacy(client: httpx.Client, site_url: str, jql: str, fields: list[str]) -> list[dict[str, object]]:
+def _search_jira_issues_legacy(client: httpx.Client, site_url: str, jql: str, fields: list[str], expand: list[str] | None = None) -> list[dict[str, object]]:
     issues: list[dict[str, object]] = []
     start_at = 0
     while True:
+        payload: dict[str, object] = {"jql": jql, "startAt": start_at, "maxResults": 50, "fields": fields}
+        if expand:
+            payload["expand"] = ",".join(expand)
         response = client.post(
             f"{site_url.rstrip('/')}/rest/api/3/search",
-            json={"jql": jql, "startAt": start_at, "maxResults": 50, "fields": fields},
+            json=payload,
             headers={"Accept": "application/json"},
         )
         _raise_for_jira_response(response)

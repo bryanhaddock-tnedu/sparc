@@ -632,6 +632,76 @@ def test_roadmap_schedule_falls_back_to_product_discovery_month_text():
     assert payload.roadmap_end_date == date(2026, 9, 30)
 
 
+def test_roadmap_schedule_reads_product_discovery_rendered_field_names():
+    issue = {
+        "id": "100180",
+        "key": "ROADMAP-180",
+        "names": {
+            "customfield_10005": "Project start",
+            "customfield_10006": "Project target",
+        },
+        "fields": {
+            "summary": "TDOE Application Portfolio Annual Maintenance",
+            "labels": ["FY27"],
+            "customfield_10005": None,
+            "customfield_10006": None,
+            "status": {"name": "Backlog", "statusCategory": {"name": "To Do"}},
+            "issuetype": {"name": "Idea"},
+            "issuelinks": [],
+        },
+        "renderedFields": {
+            "customfield_10005": "<span>Jul-Sep, 2026</span>",
+            "customfield_10006": "<span>Oct-Dec, 2026</span>",
+        },
+    }
+
+    payload = _normalize_roadmap_issue(
+        "https://tndoe.atlassian.net",
+        issue,
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
+
+    assert payload.roadmap_start_date == date(2026, 7, 1)
+    assert payload.roadmap_end_date == date(2026, 12, 31)
+
+
+def test_roadmap_schedule_reads_product_discovery_iso_month_ranges():
+    issue = {
+        "id": "100180",
+        "key": "ROADMAP-180",
+        "names": {
+            "customfield_10005": "Project start",
+            "customfield_10006": "Project target",
+        },
+        "fields": {
+            "summary": "TDOE Application Portfolio Annual Maintenance",
+            "labels": ["FY27"],
+            "customfield_10005": {"start": "2026-07", "end": "2026-09"},
+            "customfield_10006": {"start": "2026-10", "end": "2026-12"},
+            "status": {"name": "Backlog", "statusCategory": {"name": "To Do"}},
+            "issuetype": {"name": "Idea"},
+            "issuelinks": [],
+        },
+    }
+
+    payload = _normalize_roadmap_issue(
+        "https://tndoe.atlassian.net",
+        issue,
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
+
+    assert payload.roadmap_start_date == date(2026, 7, 1)
+    assert payload.roadmap_end_date == date(2026, 12, 31)
+
+
 def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
