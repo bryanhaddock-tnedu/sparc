@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronsUpDown, Plus, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Plus, RotateCcw, Search, UserMinus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type MouseEventHandler, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -75,8 +75,10 @@ export function TeamManagementPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [nameSearch, setNameSearch] = useState("");
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [rankingDimension, setRankingDimension] = useState<TeamRankingDimension>("fytd_actual");
   const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
+  const [rosterStatusUpdatingId, setRosterStatusUpdatingId] = useState<number | null>(null);
 
   const loadTeamOverview = useCallback(async () => {
     const [memberRows, reportedValueRows, storyPointRows] = await Promise.all([
@@ -119,16 +121,45 @@ export function TeamManagementPage() {
     }
   }, [loadTeamOverview, newMember]);
 
+  const updateRosterStatus = useCallback(
+    async (member: TeamMember, nextStatus: "active" | "inactive") => {
+      if (nextStatus === "inactive" && !window.confirm(`Remove ${member.name} from the active roster? Historical SPARC data will stay intact.`)) {
+        return;
+      }
+
+      setRosterStatusUpdatingId(member.id);
+      setActionError(null);
+      setNotice(null);
+      try {
+        const updated = await api.updateTeamMember(member.slug || member.id, { status: nextStatus });
+        await loadTeamOverview();
+        setNotice(
+          nextStatus === "active"
+            ? `${updated.name} was restored to the active roster.`
+            : `${updated.name} was removed from the active roster.`,
+        );
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Unable to update roster status");
+      } finally {
+        setRosterStatusUpdatingId(null);
+      }
+    },
+    [loadTeamOverview],
+  );
+
   const analytics = useMemo(() => buildTeamActualAnalytics(reportedRows, members, fiscalYear), [reportedRows, members, fiscalYear]);
   const rankingRows = useMemo(
     () => buildTeamMemberRankingRows(reportedRows, members, fiscalYear, storyMetrics),
     [fiscalYear, members, reportedRows, storyMetrics],
   );
   const normalizedNameSearch = nameSearch.trim().toLowerCase();
+  const activeMemberCount = members.filter((member) => member.status === "active").length;
+  const inactiveMemberCount = members.length - activeMemberCount;
   const filteredMembers = useMemo(() => {
-    if (!normalizedNameSearch) return members;
-    return members.filter((member) => member.name.toLowerCase().split(/\s+/).some((namePart) => namePart.startsWith(normalizedNameSearch)));
-  }, [members, normalizedNameSearch]);
+    const rosterMembers = includeInactive ? members : members.filter((member) => member.status === "active");
+    if (!normalizedNameSearch) return rosterMembers;
+    return rosterMembers.filter((member) => member.name.toLowerCase().split(/\s+/).some((namePart) => namePart.startsWith(normalizedNameSearch)));
+  }, [includeInactive, members, normalizedNameSearch]);
 
   const columns = useMemo<ColumnDef<TeamMember>[]>(
     () => [
@@ -171,8 +202,32 @@ export function TeamManagementPage() {
         header: "Last Updated",
         cell: ({ row }) => formatDate(row.original.updated_at),
       },
+      {
+        id: "roster_action",
+        header: "Roster",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const member = row.original;
+          const isActive = member.status === "active";
+          const busy = rosterStatusUpdatingId === member.id;
+          return (
+            <div className="flex justify-end">
+              <Button
+                aria-label={isActive ? `Remove ${member.name} from active roster` : `Restore ${member.name} to active roster`}
+                disabled={busy}
+                onClick={() => void updateRosterStatus(member, isActive ? "inactive" : "active")}
+                size="sm"
+                variant="outline"
+              >
+                {isActive ? <UserMinus className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
+                {busy ? "Saving" : isActive ? "Remove" : "Restore"}
+              </Button>
+            </div>
+          );
+        },
+      },
     ],
-    [],
+    [rosterStatusUpdatingId, updateRosterStatus],
   );
 
   const table = useReactTable({
@@ -194,7 +249,7 @@ export function TeamManagementPage() {
         <div>
           <h1 className="text-2xl font-semibold">Team Management</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {members.length} rostered team members / {fiscalYearLabel} ({fiscalYearRangeLabel})
+            {activeMemberCount} active Team Members / {inactiveMemberCount} inactive / {fiscalYearLabel} ({fiscalYearRangeLabel})
           </p>
         </div>
         <PageNav current="team" />
@@ -232,19 +287,29 @@ export function TeamManagementPage() {
         <div>
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">Roster</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Showing {filteredMembers.length} of {members.length} Team Members across {teamGroupCountLabel(groupedMemberRows.length)}.
+            Showing {filteredMembers.length} of {includeInactive ? members.length : activeMemberCount} Team Members across {teamGroupCountLabel(groupedMemberRows.length)}.
           </p>
         </div>
-        <label className="relative block w-full md:max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label="Search team members by name"
-            className="pl-9"
-            placeholder="Search name prefix"
-            value={nameSearch}
-            onChange={(event) => setNameSearch(event.target.value)}
-          />
-        </label>
+        <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
+          <Button
+            disabled={inactiveMemberCount === 0}
+            onClick={() => setIncludeInactive((current) => !current)}
+            type="button"
+            variant={includeInactive ? "secondary" : "outline"}
+          >
+            {includeInactive ? "Hide inactive" : `Show inactive (${inactiveMemberCount})`}
+          </Button>
+          <label className="relative block w-full md:w-80">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Search team members by name"
+              className="pl-9"
+              placeholder="Search name prefix"
+              value={nameSearch}
+              onChange={(event) => setNameSearch(event.target.value)}
+            />
+          </label>
+        </div>
       </section>
 
       {groupedMemberRows.length ? (
@@ -301,7 +366,9 @@ export function TeamManagementPage() {
           ))}
         </div>
       ) : (
-        <div className="rounded-lg border bg-card p-5 text-sm text-muted-foreground">No Team Members match that name prefix.</div>
+        <div className="rounded-lg border bg-card p-5 text-sm text-muted-foreground">
+          No {includeInactive ? "" : "active "}Team Members match that name prefix.
+        </div>
       )}
     </div>
   );
