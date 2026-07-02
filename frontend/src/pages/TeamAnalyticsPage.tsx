@@ -342,7 +342,7 @@ function RoadmapForecastPlanner({
     const entries = roadmapPlannerEntries(plan, rowMembers, draftHours, existingCellKeys, fiscalYear);
     if (!entries.length) {
       onError(null);
-      onNotice("No roadmap forecast changes to save.");
+      onNotice("No Product Forecast changes to save.");
       return;
     }
 
@@ -354,7 +354,7 @@ function RoadmapForecastPlanner({
       onPlanChange(updated);
       onNotice(`Product Forecast saved: ${entries.length} monthly ${entries.length === 1 ? "cell" : "cells"} updated.`);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Unable to save roadmap forecast plan");
+      onError(err instanceof Error ? err.message : "Unable to save Product Forecast plan");
     } finally {
       setSaving(false);
     }
@@ -366,12 +366,12 @@ function RoadmapForecastPlanner({
         <div>
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">Product Forecast Planner</h2>
           <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
-            Enter Product Forecast hours by Team Member and month. Roadmap Items provide the team, schedule, and deliverable context.
+            Enter Product Forecast hours by Team Member and month. Planning data provides the team, schedule, and deliverable context.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 lg:justify-end">
           <PlannerMetric label="Product Fcst" value={formatHours(allocationTotal)} />
-          <PlannerMetric label="Roadmap Actual" value={formatHours(actualTotal)} />
+          <PlannerMetric label="Actual" value={formatHours(actualTotal)} />
           <Button disabled={saving || !plan.rows.length} onClick={savePlanner}>
             <Save className="h-4 w-4" />
             {saving ? "Saving" : "Save Planner"}
@@ -381,8 +381,8 @@ function RoadmapForecastPlanner({
 
       {plan.rows.length > 0 && scheduledRowCount === 0 ? (
         <div className="mt-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-muted-foreground">
-          <span className="font-semibold text-primary">No Jira roadmap months are synced yet.</span> Run the Roadmap sync after Jira has start/target dates, then SPARC
-          will tint the matching month columns.
+          <span className="font-semibold text-primary">No schedule months are synced yet.</span> Run the planning sync after Jira has start/target dates, then SPARC
+          will shade the matching month columns.
         </div>
       ) : null}
 
@@ -394,20 +394,10 @@ function RoadmapForecastPlanner({
                 <div className="flex flex-col gap-3 border-b bg-secondary/30 p-3 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      {group.source_url ? (
-                        <a className="font-semibold text-primary hover:underline" href={group.source_url} rel="noreferrer" target="_blank">
-                          {group.roadmap_item_key}
-                        </a>
-                      ) : (
-                        <span className="font-semibold text-primary">{group.roadmap_item_key}</span>
-                      )}
-                      {group.roadmap_item_status ? <Badge className="border-primary/30 text-primary">{group.roadmap_item_status}</Badge> : null}
+                      <span className="text-sm font-semibold uppercase text-muted-foreground">Planning Context</span>
                       <Badge className={group.source_team_matches ? "border-[color:var(--spark-cyan)] text-primary" : "border-muted text-muted-foreground"}>
                         {group.source_team_matches ? group.source_team ?? plan.team : "Inferred from product team"}
                       </Badge>
-                    </div>
-                    <div className="mt-1 truncate text-sm font-medium" title={group.roadmap_item_title}>
-                      {group.roadmap_item_title}
                     </div>
                     <PlannerDeliverables deliverables={group.deliverables} label="Deliverables" showProduct />
                   </div>
@@ -475,7 +465,7 @@ function RoadmapForecastPlanner({
                                   </div>
                                   <div className="flex gap-2">
                                     <select
-                                      aria-label={`Add Team Member to ${row.roadmap_item_key} ${row.product ?? ""}`}
+                                      aria-label={`Add Team Member to ${row.product ?? "Forecast Target"}`}
                                       className="h-9 min-w-56 rounded-md border border-input bg-background px-3 text-sm"
                                       disabled={!canForecast || !availableMembers.length}
                                       value={selectedMembers[rowKey] ?? ""}
@@ -506,7 +496,7 @@ function RoadmapForecastPlanner({
                                     return (
                                       <TableCell key={month.id} className={`px-1 py-2 ${isRoadmapMonth ? "roadmap-schedule-cell" : ""}`}>
                                         <Input
-                                          aria-label={`${row.roadmap_item_key} ${memberName(memberId, plan.team_members)} ${month.label} forecast hours`}
+                                          aria-label={`${row.product ?? "Forecast Target"} ${memberName(memberId, plan.team_members)} ${month.label} forecast hours`}
                                           className={`numeric-cell h-8 w-full min-w-0 px-1 text-right text-xs sm:text-sm ${isRoadmapMonth ? "roadmap-schedule-input" : ""}`}
                                           disabled={!canForecast || saving}
                                           inputMode="decimal"
@@ -546,7 +536,7 @@ function RoadmapForecastPlanner({
           })
         ) : (
           <div className="rounded-lg border bg-secondary/20 p-5 text-sm text-muted-foreground">
-            No Roadmap Items are assigned to {plan.team} for this fiscal year yet.
+            No Product Forecast planning targets are assigned to {plan.team} for this fiscal year yet.
           </div>
         )}
       </div>

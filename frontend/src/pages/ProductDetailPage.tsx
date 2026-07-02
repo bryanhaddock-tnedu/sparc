@@ -13,7 +13,6 @@ import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { productDetailPath, teamMemberDetailPath } from "../lib/routes";
-import { teamAnalyticsPath } from "../lib/teamAnalytics";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type {
   BucketTable,
@@ -24,15 +23,12 @@ import type {
   ProductSummary,
   ProductTeamMember,
   ReportedValueRow,
-  RoadmapItem,
   TeamMember,
 } from "../types/api";
 
 const PIE_COLORS = ["#2CCCD3", "#D2D755", "#E87722", "#5E7975"];
 const COST_VARIANCE_HELP =
   "Actual cost minus forecast cost. Negative means actuals are under forecast; positive means actuals exceeded forecast.";
-const FISCAL_MONTH_LABELS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-
 interface ProductRoleCostRow {
   role: string;
   memberCount: number;
@@ -56,7 +52,6 @@ export function ProductDetailPage() {
   const [productTeam, setProductTeam] = useState<ProductTeamMember[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
-  const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([]);
   const [distribution, setDistribution] = useState<{ bucket: string; hours: number }[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [forecastLineMemberId, setForecastLineMemberId] = useState("");
@@ -78,7 +73,6 @@ export function ProductDetailPage() {
       productTeamResult,
       teamMembersResult,
       reportedRowsResult,
-      roadmapItemsResult,
     ] = await Promise.all([
       api.bucketDistribution(resolvedProductId, fiscalYear),
       api.productBucketTables(resolvedProductId, fiscalYear),
@@ -86,7 +80,6 @@ export function ProductDetailPage() {
       api.productTeamMembers(resolvedProductId),
       api.teamMembers(),
       api.reportedValues({ product_id: resolvedProductId }, fiscalYear),
-      api.productRoadmapItems(resolvedProductId, fiscalYear),
     ]);
     if (productRef !== summaryResult.product.slug) {
       navigate(productDetailPath(summaryResult.product), { replace: true });
@@ -98,7 +91,6 @@ export function ProductDetailPage() {
     setProductTeam(productTeamResult);
     setTeamMembers(teamMembersResult);
     setReportedRows(reportedRowsResult);
-    setRoadmapItems(roadmapItemsResult);
     setDrafts({});
   }
 
@@ -326,8 +318,6 @@ export function ProductDetailPage() {
         </div>
       </section>
 
-      <ProductRoadmapItemsSection items={roadmapItems} />
-
       <ProductTeamSection
         assignments={productTeam}
         members={teamMembers}
@@ -444,140 +434,6 @@ function SnapshotRow({ label, value }: { label: string; value: string }) {
       <span className="numeric-cell shrink-0 text-base font-semibold text-primary">{value}</span>
     </div>
   );
-}
-
-function ProductRoadmapItemsSection({ items }: { items: RoadmapItem[] }) {
-  const plannerTeams = Array.from(new Set(items.map((item) => item.source_team).filter((team): team is string => Boolean(team)))).sort();
-
-  return (
-    <section className="rounded-lg border bg-card">
-      <div className="flex flex-col justify-between gap-3 border-b bg-secondary/30 px-4 py-3 md:flex-row md:items-center">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold uppercase text-muted-foreground">Related Roadmap Items</h2>
-            <Badge>{items.length} mapped</Badge>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">Reference only. Team roadmap planning rolls into the forecast tables below.</p>
-        </div>
-        {plannerTeams.length ? (
-          <div className="flex flex-wrap gap-2 md:justify-end">
-            {plannerTeams.map((team) => (
-              <Button key={team} asChild size="sm" variant="outline">
-                <Link to={`${teamAnalyticsPath(team)}#roadmap-forecast-planner`}>Plan {team}</Link>
-              </Button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-      <div className="overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b">
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Roadmap Item</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bucket</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Program Area</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Schedule</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length ? (
-              items.map((item) => (
-                <tr key={item.id} className="border-b last:border-0">
-                  <td className="min-w-0 px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium text-primary">
-                        {item.source_url ? (
-                          <a href={item.source_url} target="_blank" rel="noreferrer">
-                            {item.jira_issue_key}
-                          </a>
-                        ) : (
-                          item.jira_issue_key
-                        )}
-                      </div>
-                      {item.status ? <Badge className="border-muted text-muted-foreground">{item.status}</Badge> : null}
-                    </div>
-                    <div className="mt-1 max-w-3xl truncate text-sm text-foreground" title={item.title}>
-                      {item.title}
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">{roadmapItemLinkContext(item)}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{item.bucket ?? "Unmapped"}</div>
-                    {item.source_category ? <div className="text-xs text-muted-foreground">Jira: {item.source_category}</div> : null}
-                  </td>
-                  <td className="px-4 py-3">{item.program_area || "Unassigned"}</td>
-                  <td className="px-4 py-3">
-                    <RoadmapScheduleSummary item={item} />
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td className="px-4 py-5 text-sm text-muted-foreground" colSpan={4}>
-                  No Roadmap Items are mapped to this product yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function RoadmapScheduleSummary({ item }: { item: RoadmapItem }) {
-  const activeMonths = roadmapScheduleMonthSequences(item);
-  if (!activeMonths.length) {
-    return <span className="text-sm text-muted-foreground">Not synced</span>;
-  }
-
-  return (
-    <div className="flex flex-wrap gap-1">
-      {activeMonths.map((sequence) => (
-        <Badge key={sequence} className="border-[color:var(--spark-cyan)]/40 bg-[color:var(--spark-cyan)]/10 text-primary">
-          {FISCAL_MONTH_LABELS[sequence - 1]}
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
-function roadmapScheduleMonthSequences(item: RoadmapItem) {
-  const start = parseDateOnly(item.roadmap_start_date);
-  const end = parseDateOnly(item.roadmap_end_date) ?? start;
-  if (!start && !end) return [];
-  const first = start ?? end;
-  const last = end ?? start;
-  if (!first || !last) return [];
-  const from = first <= last ? first : last;
-  const to = first <= last ? last : first;
-  return FISCAL_MONTH_LABELS.map((_, index) => index + 1).filter((sequence) => {
-    const monthDate = fiscalMonthDate(item.fiscal_year, sequence);
-    return monthDate >= new Date(from.getFullYear(), from.getMonth(), 1) && monthDate <= new Date(to.getFullYear(), to.getMonth(), 1);
-  });
-}
-
-function parseDateOnly(value: string | null | undefined) {
-  if (!value) return null;
-  const [year, month, day] = value.split("-").map(Number);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
-  return new Date(year, month - 1, day);
-}
-
-function fiscalMonthDate(fiscalYear: number, sequence: number) {
-  const calendarMonth = ((sequence + 5) % 12) + 1;
-  const calendarYear = sequence <= 6 ? fiscalYear - 1 : fiscalYear;
-  return new Date(calendarYear, calendarMonth - 1, 1);
-}
-
-function roadmapItemLinkContext(item: RoadmapItem) {
-  const deliverables = (item.linked_issues ?? []).filter((link) => (link.issue_type ?? "").toLowerCase() === "deliverable");
-  if (!deliverables.length) {
-    return item.linked_issue_count ? `${item.linked_issue_count} linked tickets` : item.issue_type ?? "Roadmap item";
-  }
-  const visibleKeys = deliverables.slice(0, 3).map((link) => link.jira_issue_key);
-  const hiddenCount = deliverables.length - visibleKeys.length;
-  return `Deliverables: ${visibleKeys.join(", ")}${hiddenCount > 0 ? ` +${hiddenCount}` : ""}`;
 }
 
 function ProductTeamSection({
