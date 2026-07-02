@@ -27,7 +27,7 @@ export function Layout({ children }: PropsWithChildren) {
             <img src={tdoeLogo} alt="TDOE logo" className="h-9 w-auto shrink-0" />
             <span className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
               <span className="text-lg font-semibold leading-none">SPARC</span>
-              <span className="hidden text-sm text-muted-foreground sm:inline">Staff planning and resource intelligence</span>
+              <span className="hidden text-sm text-muted-foreground sm:inline">Staff Planning and Resource Control</span>
             </span>
           </Link>
           <div className="flex flex-wrap items-center gap-2">

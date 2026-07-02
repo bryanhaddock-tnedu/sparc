@@ -42,7 +42,7 @@ export function LoginPage() {
           <img src={tdoeLogo} alt="TDOE logo" className="h-10 w-auto" />
           <div>
             <div className="text-xl font-semibold leading-none">SPARC</div>
-            <div className="mt-1 text-sm text-muted-foreground">Staff planning and resource intelligence</div>
+            <div className="mt-1 text-sm text-muted-foreground">Staff Planning and Resource Control</div>
           </div>
         </div>
 
