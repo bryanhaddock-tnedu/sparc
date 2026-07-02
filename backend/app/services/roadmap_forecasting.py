@@ -249,12 +249,10 @@ def _attach_forecast_entries(db: Session, rows: dict[tuple[int, int | None, int 
 
 def _forecast_row_for_month(rows: list[dict[str, object]], month: FiscalMonth) -> dict[str, object] | None:
     scheduled_rows = [row for row in rows if _row_scheduled_for_month(row, month)]
-    if len(scheduled_rows) == 1:
-        return scheduled_rows[0]
     if scheduled_rows:
-        return None
-    if len(rows) == 1:
-        return rows[0]
+        return sorted(scheduled_rows, key=_planner_row_sort_key)[0]
+    if rows:
+        return sorted(rows, key=_planner_row_sort_key)[0]
     return None
 
 

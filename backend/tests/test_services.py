@@ -503,6 +503,71 @@ def test_team_roadmap_forecast_plan_uses_existing_product_forecast():
         assert result["rows"][0]["allocations"][0]["hours"] == 40
 
 
+def test_team_roadmap_forecast_plan_retains_product_forecast_when_planning_rows_overlap():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Core Infrastructure", slug="core-infrastructure")
+        member = TeamMember(name="Lalitha Battini", slug="lalitha-battini", role="Dev", team="Product Maintenance", bill_rate=Decimal("82"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        assert bucket is not None
+        db.add_all(
+            [
+                RoadmapItem(
+                    source="jira_product_discovery",
+                    fiscal_year=2027,
+                    product_id=product.id,
+                    bucket_id=bucket.id,
+                    jira_issue_id="100168",
+                    jira_issue_key="ROADMAP-168",
+                    title="Sam.Gov SAM.gov Submission History Enhancements",
+                    issue_type="Idea",
+                    source_team="Product Maintenance",
+                    roadmap_start_date=date(2026, 7, 1),
+                    roadmap_end_date=date(2026, 9, 30),
+                ),
+                RoadmapItem(
+                    source="jira_product_discovery",
+                    fiscal_year=2027,
+                    product_id=product.id,
+                    bucket_id=bucket.id,
+                    jira_issue_id="100180",
+                    jira_issue_key="ROADMAP-180",
+                    title="TDOE Application Portfolio Annual Maintenance",
+                    issue_type="Idea",
+                    source_team="Product Maintenance",
+                    roadmap_start_date=date(2026, 7, 1),
+                    roadmap_end_date=date(2026, 9, 30),
+                ),
+            ]
+        )
+        db.flush()
+
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_id=bucket.id,
+            fiscal_year=2027,
+            month_sequence=1,
+            hours=60,
+        )
+
+        result = team_roadmap_forecast_plan(db, "Product Maintenance", 2027)
+        core_rows = [row for row in result["rows"] if row["product"] == "Core Infrastructure" and row["bucket"] == "Maintenance"]
+        allocations = [allocation for row in core_rows for allocation in row["allocations"]]
+
+        assert len(core_rows) == 2
+        assert len(allocations) == 1
+        assert allocations[0]["team_member_id"] == member.id
+        assert allocations[0]["month_sequence"] == 1
+        assert allocations[0]["hours"] == 60
+        assert sum(row["forecast_hours"] for row in core_rows) == Decimal("60")
+
+
 def test_team_roadmap_forecast_plan_scopes_linked_components_to_row_product():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
