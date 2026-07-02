@@ -205,10 +205,8 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
             ],
         )
 
-        allocation = db.scalar(select(RoadmapForecastAllocation))
         forecast = db.scalar(select(ForecastEntry))
-        assert allocation is not None
-        assert allocation.hours == Decimal("12")
+        assert db.scalar(select(RoadmapForecastAllocation)) is None
         assert forecast is not None
         assert forecast.product_id == product.id
         assert forecast.team_member_id == member.id
@@ -238,9 +236,118 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
             ],
         )
 
-        assert db.scalar(select(RoadmapForecastAllocation)) is None
         assert db.scalar(select(ForecastEntry)).hours == Decimal("0")
+        assert db.scalar(select(RoadmapForecastAllocation)) is None
         assert cleared["rows"][0]["forecast_hours"] == Decimal("0")
+
+
+def test_team_roadmap_forecast_reconciles_product_forecast_full_year():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Core Infrastructure", slug="core-infrastructure")
+        member = TeamMember(name="Ryan Daily", slug="ryan-daily", role="Sr. Dev", team="Product Maintenance", bill_rate=Decimal("0"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        assert bucket is not None
+        roadmap_item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            product_id=product.id,
+            bucket_id=bucket.id,
+            jira_issue_id="100168",
+            jira_issue_key="ROADMAP-168",
+            title="Sam.Gov SAM.gov Submission History Enhancements",
+            issue_type="Idea",
+            source_team="Product Maintenance",
+            roadmap_start_date=date(2026, 7, 1),
+            roadmap_end_date=date(2026, 9, 30),
+        )
+        db.add(roadmap_item)
+        db.flush()
+
+        for month_sequence in range(1, 13):
+            upsert_forecast_entry(
+                db,
+                product_id=product.id,
+                team_member_id=member.id,
+                bucket_id=bucket.id,
+                fiscal_year=2027,
+                month_sequence=month_sequence,
+                hours=40,
+            )
+
+        upsert_team_roadmap_forecast_allocations(
+            db,
+            "Product Maintenance",
+            2027,
+            [
+                {
+                    "roadmap_item_id": roadmap_item.id,
+                    "product_id": product.id,
+                    "team_member_id": member.id,
+                    "bucket_id": bucket.id,
+                    "fiscal_year": 2027,
+                    "month_sequence": month_sequence,
+                    "hours": Decimal("40"),
+                }
+                for month_sequence in (1, 2, 3)
+            ],
+        )
+
+        tables = product_bucket_tables(db, product.id, 2027)
+        maintenance = next(bucket_payload for bucket_payload in tables["buckets"] if bucket_payload["code"] == "MAINTENANCE")
+        row = next(member_row for member_row in maintenance["rows"] if member_row["team_member_id"] == member.id)
+
+        assert [cell["forecast_hours"] for cell in row["months"]] == [40, 40, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        assert row["totals"]["forecast_hours"] == 120
+
+
+def test_team_roadmap_forecast_plan_uses_existing_product_forecast():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Core Infrastructure", slug="core-infrastructure")
+        member = TeamMember(name="Ryan Daily", slug="ryan-daily", role="Sr. Dev", team="Product Maintenance", bill_rate=Decimal("0"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        assert bucket is not None
+        roadmap_item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            product_id=product.id,
+            bucket_id=bucket.id,
+            jira_issue_id="100168",
+            jira_issue_key="ROADMAP-168",
+            title="Sam.Gov SAM.gov Submission History Enhancements",
+            issue_type="Idea",
+            source_team="Product Maintenance",
+            roadmap_start_date=date(2026, 7, 1),
+            roadmap_end_date=date(2026, 9, 30),
+        )
+        db.add(roadmap_item)
+        db.flush()
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_id=bucket.id,
+            fiscal_year=2027,
+            month_sequence=1,
+            hours=40,
+        )
+
+        result = team_roadmap_forecast_plan(db, "Product Maintenance", 2027)
+
+        assert result["rows"][0]["forecast_hours"] == Decimal("40")
+        assert result["rows"][0]["allocations"][0]["roadmap_item_id"] == roadmap_item.id
+        assert result["rows"][0]["allocations"][0]["team_member_id"] == member.id
+        assert result["rows"][0]["allocations"][0]["month_sequence"] == 1
+        assert result["rows"][0]["allocations"][0]["hours"] == 40
 
 
 def test_team_roadmap_forecast_plan_scopes_linked_components_to_row_product():

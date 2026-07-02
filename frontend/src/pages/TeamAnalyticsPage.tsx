@@ -352,7 +352,7 @@ function RoadmapForecastPlanner({
     try {
       const updated = await api.upsertTeamRoadmapForecastPlan(teamRef, fiscalYear, entries);
       onPlanChange(updated);
-      onNotice(`Roadmap forecast saved: ${entries.length} monthly allocation ${entries.length === 1 ? "cell" : "cells"} updated.`);
+      onNotice(`Product Forecast saved: ${entries.length} monthly ${entries.length === 1 ? "cell" : "cells"} updated.`);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Unable to save roadmap forecast plan");
     } finally {
@@ -364,13 +364,13 @@ function RoadmapForecastPlanner({
     <section id="roadmap-forecast-planner" className="rounded-lg border bg-card p-4">
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
         <div>
-          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Roadmap Forecast Planner</h2>
+          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Product Forecast Planner</h2>
           <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
-            Assign Team Members to team-owned Roadmap Items and enter monthly forecast hours. Each Forecast Target rolls up to its Product/Bucket.
+            Enter Product Forecast hours by Team Member and month. Roadmap Items provide the team, schedule, and deliverable context.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 lg:justify-end">
-          <PlannerMetric label="Roadmap Fcst" value={formatHours(allocationTotal)} />
+          <PlannerMetric label="Product Fcst" value={formatHours(allocationTotal)} />
           <PlannerMetric label="Roadmap Actual" value={formatHours(actualTotal)} />
           <Button disabled={saving || !plan.rows.length} onClick={savePlanner}>
             <Save className="h-4 w-4" />

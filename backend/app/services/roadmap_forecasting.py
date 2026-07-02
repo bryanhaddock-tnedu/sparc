@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
@@ -27,7 +27,7 @@ def team_roadmap_forecast_plan(db: Session, team_ref: str, fiscal_year: int) -> 
     months = ensure_fiscal_months(db, fiscal_year)
     team_members = _team_members(db, team_name)
     rows = _planner_rows(db, team_name, fiscal_year)
-    _attach_allocations(db, rows, fiscal_year)
+    _attach_forecast_entries(db, rows, fiscal_year, team_name)
     _attach_actuals(db, rows, fiscal_year)
 
     return {
@@ -46,23 +46,32 @@ def upsert_team_roadmap_forecast_allocations(
     entries: list[dict[str, object]],
 ) -> dict[str, object]:
     team_name = resolve_team_name(db, team_ref)
-    affected_forecast_cells: set[tuple[int, int, int, int]] = set()
+    months = ensure_fiscal_months(db, fiscal_year)
+    submitted_hours: dict[tuple[int, int, int, int], Decimal] = {}
+    affected_contexts: set[tuple[int, int, int]] = set()
 
     for entry in entries:
-        allocation, affected_cell = _upsert_allocation(db, team_name, fiscal_year, entry)
-        if allocation is not None:
-            affected_forecast_cells.add(_forecast_cell_key(allocation))
-        if affected_cell is not None:
-            affected_forecast_cells.add(affected_cell)
+        product_id, team_member_id, bucket_id, fiscal_month_id, hours = _validate_forecast_entry(db, team_name, fiscal_year, entry)
+        submitted_hours[(product_id, team_member_id, bucket_id, fiscal_month_id)] = hours
+        affected_contexts.add((product_id, team_member_id, bucket_id))
 
-    for product_id, team_member_id, bucket_id, fiscal_month_id in sorted(affected_forecast_cells):
-        _sync_forecast_cell_from_allocations(
+    for product_id, team_member_id, bucket_id in sorted(affected_contexts):
+        _delete_legacy_roadmap_allocations(
             db,
+            fiscal_year=fiscal_year,
             product_id=product_id,
             team_member_id=team_member_id,
             bucket_id=bucket_id,
-            fiscal_month_id=fiscal_month_id,
         )
+        for month in months:
+            upsert_forecast_entry(
+                db,
+                product_id=product_id,
+                team_member_id=team_member_id,
+                bucket_id=bucket_id,
+                fiscal_month_id=month.id,
+                hours=submitted_hours.get((product_id, team_member_id, bucket_id, month.id), Decimal("0")),
+            )
 
     db.flush()
     return team_roadmap_forecast_plan(db, team_name, fiscal_year)
@@ -78,12 +87,12 @@ def resolve_team_name(db: Session, team_ref: str) -> str:
     return clean_ref.replace("-", " ").strip() or "Unassigned"
 
 
-def _upsert_allocation(
+def _validate_forecast_entry(
     db: Session,
     team_name: str,
     fiscal_year: int,
     entry: dict[str, object],
-) -> tuple[RoadmapForecastAllocation | None, tuple[int, int, int, int] | None]:
+) -> tuple[int, int, int, int, Decimal]:
     roadmap_item_id = int(entry["roadmap_item_id"])
     product_id = int(entry["product_id"])
     team_member_id = int(entry["team_member_id"])
@@ -114,62 +123,30 @@ def _upsert_allocation(
         raise ValueError("Team Member does not belong to this team")
 
     month = get_fiscal_month(db, fiscal_year, month_sequence)
-    allocation = db.scalar(
-        select(RoadmapForecastAllocation).where(
-            RoadmapForecastAllocation.roadmap_item_id == item.id,
-            RoadmapForecastAllocation.product_id == product.id,
-            RoadmapForecastAllocation.team_member_id == member.id,
-            RoadmapForecastAllocation.bucket_id == bucket.id,
-            RoadmapForecastAllocation.fiscal_month_id == month.id,
-        )
-    )
-    affected_cell = None if allocation is None else _forecast_cell_key(allocation)
-
-    if hours == 0:
-        if allocation is not None:
-            db.delete(allocation)
-        db.flush()
-        return None, affected_cell or (product.id, member.id, bucket.id, month.id)
-
-    if allocation is None:
-        allocation = RoadmapForecastAllocation(
-            roadmap_item_id=item.id,
-            product_id=product.id,
-            team_member_id=member.id,
-            bucket_id=bucket.id,
-            fiscal_month_id=month.id,
-        )
-        db.add(allocation)
-    allocation.hours = hours
-    db.flush()
-    return allocation, affected_cell
+    return product.id, member.id, bucket.id, month.id, hours
 
 
-def _sync_forecast_cell_from_allocations(
+def _delete_legacy_roadmap_allocations(
     db: Session,
     *,
+    fiscal_year: int,
     product_id: int,
     team_member_id: int,
     bucket_id: int,
-    fiscal_month_id: int,
-) -> ForecastEntry:
-    total = db.scalar(
-        select(func.coalesce(func.sum(RoadmapForecastAllocation.hours), Decimal("0")))
+) -> None:
+    allocations = db.scalars(
+        select(RoadmapForecastAllocation)
+        .join(RoadmapForecastAllocation.fiscal_month)
         .where(
+            FiscalMonth.fiscal_year == fiscal_year,
             RoadmapForecastAllocation.product_id == product_id,
             RoadmapForecastAllocation.team_member_id == team_member_id,
             RoadmapForecastAllocation.bucket_id == bucket_id,
-            RoadmapForecastAllocation.fiscal_month_id == fiscal_month_id,
         )
-    )
-    return upsert_forecast_entry(
-        db,
-        product_id=product_id,
-        team_member_id=team_member_id,
-        bucket_id=bucket_id,
-        fiscal_month_id=fiscal_month_id,
-        hours=Decimal(str(total or 0)),
-    )
+    ).all()
+    for allocation in allocations:
+        db.delete(allocation)
+    db.flush()
 
 
 def _planner_rows(db: Session, team_name: str, fiscal_year: int) -> dict[tuple[int, int | None, int | None], dict[str, object]]:
@@ -230,26 +207,63 @@ def _roadmap_context_matches(item: RoadmapItem, product_id: int, bucket_id: int)
     return any(product is not None and bucket is not None and product.id == product_id and bucket.id == bucket_id for product, bucket in _roadmap_contexts(item))
 
 
-def _attach_allocations(db: Session, rows: dict[tuple[int, int | None, int | None], dict[str, object]], fiscal_year: int) -> None:
+def _attach_forecast_entries(db: Session, rows: dict[tuple[int, int | None, int | None], dict[str, object]], fiscal_year: int, team_name: str) -> None:
     if not rows:
         return
-    item_ids = {key[0] for key in rows}
-    allocations = db.scalars(
-        select(RoadmapForecastAllocation)
-        .join(RoadmapForecastAllocation.fiscal_month)
+    rows_by_context: dict[tuple[int, int], list[dict[str, object]]] = {}
+    for row in rows.values():
+        if row["product_id"] is None or row["bucket_id"] is None:
+            continue
+        rows_by_context.setdefault((int(row["product_id"]), int(row["bucket_id"])), []).append(row)
+    if not rows_by_context:
+        return
+
+    product_ids = {context[0] for context in rows_by_context}
+    bucket_ids = {context[1] for context in rows_by_context}
+    team_slug = slugify(team_name, fallback="team")
+    forecasts = db.scalars(
+        select(ForecastEntry)
+        .join(ForecastEntry.fiscal_month)
         .options(
-            joinedload(RoadmapForecastAllocation.team_member),
-            joinedload(RoadmapForecastAllocation.fiscal_month),
+            joinedload(ForecastEntry.team_member),
+            joinedload(ForecastEntry.fiscal_month),
         )
-        .where(RoadmapForecastAllocation.roadmap_item_id.in_(item_ids), FiscalMonth.fiscal_year == fiscal_year)
+        .where(
+            FiscalMonth.fiscal_year == fiscal_year,
+            ForecastEntry.product_id.in_(product_ids),
+            ForecastEntry.bucket_id.in_(bucket_ids),
+        )
     ).all()
-    for allocation in allocations:
-        key = (allocation.roadmap_item_id, allocation.product_id, allocation.bucket_id)
-        row = rows.get(key)
+
+    for forecast in forecasts:
+        if forecast.hours == 0:
+            continue
+        if forecast.team_member.status != "active" or slugify(forecast.team_member.team, fallback="team") != team_slug:
+            continue
+        row = _forecast_row_for_month(rows_by_context.get((forecast.product_id, forecast.bucket_id), []), forecast.fiscal_month)
         if row is None:
             continue
-        row["forecast_hours"] += allocation.hours
-        row["allocations"].append(_serialize_allocation(allocation))
+        row["forecast_hours"] += forecast.hours
+        row["allocations"].append(_serialize_forecast_entry_as_allocation(forecast, int(row["roadmap_item_id"])))
+
+
+def _forecast_row_for_month(rows: list[dict[str, object]], month: FiscalMonth) -> dict[str, object] | None:
+    scheduled_rows = [row for row in rows if _row_scheduled_for_month(row, month)]
+    if len(scheduled_rows) == 1:
+        return scheduled_rows[0]
+    if scheduled_rows:
+        return None
+    if len(rows) == 1:
+        return rows[0]
+    return None
+
+
+def _row_scheduled_for_month(row: dict[str, object], month: FiscalMonth) -> bool:
+    start = row["roadmap_start_date"]
+    end = row["roadmap_end_date"]
+    if start is None or end is None:
+        return False
+    return start <= month.ends_on and end >= month.starts_on
 
 
 def _attach_actuals(db: Session, rows: dict[tuple[int, int | None, int | None], dict[str, object]], fiscal_year: int) -> None:
@@ -348,6 +362,21 @@ def _serialize_allocation(allocation: RoadmapForecastAllocation) -> dict[str, ob
         "fiscal_month_id": allocation.fiscal_month_id,
         "month_sequence": allocation.fiscal_month.sequence,
         "hours": round_hours(allocation.hours),
+    }
+
+
+def _serialize_forecast_entry_as_allocation(entry: ForecastEntry, roadmap_item_id: int) -> dict[str, object]:
+    return {
+        "id": entry.id,
+        "roadmap_item_id": roadmap_item_id,
+        "product_id": entry.product_id,
+        "team_member_id": entry.team_member_id,
+        "team_member": entry.team_member.name,
+        "team_member_slug": team_member_url_slug(entry.team_member),
+        "bucket_id": entry.bucket_id,
+        "fiscal_month_id": entry.fiscal_month_id,
+        "month_sequence": entry.fiscal_month.sequence,
+        "hours": round_hours(entry.hours),
     }
 
 
