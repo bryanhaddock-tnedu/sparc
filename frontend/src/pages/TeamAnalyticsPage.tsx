@@ -402,6 +402,7 @@ function RoadmapForecastPlanner({
                     <div className="mt-1 truncate text-sm font-medium" title={row.roadmap_item_title}>
                       {row.roadmap_item_title}
                     </div>
+                    <PlannerDeliverables row={row} />
                     <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                       <span>{row.product ?? "Needs product mapping"}</span>
                       <span>/</span>
@@ -504,6 +505,24 @@ function RoadmapForecastPlanner({
         )}
       </div>
     </section>
+  );
+}
+
+function PlannerDeliverables({ row }: { row: TeamRoadmapForecastRow }) {
+  if (!row.deliverables.length) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {row.deliverables.map((deliverable) => (
+        <div key={deliverable.id} className="flex max-w-xl min-w-0 gap-1 rounded-md border bg-background px-2 py-1 text-xs">
+          <span className="shrink-0 font-semibold text-primary">{deliverable.jira_issue_key}</span>
+          {deliverable.jira_issue_summary ? (
+            <span className="truncate text-muted-foreground" title={deliverable.jira_issue_summary}>
+              {deliverable.jira_issue_summary}
+            </span>
+          ) : null}
+        </div>
+      ))}
+    </div>
   );
 }
 

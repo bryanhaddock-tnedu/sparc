@@ -291,11 +291,28 @@ export interface TeamRoadmapForecastRow {
   product_slug: string | null;
   bucket_id: number | null;
   bucket: string | null;
+  deliverables: RoadmapPlannerDeliverable[];
   forecast_hours: number;
   actual_hours: number;
   worklog_count: number;
   ticket_count: number;
   allocations: RoadmapForecastAllocation[];
+}
+
+export interface RoadmapPlannerDeliverable {
+  id: number;
+  jira_issue_id: string | null;
+  jira_issue_key: string;
+  jira_issue_summary: string | null;
+  jira_project_key: string | null;
+  product_id: number | null;
+  product: string | null;
+  product_slug: string | null;
+  bucket_id: number | null;
+  bucket: string | null;
+  status: string | null;
+  status_category: string | null;
+  source_category: string | null;
 }
 
 export interface TeamRoadmapForecastPlan {

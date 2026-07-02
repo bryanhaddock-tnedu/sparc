@@ -829,6 +829,22 @@ class RoadmapForecastAllocationResponse(BaseModel):
     hours: float
 
 
+class RoadmapPlannerDeliverableResponse(BaseModel):
+    id: int
+    jira_issue_id: str | None
+    jira_issue_key: str
+    jira_issue_summary: str | None
+    jira_project_key: str | None
+    product_id: int | None
+    product: str | None
+    product_slug: str | None
+    bucket_id: int | None
+    bucket: str | None
+    status: str | None
+    status_category: str | None
+    source_category: str | None
+
+
 class TeamRoadmapForecastRowResponse(BaseModel):
     roadmap_item_id: int
     roadmap_item_key: str
@@ -843,6 +859,7 @@ class TeamRoadmapForecastRowResponse(BaseModel):
     product_slug: str | None
     bucket_id: int | None
     bucket: str | None
+    deliverables: list[RoadmapPlannerDeliverableResponse] = Field(default_factory=list)
     forecast_hours: float
     actual_hours: float
     worklog_count: int

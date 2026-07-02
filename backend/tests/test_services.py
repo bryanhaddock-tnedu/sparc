@@ -166,6 +166,23 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
         )
         db.add(roadmap_item)
         db.flush()
+        db.add(
+            RoadmapItemIssueLink(
+                roadmap_item_id=roadmap_item.id,
+                product_id=product.id,
+                bucket_id=bucket.id,
+                jira_issue_id="200266",
+                jira_issue_key="TNSD-266",
+                jira_issue_summary="TNSD continuous maintenance",
+                jira_project_key="TNSD",
+                relationship_type="Delivery",
+                issue_type="Deliverable",
+                status="In Progress",
+                status_category="In Progress",
+                source_category="Maintenance",
+            )
+        )
+        db.flush()
 
         result = upsert_team_roadmap_forecast_allocations(
             db,
@@ -195,6 +212,8 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
         assert forecast.hours == Decimal("12")
         assert result["team"] == "Product Maintenance"
         assert result["rows"][0]["forecast_hours"] == Decimal("12")
+        assert result["rows"][0]["deliverables"][0]["jira_issue_key"] == "TNSD-266"
+        assert result["rows"][0]["deliverables"][0]["jira_issue_summary"] == "TNSD continuous maintenance"
 
         cleared = upsert_team_roadmap_forecast_allocations(
             db,

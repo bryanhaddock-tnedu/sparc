@@ -292,11 +292,50 @@ def _serialize_planner_row(item: RoadmapItem, product: Product | None, bucket: B
         "product_slug": product_url_slug(product) if product else None,
         "bucket_id": bucket.id if bucket else None,
         "bucket": bucket.name if bucket else None,
+        "deliverables": [_serialize_deliverable_link(link, item) for link in _context_deliverable_links(item, product, bucket)],
         "forecast_hours": Decimal("0"),
         "actual_hours": Decimal("0"),
         "worklog_count": 0,
         "ticket_count": 0,
         "allocations": [],
+    }
+
+
+def _context_deliverable_links(item: RoadmapItem, product: Product | None, bucket: Bucket | None) -> list[RoadmapItemIssueLink]:
+    links = [
+        link
+        for link in sorted(item.issue_links, key=lambda item_link: item_link.jira_issue_key)
+        if _is_roadmap_deliverable_issue_type(link.issue_type)
+    ]
+    if not links:
+        return []
+
+    matching_links: list[RoadmapItemIssueLink] = []
+    for link in links:
+        effective_bucket = link.bucket or item.bucket
+        product_matches = product is None or (link.product is not None and link.product.id == product.id)
+        bucket_matches = bucket is None or (effective_bucket is not None and effective_bucket.id == bucket.id)
+        if product_matches and bucket_matches:
+            matching_links.append(link)
+    return matching_links
+
+
+def _serialize_deliverable_link(link: RoadmapItemIssueLink, item: RoadmapItem) -> dict[str, object]:
+    effective_bucket = link.bucket or item.bucket
+    return {
+        "id": link.id,
+        "jira_issue_id": link.jira_issue_id,
+        "jira_issue_key": link.jira_issue_key,
+        "jira_issue_summary": link.jira_issue_summary,
+        "jira_project_key": link.jira_project_key,
+        "product_id": link.product_id,
+        "product": link.product.name if link.product else None,
+        "product_slug": product_url_slug(link.product) if link.product else None,
+        "bucket_id": effective_bucket.id if effective_bucket else None,
+        "bucket": effective_bucket.name if effective_bucket else None,
+        "status": link.status,
+        "status_category": link.status_category,
+        "source_category": link.source_category,
     }
 
 
