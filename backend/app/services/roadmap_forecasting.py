@@ -286,6 +286,8 @@ def _serialize_planner_row(item: RoadmapItem, product: Product | None, bucket: B
         "source_team": item.source_team,
         "source_team_matches": source_team_matches,
         "program_area": item.program_area,
+        "roadmap_start_date": item.roadmap_start_date,
+        "roadmap_end_date": item.roadmap_end_date,
         "source_url": item.source_url,
         "product_id": product.id if product else None,
         "product": product.name if product else None,

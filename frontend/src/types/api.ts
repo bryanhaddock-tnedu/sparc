@@ -285,6 +285,8 @@ export interface TeamRoadmapForecastRow {
   source_team: string | null;
   source_team_matches: boolean;
   program_area: string | null;
+  roadmap_start_date: string | null;
+  roadmap_end_date: string | null;
   source_url: string | null;
   product_id: number | null;
   product: string | null;

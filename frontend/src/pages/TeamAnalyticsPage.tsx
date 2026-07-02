@@ -403,6 +403,7 @@ function RoadmapForecastPlanner({
                       {row.roadmap_item_title}
                     </div>
                     <PlannerDeliverables row={row} />
+                    <PlannerRoadmapSchedule row={row} months={plan.months} />
                     <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                       <span>{row.product ?? "Needs product mapping"}</span>
                       <span>/</span>
@@ -448,7 +449,10 @@ function RoadmapForecastPlanner({
                       <TableRow>
                         <TableHead className="min-w-52">Team Member</TableHead>
                         {plan.months.map((month) => (
-                          <TableHead key={month.id} className="min-w-24 text-right">
+                          <TableHead
+                            key={month.id}
+                            className={`min-w-24 text-right ${roadmapMonthIsActive(row, month) ? "bg-[color:var(--spark-cyan)]/20 text-primary" : ""}`}
+                          >
                             {month.label}
                           </TableHead>
                         ))}
@@ -462,11 +466,12 @@ function RoadmapForecastPlanner({
                             <TableCell className="font-medium">{memberName(memberId, plan.team_members)}</TableCell>
                             {plan.months.map((month) => {
                               const key = plannerCellKey(row, memberId, month.sequence);
+                              const isRoadmapMonth = roadmapMonthIsActive(row, month);
                               return (
-                                <TableCell key={month.id}>
+                                <TableCell key={month.id} className={isRoadmapMonth ? "bg-[color:var(--spark-cyan)]/10" : undefined}>
                                   <Input
                                     aria-label={`${row.roadmap_item_key} ${memberName(memberId, plan.team_members)} ${month.label} forecast hours`}
-                                    className="numeric-cell h-8 min-w-20 text-right"
+                                    className={`numeric-cell h-8 min-w-20 text-right ${isRoadmapMonth ? "border-[color:var(--spark-cyan)] bg-background" : ""}`}
                                     disabled={!canForecast || saving}
                                     inputMode="decimal"
                                     pattern="[0-9]*[.]?[0-9]*"
@@ -511,7 +516,8 @@ function RoadmapForecastPlanner({
 function PlannerDeliverables({ row }: { row: TeamRoadmapForecastRow }) {
   if (!row.deliverables.length) return null;
   return (
-    <div className="mt-2 flex flex-wrap gap-2">
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="text-[10px] font-semibold uppercase text-muted-foreground">Deliverables</span>
       {row.deliverables.map((deliverable) => (
         <div key={deliverable.id} className="flex max-w-xl min-w-0 gap-1 rounded-md border bg-background px-2 py-1 text-xs">
           <span className="shrink-0 font-semibold text-primary">{deliverable.jira_issue_key}</span>
@@ -522,6 +528,35 @@ function PlannerDeliverables({ row }: { row: TeamRoadmapForecastRow }) {
           ) : null}
         </div>
       ))}
+    </div>
+  );
+}
+
+function PlannerRoadmapSchedule({ row, months }: { row: TeamRoadmapForecastRow; months: TeamRoadmapForecastPlan["months"] }) {
+  const scheduledMonths = months.filter((month) => roadmapMonthIsActive(row, month));
+  const hasSchedule = scheduledMonths.length > 0;
+  const title = hasSchedule ? scheduledMonths.map((month) => month.label).join(", ") : "No Jira roadmap dates synced";
+  return (
+    <div className="mt-2 flex flex-col gap-1">
+      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase text-muted-foreground">
+        <span>Roadmap schedule</span>
+        {!hasSchedule ? <span className="normal-case text-muted-foreground">No Jira dates synced</span> : null}
+      </div>
+      <div className="grid max-w-xl grid-cols-12 overflow-hidden rounded-md border border-border" title={title}>
+        {months.map((month) => {
+          const isActive = roadmapMonthIsActive(row, month);
+          return (
+            <div
+              key={month.id}
+              className={`border-r px-1 py-1 text-center text-[10px] font-semibold uppercase last:border-r-0 ${
+                isActive ? "bg-[color:var(--spark-cyan)] text-primary" : "bg-secondary/50 text-muted-foreground"
+              }`}
+            >
+              {month.label}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -541,6 +576,26 @@ function plannerRowKey(row: TeamRoadmapForecastRow) {
 
 function plannerCellKey(row: TeamRoadmapForecastRow, teamMemberId: number, monthSequence: number) {
   return `${plannerRowKey(row)}:${teamMemberId}:${monthSequence}`;
+}
+
+function roadmapMonthIsActive(row: TeamRoadmapForecastRow, month: TeamRoadmapForecastPlan["months"][number]) {
+  const start = parseDateOnly(row.roadmap_start_date);
+  const end = parseDateOnly(row.roadmap_end_date) ?? start;
+  if (!start && !end) return false;
+  const first = start ?? end;
+  const last = end ?? start;
+  if (!first || !last) return false;
+  const from = first <= last ? first : last;
+  const to = first <= last ? last : first;
+  const monthDate = new Date(month.calendar_year, month.calendar_month - 1, 1);
+  return monthDate >= new Date(from.getFullYear(), from.getMonth(), 1) && monthDate <= new Date(to.getFullYear(), to.getMonth(), 1);
+}
+
+function parseDateOnly(value: string | null | undefined) {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  return new Date(year, month - 1, day);
 }
 
 function memberName(memberId: number, members: TeamMember[]) {

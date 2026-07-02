@@ -163,6 +163,8 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
             title="Automate data update",
             issue_type="Idea",
             source_team="Product Maintenance",
+            roadmap_start_date=date(2026, 9, 1),
+            roadmap_end_date=date(2026, 11, 30),
         )
         db.add(roadmap_item)
         db.flush()
@@ -212,6 +214,8 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
         assert forecast.hours == Decimal("12")
         assert result["team"] == "Product Maintenance"
         assert result["rows"][0]["forecast_hours"] == Decimal("12")
+        assert result["rows"][0]["roadmap_start_date"] == date(2026, 9, 1)
+        assert result["rows"][0]["roadmap_end_date"] == date(2026, 11, 30)
         assert result["rows"][0]["deliverables"][0]["jira_issue_key"] == "TNSD-266"
         assert result["rows"][0]["deliverables"][0]["jira_issue_summary"] == "TNSD continuous maintenance"
 

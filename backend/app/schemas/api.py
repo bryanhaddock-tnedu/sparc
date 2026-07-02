@@ -853,6 +853,8 @@ class TeamRoadmapForecastRowResponse(BaseModel):
     source_team: str | None
     source_team_matches: bool
     program_area: str | None
+    roadmap_start_date: date | None = None
+    roadmap_end_date: date | None = None
     source_url: str | None
     product_id: int | None
     product: str | None
