@@ -468,11 +468,15 @@ function RoadmapForecastPlanner({
                                     className="numeric-cell h-8 min-w-20 text-right"
                                     disabled={!canForecast || saving}
                                     inputMode="decimal"
-                                    min={0}
-                                    step="0.25"
-                                    type="number"
+                                    pattern="[0-9]*[.]?[0-9]*"
+                                    type="text"
                                     value={draftHours[key] ?? ""}
                                     onChange={(event) => updateCell(row, memberId, month.sequence, event.target.value)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        event.currentTarget.blur();
+                                      }
+                                    }}
                                   />
                                 </TableCell>
                               );
