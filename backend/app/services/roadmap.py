@@ -422,18 +422,10 @@ def fetch_live_roadmap_items(roadmap_project_key: str, fiscal_year: int) -> list
     jql = f'project = "{roadmap_project_key}" AND issuetype in ("Idea") AND labels = "{fiscal_year_label}" ORDER BY updated ASC'
     with httpx.Client(timeout=45, auth=(settings.jira_api_email, settings.jira_api_token)) as client:
         field_ids = _fetch_roadmap_field_ids(client, site_url)
-        fields = [
-            "summary",
-            "status",
-            "issuetype",
-            "labels",
-            "issuelinks",
-            *field_ids["agency_office"],
-            *field_ids["category"],
-            *field_ids["team"],
-            *field_ids["start_date"],
-            *field_ids["end_date"],
-        ]
+        # Jira Product Discovery fields can be present in issue payloads even when the
+        # field catalog does not expose them consistently. Roadmap issue volume is
+        # small, so request all Idea fields and then extract the SPARC fields we need.
+        fields = ["*all"]
         issues = _search_jira_issues(client, site_url, jql, fields)
         payloads: list[RoadmapIssuePayload] = []
         for issue in issues:
@@ -731,13 +723,13 @@ def _normalize_roadmap_issue(
         start_date_field_ids or [],
         preferred_keys=("start", "startDate", "from"),
         range_position="start",
-    )
+    ) or _roadmap_date_from_any_issue_field(fields, range_position="start")
     roadmap_end_date = _roadmap_date_from_issue_fields(
         fields,
         end_date_field_ids or [],
         preferred_keys=("end", "endDate", "target", "targetDate", "due", "dueDate", "to"),
         range_position="end",
-    )
+    ) or _roadmap_date_from_any_issue_field(fields, range_position="end")
     if roadmap_end_date is None and roadmap_start_date is not None:
         roadmap_end_date = _roadmap_date_from_issue_fields(
             fields,
@@ -1041,6 +1033,38 @@ def _roadmap_date_from_issue_fields(
         if parsed is not None:
             return parsed
     return None
+
+
+def _roadmap_date_from_any_issue_field(fields: dict[str, object], *, range_position: str) -> date | None:
+    for raw_text in _jira_field_text_values(fields):
+        if not re.search(MONTH_NAME_PATTERN, raw_text, flags=re.IGNORECASE) or not re.search(r"\b20\d{2}\b", raw_text):
+            continue
+        parsed = _parse_jira_text_date(raw_text, range_position=range_position)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _jira_field_text_values(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, (date, datetime)):
+        return []
+    if isinstance(value, (int, float, bool)):
+        return []
+    if isinstance(value, dict):
+        values: list[str] = []
+        for nested_value in value.values():
+            values.extend(_jira_field_text_values(nested_value))
+        return values
+    if isinstance(value, (list, tuple)):
+        values: list[str] = []
+        for nested_value in value:
+            values.extend(_jira_field_text_values(nested_value))
+        return values
+    return []
 
 
 def _parse_jira_date(value: object, *, preferred_keys: tuple[str, ...] = tuple(), range_position: str = "start") -> date | None:
