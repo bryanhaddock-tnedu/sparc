@@ -28,6 +28,7 @@ import type {
   LaborCostReportDimension,
   LaborCostReportMetric,
   LaborCostReportOptionalDimension,
+  LaborCostReportSort,
   JiraUserMapping,
   Product,
   ProductBucketTables,
@@ -80,7 +81,7 @@ type LaborCostReportParams = {
   lead: LaborCostReportDimension;
   second?: LaborCostReportOptionalDimension;
   third?: LaborCostReportOptionalDimension;
-  sort?: LaborCostReportMetric;
+  sort?: LaborCostReportSort;
 };
 
 function dashboardQuery(fiscalYear: number, params: DashboardScopeParams = {}) {

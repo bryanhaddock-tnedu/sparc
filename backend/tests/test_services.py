@@ -124,6 +124,33 @@ def test_labor_cost_report_rolls_up_by_team_and_bucket():
         assert report["totals"]["forecast_cost"] == 1200
 
 
+def test_labor_cost_report_sorts_by_selected_dimension():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        zeta = Product(name="Zeta Product", slug="zeta-product")
+        alpha = Product(name="Alpha Product", slug="alpha-product")
+        member = TeamMember(name="Akhil Musani", slug="akhil-musani", role="QA", team="QA", bill_rate=Decimal("80"))
+        db.add_all([zeta, alpha, member])
+        db.flush()
+
+        for product in (zeta, alpha):
+            upsert_forecast_entry(
+                db,
+                product_id=product.id,
+                team_member_id=member.id,
+                bucket_code="ENHANCE",
+                fiscal_year=2027,
+                month_sequence=1,
+                hours=4,
+            )
+
+        report = build_labor_cost_report(db, 2027, dimensions=["product", "bucket"], sort_metric="product")
+
+        assert [row["dimension_values"][0]["label"] for row in report["rows"]] == ["Alpha Product", "Zeta Product"]
+
+
 def test_labor_cost_report_workbook_exports_xlsx():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

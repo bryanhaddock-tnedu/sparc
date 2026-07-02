@@ -16,6 +16,7 @@ import type {
   LaborCostReportMetric,
   LaborCostReportOptionalDimension,
   LaborCostReportRow,
+  LaborCostReportSort,
 } from "../types/api";
 
 const DIMENSION_OPTIONS: Array<{ key: LaborCostReportDimension; label: string }> = [
@@ -43,7 +44,7 @@ export function ReportsPage() {
   const [leadDimension, setLeadDimension] = useState<LaborCostReportDimension>("person");
   const [secondDimension, setSecondDimension] = useState<LaborCostReportOptionalDimension>("product");
   const [thirdDimension, setThirdDimension] = useState<LaborCostReportOptionalDimension>("bucket");
-  const [sortMetric, setSortMetric] = useState<LaborCostReportMetric>("forecast_cost");
+  const [sortMetric, setSortMetric] = useState<LaborCostReportSort>("forecast_cost");
   const [report, setReport] = useState<LaborCostReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -59,6 +60,16 @@ export function ReportsPage() {
     }),
     [leadDimension, secondDimension, sortMetric, thirdDimension],
   );
+  const sortOptions = useMemo(
+    () => [...activeDimensionOptions(leadDimension, secondDimension, thirdDimension), ...METRIC_OPTIONS],
+    [leadDimension, secondDimension, thirdDimension],
+  );
+
+  useEffect(() => {
+    if (!sortOptions.some((option) => option.key === sortMetric)) {
+      setSortMetric("forecast_cost");
+    }
+  }, [sortMetric, sortOptions]);
 
   useEffect(() => {
     setLoading(true);
@@ -139,7 +150,7 @@ export function ReportsPage() {
               options={OPTIONAL_DIMENSION_OPTIONS}
               onChange={(value) => setThirdDimension(value as LaborCostReportOptionalDimension)}
             />
-            <DimensionSelect label="Sort By" value={sortMetric} options={METRIC_OPTIONS} onChange={(value) => setSortMetric(value as LaborCostReportMetric)} />
+            <DimensionSelect label="Sort By" value={sortMetric} options={sortOptions} onChange={(value) => setSortMetric(value as LaborCostReportSort)} />
           </div>
         </CardHeader>
 
@@ -263,4 +274,21 @@ function ReportMetric({ label, value, tone = "default" }: { label: string; value
 
 function reportRowKey(row: LaborCostReportRow) {
   return row.dimension_values.map((value) => `${value.key}:${value.label}`).join("|");
+}
+
+function activeDimensionOptions(
+  leadDimension: LaborCostReportDimension,
+  secondDimension: LaborCostReportOptionalDimension,
+  thirdDimension: LaborCostReportOptionalDimension,
+) {
+  const selectedDimensions = [leadDimension, secondDimension, thirdDimension];
+  const seen = new Set<string>();
+  return selectedDimensions
+    .filter((dimension): dimension is LaborCostReportDimension => dimension !== "none")
+    .filter((dimension) => {
+      if (seen.has(dimension)) return false;
+      seen.add(dimension);
+      return true;
+    })
+    .map((dimension) => DIMENSION_OPTIONS.find((option) => option.key === dimension) ?? { key: dimension, label: dimension });
 }

@@ -21,7 +21,7 @@ REPORT_DIMENSIONS = {
     "bucket": "Bucket",
 }
 
-REPORT_METRICS = {
+REPORT_NUMERIC_SORTS = {
     "forecast_cost",
     "actual_cost",
     "variance_cost",
@@ -47,7 +47,7 @@ def normalize_labor_cost_dimensions(lead: str, second: str | None = None, third:
 
 def normalize_labor_cost_metric(metric: str | None) -> str:
     normalized = (metric or "forecast_cost").strip().lower()
-    if normalized not in REPORT_METRICS:
+    if normalized not in REPORT_NUMERIC_SORTS and normalized not in REPORT_DIMENSIONS:
         raise ValueError(f"Unknown report metric: {metric}")
     return normalized
 
@@ -105,13 +105,16 @@ def build_labor_cost_report(
             totals[metric] += float(grouped_row[metric])
         rows.append(grouped_row)
 
-    rows.sort(
-        key=lambda row: (
-            abs(float(row[normalized_sort_metric])),
-            [value["label"] for value in row["dimension_values"]],
-        ),
-        reverse=True,
-    )
+    if normalized_sort_metric in REPORT_DIMENSIONS:
+        rows.sort(key=lambda row: (_dimension_sort_value(row, normalized_sort_metric), _dimension_sort_labels(row)))
+    else:
+        rows.sort(
+            key=lambda row: (
+                abs(float(row[normalized_sort_metric])),
+                _dimension_sort_labels(row),
+            ),
+            reverse=True,
+        )
 
     return {
         "fiscal_year": fiscal_year,
@@ -184,13 +187,32 @@ def _dimension_value(dimension: str, row: dict[str, object], member: TeamMember 
 
 
 def _metric_label(metric: str) -> str:
-    return {
+    labels = {
+        **REPORT_DIMENSIONS,
         "forecast_cost": "Forecast Cost",
         "actual_cost": "Actual Cost",
         "variance_cost": "Variance Cost",
         "forecast_hours": "Forecast Hours",
         "actual_hours": "Actual Hours",
-    }[metric]
+    }
+    return labels[metric]
+
+
+def _dimension_sort_value(row: dict[str, object], dimension: str) -> str:
+    values = row["dimension_values"]
+    if not isinstance(values, list):
+        return ""
+    for value in values:
+        if isinstance(value, dict) and value.get("key") == dimension:
+            return str(value.get("label") or "").casefold()
+    return ""
+
+
+def _dimension_sort_labels(row: dict[str, object]) -> list[str]:
+    values = row["dimension_values"]
+    if not isinstance(values, list):
+        return []
+    return [str(value.get("label") or "").casefold() for value in values if isinstance(value, dict)]
 
 
 def _style_labor_cost_sheet(worksheet, column_count: int) -> None:

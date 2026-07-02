@@ -629,6 +629,8 @@ export type LaborCostReportOptionalDimension = LaborCostReportDimension | "none"
 
 export type LaborCostReportMetric = "forecast_cost" | "actual_cost" | "variance_cost" | "forecast_hours" | "actual_hours";
 
+export type LaborCostReportSort = LaborCostReportDimension | LaborCostReportMetric;
+
 export interface LaborCostReportDimensionValue {
   key: LaborCostReportDimension;
   label: string;
@@ -655,7 +657,7 @@ export interface LaborCostReportRow extends LaborCostReportTotals {
 export interface LaborCostReport {
   fiscal_year: number;
   dimensions: LaborCostReportDimensionConfig[];
-  sort_metric: LaborCostReportMetric;
+  sort_metric: LaborCostReportSort;
   rows: LaborCostReportRow[];
   totals: LaborCostReportTotals;
   generated_at: string;
