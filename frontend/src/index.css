@@ -49,4 +49,19 @@
   .numeric-cell {
     font-variant-numeric: tabular-nums;
   }
+
+  .roadmap-schedule-head {
+    background-color: #b8eef1;
+    box-shadow: inset 0 0 0 1px var(--spark-cyan);
+    color: var(--spark-navy);
+  }
+
+  .roadmap-schedule-cell {
+    background-color: #e3f8f9;
+  }
+
+  .roadmap-schedule-input {
+    background-color: #f4fcfd;
+    border-color: var(--spark-cyan);
+  }
 }

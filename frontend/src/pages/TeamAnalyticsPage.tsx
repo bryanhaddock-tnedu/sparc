@@ -433,7 +433,7 @@ function RoadmapForecastPlanner({
                         {plan.months.map((month) => (
                           <TableHead
                             key={month.id}
-                            className={`px-1 text-center text-[11px] ${roadmapMonthIsActive(group.rows[0], month) ? "bg-[color:var(--spark-cyan)]/20 text-primary" : ""}`}
+                            className={`px-1 text-center text-[11px] ${group.rows.some((row) => roadmapMonthIsActive(row, month)) ? "roadmap-schedule-head" : ""}`}
                           >
                             {month.label}
                           </TableHead>
@@ -504,10 +504,10 @@ function RoadmapForecastPlanner({
                                     const key = plannerCellKey(row, memberId, month.sequence);
                                     const isRoadmapMonth = roadmapMonthIsActive(row, month);
                                     return (
-                                      <TableCell key={month.id} className={`px-1 py-2 ${isRoadmapMonth ? "bg-[color:var(--spark-cyan)]/10" : ""}`}>
+                                      <TableCell key={month.id} className={`px-1 py-2 ${isRoadmapMonth ? "roadmap-schedule-cell" : ""}`}>
                                         <Input
                                           aria-label={`${row.roadmap_item_key} ${memberName(memberId, plan.team_members)} ${month.label} forecast hours`}
-                                          className={`numeric-cell h-8 w-full min-w-0 px-1 text-right text-xs sm:text-sm ${isRoadmapMonth ? "border-[color:var(--spark-cyan)] bg-background" : ""}`}
+                                          className={`numeric-cell h-8 w-full min-w-0 px-1 text-right text-xs sm:text-sm ${isRoadmapMonth ? "roadmap-schedule-input" : ""}`}
                                           disabled={!canForecast || saving}
                                           inputMode="decimal"
                                           pattern="[0-9]*[.]?[0-9]*"
