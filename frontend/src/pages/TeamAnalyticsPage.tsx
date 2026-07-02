@@ -450,35 +450,42 @@ function RoadmapForecastPlanner({
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <Table>
+                <div className="overflow-hidden">
+                  <Table className="table-fixed">
+                    <colgroup>
+                      <col className="w-32 md:w-40" />
+                      {plan.months.map((month) => (
+                        <col key={month.id} />
+                      ))}
+                      <col className="w-14 md:w-16" />
+                    </colgroup>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-52">Team Member</TableHead>
+                        <TableHead className="px-2">Team Member</TableHead>
                         {plan.months.map((month) => (
                           <TableHead
                             key={month.id}
-                            className={`min-w-24 text-right ${roadmapMonthIsActive(row, month) ? "bg-[color:var(--spark-cyan)]/20 text-primary" : ""}`}
+                            className={`px-1 text-center text-[11px] ${roadmapMonthIsActive(row, month) ? "bg-[color:var(--spark-cyan)]/20 text-primary" : ""}`}
                           >
                             {month.label}
                           </TableHead>
                         ))}
-                        <TableHead className="min-w-24 text-right">Total</TableHead>
+                        <TableHead className="px-1 text-right text-[11px]">Total</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {memberIds.length ? (
                         memberIds.map((memberId) => (
                           <TableRow key={`${rowKey}:${memberId}`}>
-                            <TableCell className="font-medium">{memberName(memberId, plan.team_members)}</TableCell>
+                            <TableCell className="truncate px-2 font-medium">{memberName(memberId, plan.team_members)}</TableCell>
                             {plan.months.map((month) => {
                               const key = plannerCellKey(row, memberId, month.sequence);
                               const isRoadmapMonth = roadmapMonthIsActive(row, month);
                               return (
-                                <TableCell key={month.id} className={isRoadmapMonth ? "bg-[color:var(--spark-cyan)]/10" : undefined}>
+                                <TableCell key={month.id} className={`px-1 py-2 ${isRoadmapMonth ? "bg-[color:var(--spark-cyan)]/10" : ""}`}>
                                   <Input
                                     aria-label={`${row.roadmap_item_key} ${memberName(memberId, plan.team_members)} ${month.label} forecast hours`}
-                                    className={`numeric-cell h-8 min-w-20 text-right ${isRoadmapMonth ? "border-[color:var(--spark-cyan)] bg-background" : ""}`}
+                                    className={`numeric-cell h-8 w-full min-w-0 px-1 text-right text-xs sm:text-sm ${isRoadmapMonth ? "border-[color:var(--spark-cyan)] bg-background" : ""}`}
                                     disabled={!canForecast || saving}
                                     inputMode="decimal"
                                     pattern="[0-9]*[.]?[0-9]*"
@@ -494,7 +501,9 @@ function RoadmapForecastPlanner({
                                 </TableCell>
                               );
                             })}
-                            <TableCell className="numeric-cell text-right font-semibold">{formatHours(memberRowTotal(row, memberId, plan.months, draftHours))}</TableCell>
+                            <TableCell className="numeric-cell px-1 text-right text-xs font-semibold sm:text-sm">
+                              {formatHours(memberRowTotal(row, memberId, plan.months, draftHours))}
+                            </TableCell>
                           </TableRow>
                         ))
                       ) : (

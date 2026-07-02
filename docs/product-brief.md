@@ -57,6 +57,7 @@ Use a monorepo:
 - Product Detail is the main analytical page.
 - Team Member Detail shows the inverse view across Products.
 - Keep tables data-dense but readable.
+- Monthly forecast-entry grids must fit the full July-through-June Fiscal Year in the visible panel without horizontal scrolling; shrink month cells before introducing scroll.
 - Do not create a large traditional nav menu unless explicitly requested.
 
 ## Data Rules
