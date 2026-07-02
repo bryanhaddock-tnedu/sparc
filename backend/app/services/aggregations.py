@@ -426,6 +426,7 @@ def team_member_products(db: Session, team_member_id: int, fiscal_year: int) -> 
                 "product_id": product.id,
                 "product": product.name,
                 "product_slug": product_url_slug(product),
+                "program_area": product.office,
                 "bucket_id": bucket.id,
                 "bucket": bucket.name,
                 "forecast_hours": round_hours(forecast_hours),

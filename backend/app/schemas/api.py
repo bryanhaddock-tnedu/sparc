@@ -375,6 +375,7 @@ class ReportedValueRowResponse(BaseModel):
     product_id: int
     product: str
     product_slug: str
+    program_area: str | None
     team_member_id: int
     team_member: str
     team_member_slug: str
@@ -618,6 +619,7 @@ class TeamMemberProductRowResponse(BaseModel):
     product_id: int
     product: str
     product_slug: str
+    program_area: str | None
     bucket_id: int
     bucket: str
     forecast_hours: float

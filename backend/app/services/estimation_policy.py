@@ -939,6 +939,7 @@ def reported_value_rows(
                 "product_id": row_product_id,
                 "product": products_by_id[row_product_id].name,
                 "product_slug": product_url_slug(products_by_id[row_product_id]),
+                "program_area": products_by_id[row_product_id].office,
                 "team_member_id": row_member_id,
                 "team_member": members_by_id[row_member_id].name,
                 "team_member_slug": team_member_url_slug(members_by_id[row_member_id]),

@@ -938,6 +938,7 @@ function MemberForecastTable({
                           {line.product}
                         </Link>
                         <div className="mt-1 truncate text-[11px] text-muted-foreground">{line.bucket}</div>
+                        <div className="mt-1 truncate text-[11px] text-muted-foreground">Program Area: {line.program_area ?? "Unassigned"}</div>
                       </td>
                       <TeamMemberMetricLabel label="Forecast" />
                       {line.months.map((cell) => (
@@ -1228,6 +1229,7 @@ type MemberForecastLine = {
   product_id: number;
   product: string;
   product_slug: string;
+  program_area: string | null;
   bucket_id: number;
   bucket: string;
   months: MemberForecastMonthCell[];
@@ -1258,21 +1260,25 @@ function buildMemberForecastLines(
   months: FiscalMonth[],
   billRate: number,
 ): MemberForecastLine[] {
-  const lineMap = new Map<string, { product_id: number; product: string; product_slug: string; bucket_id: number; bucket: string }>();
+  const lineMap = new Map<string, { product_id: number; product: string; product_slug: string; program_area: string | null; bucket_id: number; bucket: string }>();
   for (const row of productRows) {
     lineMap.set(memberForecastLineKey(row.product_id, row.bucket_id), {
       product_id: row.product_id,
       product: row.product,
       product_slug: row.product_slug,
+      program_area: row.program_area,
       bucket_id: row.bucket_id,
       bucket: row.bucket,
     });
   }
   for (const row of reportedRows) {
-    lineMap.set(memberForecastLineKey(row.product_id, row.bucket_id), {
+    const key = memberForecastLineKey(row.product_id, row.bucket_id);
+    const existing = lineMap.get(key);
+    lineMap.set(key, {
       product_id: row.product_id,
       product: row.product,
       product_slug: row.product_slug,
+      program_area: existing?.program_area ?? row.program_area,
       bucket_id: row.bucket_id,
       bucket: row.bucket,
     });

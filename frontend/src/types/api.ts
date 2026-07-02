@@ -538,6 +538,7 @@ export interface ReportedValueRow {
   product_id: number;
   product: string;
   product_slug: string;
+  program_area: string | null;
   team_member_id: number;
   team_member: string;
   team_member_slug: string;
@@ -723,6 +724,7 @@ export interface TeamMemberProductRow {
   product_id: number;
   product: string;
   product_slug: string;
+  program_area: string | null;
   bucket_id: number;
   bucket: string;
   forecast_hours: number;
