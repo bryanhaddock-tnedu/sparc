@@ -14,6 +14,7 @@ import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { productDetailPath, teamMemberDetailPath } from "../lib/routes";
+import { teamAnalyticsPath } from "../lib/teamAnalytics";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type {
   BucketTable,
@@ -455,6 +456,8 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
   const actualsByRoadmapItem = buildRoadmapItemActualSummaries(actualRows);
   const linkedTickets = items.reduce((total, item) => total + item.linked_issue_count, 0);
   const forecastHours = items.reduce((total, item) => total + (item.forecast_hours ?? 0), 0);
+  const plannedItems = items.filter((item) => (item.forecast_hours ?? 0) > 0).length;
+  const plannerTeams = Array.from(new Set(items.map((item) => item.source_team).filter((team): team is string => Boolean(team)))).sort();
   const programAreas = new Set(items.map((item) => item.program_area || "Unassigned"));
   const mappedActualHours = Array.from(actualsByRoadmapItem.values()).reduce((total, row) => total + row.actualHours, 0);
   const mappedActualCost = Array.from(actualsByRoadmapItem.values()).reduce((total, row) => total + row.actualCost, 0);
@@ -471,7 +474,7 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
         <div>
           <h2 className="text-lg font-semibold">Roadmap Items</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Roadmap Items mapped to this product. Forecast months come from the team roadmap forecast plan.
+            Roadmap Items mapped to this product. Monthly timing appears after a team enters roadmap forecast hours.
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-7">
@@ -484,6 +487,27 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
           <RoadmapItemMetric label="Programs" value={String(programAreas.size)} />
         </div>
       </div>
+      {items.length && plannedItems === 0 ? (
+        <div className="flex flex-col justify-between gap-3 rounded-lg border border-[color:var(--spark-cyan)]/40 bg-[color:var(--spark-cyan)]/10 p-3 sm:flex-row sm:items-center">
+          <div>
+            <div className="text-sm font-semibold text-primary">No roadmap months planned yet</div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              These roadmap items are mapped to this product, but no monthly Team Member forecast has been entered for them.
+            </p>
+          </div>
+          {plannerTeams.length ? (
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              {plannerTeams.map((team) => (
+                <Button key={team} asChild size="sm" variant="outline">
+                  <Link to={`${teamAnalyticsPath(team)}#roadmap-forecast-planner`}>Plan {team}</Link>
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <Badge className="border-warning/40 text-warning">Set Team on roadmap items</Badge>
+          )}
+        </div>
+      ) : null}
       <div className="overflow-hidden rounded-lg border bg-card">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1360px] text-sm">
@@ -494,7 +518,7 @@ function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: Roadmap
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bucket</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Jira Category</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Program Area</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Forecast Months</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Planned Months</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Forecast Hrs</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Forecast Members</th>
                 <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Linked Tickets</th>

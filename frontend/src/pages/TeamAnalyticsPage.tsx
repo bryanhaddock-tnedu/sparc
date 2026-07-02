@@ -357,7 +357,7 @@ function RoadmapForecastPlanner({
   }
 
   return (
-    <section className="rounded-lg border bg-card p-4">
+    <section id="roadmap-forecast-planner" className="rounded-lg border bg-card p-4">
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
         <div>
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">Roadmap Forecast Planner</h2>
