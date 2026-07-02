@@ -6,7 +6,6 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { BudgetTracker } from "../components/BudgetTracker";
 import { PageNav } from "../components/PageNav";
 import { ReportedValuesTable } from "../components/ReportedValuesTable";
-import { RoadmapActualsTable } from "../components/RoadmapActualsTable";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -25,7 +24,6 @@ import type {
   ProductSummary,
   ProductTeamMember,
   ReportedValueRow,
-  RoadmapActualRow,
   RoadmapItem,
   TeamMember,
 } from "../types/api";
@@ -58,7 +56,6 @@ export function ProductDetailPage() {
   const [productTeam, setProductTeam] = useState<ProductTeamMember[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
-  const [roadmapActualRows, setRoadmapActualRows] = useState<RoadmapActualRow[]>([]);
   const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([]);
   const [distribution, setDistribution] = useState<{ bucket: string; hours: number }[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -82,7 +79,6 @@ export function ProductDetailPage() {
       teamMembersResult,
       reportedRowsResult,
       roadmapItemsResult,
-      roadmapActualsResult,
     ] = await Promise.all([
       api.bucketDistribution(resolvedProductId, fiscalYear),
       api.productBucketTables(resolvedProductId, fiscalYear),
@@ -91,7 +87,6 @@ export function ProductDetailPage() {
       api.teamMembers(),
       api.reportedValues({ product_id: resolvedProductId }, fiscalYear),
       api.productRoadmapItems(resolvedProductId, fiscalYear),
-      api.productRoadmapActuals(resolvedProductId, fiscalYear),
     ]);
     if (productRef !== summaryResult.product.slug) {
       navigate(productDetailPath(summaryResult.product), { replace: true });
@@ -104,7 +99,6 @@ export function ProductDetailPage() {
     setTeamMembers(teamMembersResult);
     setReportedRows(reportedRowsResult);
     setRoadmapItems(roadmapItemsResult);
-    setRoadmapActualRows(roadmapActualsResult);
     setDrafts({});
   }
 
@@ -332,8 +326,7 @@ export function ProductDetailPage() {
         </div>
       </section>
 
-      <ProductRoadmapItemsSection actualRows={roadmapActualRows} items={roadmapItems} />
-      <RoadmapActualsTable rows={roadmapActualRows} showTeamMember title="Roadmap Actuals For Billing" />
+      <ProductRoadmapItemsSection items={roadmapItems} />
 
       <ProductTeamSection
         assignments={productTeam}
@@ -453,180 +446,96 @@ function SnapshotRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ProductRoadmapItemsSection({ actualRows, items }: { actualRows: RoadmapActualRow[]; items: RoadmapItem[] }) {
-  const actualsByRoadmapItem = buildRoadmapItemActualSummaries(actualRows);
-  const linkedTickets = items.reduce((total, item) => total + item.linked_issue_count, 0);
-  const forecastHours = items.reduce((total, item) => total + (item.forecast_hours ?? 0), 0);
-  const plannedItems = items.filter((item) => (item.forecast_hours ?? 0) > 0).length;
-  const scheduledItems = items.filter((item) => item.roadmap_start_date || item.roadmap_end_date).length;
+function ProductRoadmapItemsSection({ items }: { items: RoadmapItem[] }) {
   const plannerTeams = Array.from(new Set(items.map((item) => item.source_team).filter((team): team is string => Boolean(team)))).sort();
-  const programAreas = new Set(items.map((item) => item.program_area || "Unassigned"));
-  const mappedActualHours = Array.from(actualsByRoadmapItem.values()).reduce((total, row) => total + row.actualHours, 0);
-  const mappedActualCost = Array.from(actualsByRoadmapItem.values()).reduce((total, row) => total + row.actualCost, 0);
-  const gapTickets = new Set<string>();
-  actualRows.forEach((row) => {
-    if (row.mapping_status !== "mapped") {
-      row.ticket_keys.forEach((ticketKey) => gapTickets.add(ticketKey));
-    }
-  });
 
   return (
-    <section className="space-y-3">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
+    <section className="rounded-lg border bg-card">
+      <div className="flex flex-col justify-between gap-3 border-b bg-secondary/30 px-4 py-3 md:flex-row md:items-center">
         <div>
-          <h2 className="text-lg font-semibold">Roadmap Items</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Roadmap schedule comes from Jira. Forecast months come from the SPARC team roadmap forecast plan.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
-          <RoadmapItemMetric label="Items" value={String(items.length)} />
-          <RoadmapItemMetric label="Scheduled" value={String(scheduledItems)} />
-          <RoadmapItemMetric label="Tickets" value={String(linkedTickets)} />
-          <RoadmapItemMetric label="Forecast Hrs" value={formatHours(forecastHours)} />
-          <RoadmapItemMetric label="Actual Hrs" value={formatHours(mappedActualHours)} />
-          <RoadmapItemMetric label="Actual Cost" value={formatCurrency(mappedActualCost)} />
-          <RoadmapItemMetric label="Gaps" value={String(gapTickets.size)} tone={gapTickets.size ? "warn" : "default"} />
-          <RoadmapItemMetric label="Programs" value={String(programAreas.size)} />
-        </div>
-      </div>
-      {items.length && scheduledItems === 0 ? (
-        <div className="rounded-lg border border-warning/30 bg-warning/10 p-3">
-          <div className="text-sm font-semibold text-primary">No Jira roadmap dates synced yet</div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Roadmap Items are mapped, but SPARC has not captured Jira start/end or target dates for them yet. Dates will appear after the next roadmap sync.
-          </p>
-        </div>
-      ) : null}
-      {items.length && plannedItems === 0 ? (
-        <div className="flex flex-col justify-between gap-3 rounded-lg border border-[color:var(--spark-cyan)]/40 bg-[color:var(--spark-cyan)]/10 p-3 sm:flex-row sm:items-center">
-          <div>
-            <div className="text-sm font-semibold text-primary">No SPARC forecast months planned yet</div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              These roadmap items are mapped to this product, but no monthly Team Member forecast has been entered in SPARC.
-            </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold uppercase text-muted-foreground">Related Roadmap Items</h2>
+            <Badge>{items.length} mapped</Badge>
           </div>
-          {plannerTeams.length ? (
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              {plannerTeams.map((team) => (
-                <Button key={team} asChild size="sm" variant="outline">
-                  <Link to={`${teamAnalyticsPath(team)}#roadmap-forecast-planner`}>Plan {team}</Link>
-                </Button>
-              ))}
-            </div>
-          ) : (
-            <Badge className="border-warning/40 text-warning">Set Team on roadmap items</Badge>
-          )}
+          <p className="mt-1 text-sm text-muted-foreground">Reference only. Team roadmap planning rolls into the forecast tables below.</p>
         </div>
-      ) : null}
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1520px] text-sm">
-            <thead>
-              <tr className="border-b bg-secondary/60">
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Roadmap Item</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Status</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bucket</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Jira Category</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Program Area</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Roadmap Schedule</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Forecast Months</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Forecast Hrs</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Forecast Members</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Linked Tickets</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actual Hrs</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actual Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length ? (
-                items.map((item) => {
-                  const actualSummary = actualsByRoadmapItem.get(item.id);
-                  return (
-                    <tr key={item.id} className="border-b last:border-0">
-                      <td className="px-3 py-3">
-                        <div className="font-medium text-primary">
-                          {item.source_url ? (
-                            <a href={item.source_url} target="_blank" rel="noreferrer">
-                              {item.jira_issue_key}
-                            </a>
-                          ) : (
-                            item.jira_issue_key
-                          )}
-                        </div>
-                        <div className="max-w-[36rem] truncate text-sm text-foreground" title={item.title}>
-                          {item.title}
-                        </div>
-                        <div className="text-xs text-muted-foreground">{roadmapItemLinkContext(item)}</div>
-                      </td>
-                      <td className="px-3 py-3">{item.status ?? "No status"}</td>
-                      <td className="px-3 py-3">{item.bucket ?? "Unmapped"}</td>
-                      <td className="px-3 py-3">{item.source_category || "Not set"}</td>
-                      <td className="px-3 py-3">{item.program_area || "Unassigned"}</td>
-                      <td className="px-3 py-3">
-                        <RoadmapScheduleMonthBand item={item} />
-                      </td>
-                      <td className="px-3 py-3">
-                        <RoadmapForecastMonthChips months={item.forecast_months ?? []} />
-                      </td>
-                      <td className="numeric-cell px-3 py-3 text-right font-semibold">{formatHours(item.forecast_hours)}</td>
-                      <td className="numeric-cell px-3 py-3 text-right font-semibold">{item.forecast_team_member_count ?? 0}</td>
-                      <td className="numeric-cell px-3 py-3 text-right font-semibold">{item.linked_issue_count}</td>
-                      <td className="numeric-cell px-3 py-3 text-right font-semibold">{formatHours(actualSummary?.actualHours ?? 0)}</td>
-                      <td className="numeric-cell px-3 py-3 text-right font-semibold text-primary">{formatCurrency(actualSummary?.actualCost ?? 0)}</td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={12}>
-                    No Roadmap Items are mapped to this product yet. Use Admin / Jira / Roadmap Item Mapping to attach Roadmap Items to this product.
+        {plannerTeams.length ? (
+          <div className="flex flex-wrap gap-2 md:justify-end">
+            {plannerTeams.map((team) => (
+              <Button key={team} asChild size="sm" variant="outline">
+                <Link to={`${teamAnalyticsPath(team)}#roadmap-forecast-planner`}>Plan {team}</Link>
+              </Button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b">
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Roadmap Item</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bucket</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Program Area</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Schedule</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length ? (
+              items.map((item) => (
+                <tr key={item.id} className="border-b last:border-0">
+                  <td className="min-w-0 px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="font-medium text-primary">
+                        {item.source_url ? (
+                          <a href={item.source_url} target="_blank" rel="noreferrer">
+                            {item.jira_issue_key}
+                          </a>
+                        ) : (
+                          item.jira_issue_key
+                        )}
+                      </div>
+                      {item.status ? <Badge className="border-muted text-muted-foreground">{item.status}</Badge> : null}
+                    </div>
+                    <div className="mt-1 max-w-3xl truncate text-sm text-foreground" title={item.title}>
+                      {item.title}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">{roadmapItemLinkContext(item)}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{item.bucket ?? "Unmapped"}</div>
+                    {item.source_category ? <div className="text-xs text-muted-foreground">Jira: {item.source_category}</div> : null}
+                  </td>
+                  <td className="px-4 py-3">{item.program_area || "Unassigned"}</td>
+                  <td className="px-4 py-3">
+                    <RoadmapScheduleSummary item={item} />
                   </td>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              ))
+            ) : (
+              <tr>
+                <td className="px-4 py-5 text-sm text-muted-foreground" colSpan={4}>
+                  No Roadmap Items are mapped to this product yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </section>
   );
 }
 
-function RoadmapScheduleMonthBand({ item }: { item: RoadmapItem }) {
+function RoadmapScheduleSummary({ item }: { item: RoadmapItem }) {
   const activeMonths = roadmapScheduleMonthSequences(item);
-  const title = activeMonths.length
-    ? FISCAL_MONTH_LABELS.filter((_, index) => activeMonths.includes(index + 1)).join(", ")
-    : "No Jira roadmap dates synced";
-  return (
-    <div className="grid w-[27rem] grid-cols-12 overflow-hidden rounded-md border border-border" title={title}>
-      {FISCAL_MONTH_LABELS.map((month, index) => {
-        const sequence = index + 1;
-        const isActive = activeMonths.includes(sequence);
-        return (
-          <div
-            key={month}
-            className={`border-r px-1.5 py-1 text-center text-[10px] font-semibold uppercase last:border-r-0 ${
-              isActive ? "bg-[color:var(--spark-cyan)] text-primary" : "bg-secondary/50 text-muted-foreground"
-            }`}
-          >
-            {month}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function RoadmapForecastMonthChips({ months }: { months: RoadmapItem["forecast_months"] }) {
-  if (!months.length) {
-    return <span className="text-sm text-muted-foreground">Not forecasted</span>;
+  if (!activeMonths.length) {
+    return <span className="text-sm text-muted-foreground">Not synced</span>;
   }
 
   return (
-    <div className="flex max-w-[20rem] flex-wrap gap-1">
-      {months.map((month) => (
-        <Badge key={month.month_sequence} className="border-accent/50 bg-accent/10 text-primary">
-          {month.month_label} {formatHours(month.forecast_hours)}
+    <div className="flex flex-wrap gap-1">
+      {activeMonths.map((sequence) => (
+        <Badge key={sequence} className="border-[color:var(--spark-cyan)]/40 bg-[color:var(--spark-cyan)]/10 text-primary">
+          {FISCAL_MONTH_LABELS[sequence - 1]}
         </Badge>
       ))}
     </div>
@@ -661,46 +570,11 @@ function fiscalMonthDate(fiscalYear: number, sequence: number) {
   return new Date(calendarYear, calendarMonth - 1, 1);
 }
 
-function RoadmapItemMetric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warn" }) {
-  return (
-    <div className="rounded-md bg-secondary px-3 py-2">
-      <div className="text-xs font-semibold uppercase text-muted-foreground">{label}</div>
-      <div className={`numeric-cell text-right text-base font-semibold ${tone === "warn" ? "text-warning" : "text-primary"}`}>{value}</div>
-    </div>
-  );
-}
-
-type RoadmapItemActualSummary = {
-  actualHours: number;
-  actualCost: number;
-  tickets: Set<string>;
-  teamMembers: Set<number>;
-};
-
-function buildRoadmapItemActualSummaries(rows: RoadmapActualRow[]) {
-  const summaries = new Map<number, RoadmapItemActualSummary>();
-  rows.forEach((row) => {
-    if (row.roadmap_item_id === null) return;
-    const summary =
-      summaries.get(row.roadmap_item_id) ??
-      ({
-        actualHours: 0,
-        actualCost: 0,
-        tickets: new Set<string>(),
-        teamMembers: new Set<number>(),
-      } satisfies RoadmapItemActualSummary);
-    summary.actualHours += row.actual_hours;
-    summary.actualCost += row.actual_cost;
-    summary.teamMembers.add(row.team_member_id);
-    row.ticket_keys.forEach((ticketKey) => summary.tickets.add(ticketKey));
-    summaries.set(row.roadmap_item_id, summary);
-  });
-  return summaries;
-}
-
 function roadmapItemLinkContext(item: RoadmapItem) {
   const deliverables = (item.linked_issues ?? []).filter((link) => (link.issue_type ?? "").toLowerCase() === "deliverable");
-  if (!deliverables.length) return item.issue_type ?? "Roadmap Item";
+  if (!deliverables.length) {
+    return item.linked_issue_count ? `${item.linked_issue_count} linked tickets` : item.issue_type ?? "Roadmap item";
+  }
   const visibleKeys = deliverables.slice(0, 3).map((link) => link.jira_issue_key);
   const hiddenCount = deliverables.length - visibleKeys.length;
   return `Deliverables: ${visibleKeys.join(", ")}${hiddenCount > 0 ? ` +${hiddenCount}` : ""}`;
