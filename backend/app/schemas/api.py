@@ -754,6 +754,7 @@ class RoadmapItemResponse(BaseModel):
     issue_type: str | None
     program_area: str | None
     source_category: str | None = None
+    source_team: str | None = None
     source_url: str | None
     linked_issue_count: int
     linked_issues: list[RoadmapItemLinkedIssueResponse] = Field(default_factory=list)
@@ -801,6 +802,62 @@ class RoadmapActualRowResponse(BaseModel):
     ticket_count: int
     ticket_keys: list[str]
     mapping_status: str
+
+
+class RoadmapForecastAllocationResponse(BaseModel):
+    id: int
+    roadmap_item_id: int
+    product_id: int
+    team_member_id: int
+    team_member: str
+    team_member_slug: str
+    bucket_id: int
+    fiscal_month_id: int
+    month_sequence: int
+    hours: float
+
+
+class TeamRoadmapForecastRowResponse(BaseModel):
+    roadmap_item_id: int
+    roadmap_item_key: str
+    roadmap_item_title: str
+    roadmap_item_status: str | None
+    source_team: str | None
+    source_team_matches: bool
+    program_area: str | None
+    source_url: str | None
+    product_id: int | None
+    product: str | None
+    product_slug: str | None
+    bucket_id: int | None
+    bucket: str | None
+    forecast_hours: float
+    actual_hours: float
+    worklog_count: int
+    ticket_count: int
+    allocations: list[RoadmapForecastAllocationResponse] = Field(default_factory=list)
+
+
+class TeamRoadmapForecastPlanResponse(BaseModel):
+    team: str
+    fiscal_year: int
+    months: list[FiscalMonthResponse]
+    team_members: list[TeamMemberResponse]
+    rows: list[TeamRoadmapForecastRowResponse]
+
+
+class RoadmapForecastAllocationUpsert(BaseModel):
+    roadmap_item_id: int
+    product_id: int
+    team_member_id: int
+    bucket_id: int
+    fiscal_year: int
+    month_sequence: int = Field(ge=1, le=12)
+    hours: Decimal = Field(ge=0)
+
+
+class RoadmapForecastAllocationBatchUpsert(BaseModel):
+    entries: list[RoadmapForecastAllocationUpsert] = Field(min_length=1)
 
 
 class RoadmapSyncResponse(BaseModel):

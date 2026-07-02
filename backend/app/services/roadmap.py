@@ -24,6 +24,7 @@ ROADMAP_ITEM_ISSUE_TYPES = {"idea"}
 ROADMAP_DELIVERABLE_ISSUE_TYPES = {"deliverable"}
 AGENCY_OFFICE_FIELD_NAMES = {"agency office"}
 CATEGORY_FIELD_NAMES = {"category"}
+TEAM_FIELD_NAMES = {"team"}
 ROADMAP_CATEGORY_ALIASES = {
     **WORK_TYPE_ALIASES,
     "enhancements": "ENHANCE",
@@ -57,6 +58,7 @@ class RoadmapIssuePayload:
     labels: tuple[str, ...]
     program_area: str | None
     category: str | None
+    source_team: str | None
     source_url: str | None
     links: tuple[RoadmapIssueLinkPayload, ...]
 
@@ -80,6 +82,7 @@ def serialize_roadmap_item(item: RoadmapItem, *, product_id: int | None = None) 
         "issue_type": item.issue_type,
         "program_area": item.program_area,
         "source_category": item.source_category,
+        "source_team": item.source_team,
         "source_url": item.source_url,
         "linked_issue_count": len(scoped_links),
         "linked_issues": [_serialize_roadmap_issue_link(link) for link in scoped_links],
@@ -252,13 +255,13 @@ def fetch_live_roadmap_items(roadmap_project_key: str, fiscal_year: int) -> list
     jql = f'project = "{roadmap_project_key}" AND issuetype in ("Idea") AND labels = "{fiscal_year_label}" ORDER BY updated ASC'
     with httpx.Client(timeout=45, auth=(settings.jira_api_email, settings.jira_api_token)) as client:
         field_ids = _fetch_roadmap_field_ids(client, site_url)
-        fields = ["summary", "status", "issuetype", "labels", "issuelinks", *field_ids["agency_office"], *field_ids["category"]]
+        fields = ["summary", "status", "issuetype", "labels", "issuelinks", *field_ids["agency_office"], *field_ids["category"], *field_ids["team"]]
         issues = _search_jira_issues(client, site_url, jql, fields)
         payloads: list[RoadmapIssuePayload] = []
         for issue in issues:
             labels = _labels_from_issue(issue)
             if _is_roadmap_item_issue_type(_issue_type_name(issue)) and _has_fiscal_year_label(labels, fiscal_year):
-                payloads.append(_normalize_roadmap_issue(site_url, issue, field_ids["agency_office"], field_ids["category"]))
+                payloads.append(_normalize_roadmap_issue(site_url, issue, field_ids["agency_office"], field_ids["category"], field_ids["team"]))
         return _enrich_roadmap_payload_links(client, site_url, payloads, field_ids["category"])
 
 
@@ -356,6 +359,7 @@ def _upsert_roadmap_item(db: Session, payload: RoadmapIssuePayload, fiscal_year:
     if payload.program_area is not None:
         item.program_area = payload.program_area
     item.source_category = payload.category
+    item.source_team = payload.source_team
     bucket_id = _bucket_id_from_category(db, payload.category)
     if bucket_id is not None:
         item.bucket_id = bucket_id
@@ -521,6 +525,7 @@ def _normalize_roadmap_issue(
     issue: dict[str, object],
     agency_office_field_ids: list[str],
     category_field_ids: list[str],
+    team_field_ids: list[str],
 ) -> RoadmapIssuePayload:
     fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
     status = fields.get("status") if isinstance(fields.get("status"), dict) else {}
@@ -539,6 +544,7 @@ def _normalize_roadmap_issue(
         labels=labels,
         program_area=_program_area_from_issue_fields(fields, agency_office_field_ids),
         category=_category_from_issue_fields(fields, category_field_ids),
+        source_team=_team_from_issue_fields(fields, team_field_ids),
         source_url=f"{site_url}/browse/{issue_key}" if issue_key else None,
         links=links,
     )
@@ -656,6 +662,7 @@ def _enrich_roadmap_payload_links(
                 labels=payload.labels,
                 program_area=payload.program_area,
                 category=payload.category,
+                source_team=payload.source_team,
                 source_url=payload.source_url,
                 links=enriched_links,
             )
@@ -713,10 +720,11 @@ def _fetch_roadmap_field_ids(client: httpx.Client, site_url: str) -> dict[str, l
     _raise_for_jira_response(response)
     fields = response.json()
     if not isinstance(fields, list):
-        return {"agency_office": [], "category": []}
+        return {"agency_office": [], "category": [], "team": []}
     return {
         "agency_office": _jira_field_ids_by_name(fields, AGENCY_OFFICE_FIELD_NAMES),
         "category": _jira_field_ids_by_name(fields, CATEGORY_FIELD_NAMES),
+        "team": _jira_field_ids_by_name(fields, TEAM_FIELD_NAMES),
     }
 
 
@@ -740,6 +748,14 @@ def _program_area_from_issue_fields(fields: dict[str, object], agency_office_fie
 
 def _category_from_issue_fields(fields: dict[str, object], category_field_ids: list[str]) -> str | None:
     for field_id in category_field_ids:
+        value = _jira_field_text(fields.get(field_id))
+        if value:
+            return value
+    return None
+
+
+def _team_from_issue_fields(fields: dict[str, object], team_field_ids: list[str]) -> str | None:
+    for field_id in team_field_ids:
         value = _jira_field_text(fields.get(field_id))
         if value:
             return value
@@ -783,6 +799,7 @@ def _roadmap_payload_hash(payload: RoadmapIssuePayload) -> str:
             ",".join(sorted(payload.labels)),
             payload.program_area or "",
             payload.category or "",
+            payload.source_team or "",
             ",".join(
                 sorted(
                     "|".join(

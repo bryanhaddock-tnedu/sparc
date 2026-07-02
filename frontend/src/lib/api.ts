@@ -38,6 +38,7 @@ import type {
   ProductTeamMemberUpdatePayload,
   ReportedValueRow,
   RoadmapActualRow,
+  RoadmapForecastAllocationUpsertPayload,
   RoadmapItem,
   RoadmapItemMapPayload,
   RoadmapSyncResult,
@@ -50,6 +51,7 @@ import type {
   TeamMemberActualWorklog,
   TeamMemberCreatePayload,
   TeamMemberProducts,
+  TeamRoadmapForecastPlan,
   TeamMemberStoryPointMetric,
   UnmappedProduct,
   UnmappedUser,
@@ -262,6 +264,13 @@ export const api = {
     request<TeamMemberActualWorklog[]>(`/api/team-members/${encodeURIComponent(String(teamMemberId))}/actual-worklogs?fiscal_year=${fiscalYear}`),
   teamMemberRoadmapActuals: (teamMemberId: TeamMemberRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<RoadmapActualRow[]>(`/api/team-members/${encodeURIComponent(String(teamMemberId))}/roadmap-actuals?fiscal_year=${fiscalYear}`),
+  teamRoadmapForecastPlan: (teamRef: string, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<TeamRoadmapForecastPlan>(`/api/teams/${encodeURIComponent(teamRef)}/roadmap-forecast-plan?fiscal_year=${fiscalYear}`),
+  upsertTeamRoadmapForecastPlan: (teamRef: string, fiscalYear = DEFAULT_FISCAL_YEAR, entries: RoadmapForecastAllocationUpsertPayload[]) =>
+    request<TeamRoadmapForecastPlan>(`/api/teams/${encodeURIComponent(teamRef)}/roadmap-forecast-plan?fiscal_year=${fiscalYear}`, {
+      method: "PUT",
+      body: JSON.stringify({ entries }),
+    }),
   upsertForecast: (payload: ForecastUpsertPayload) =>
     request<ForecastResponse>("/api/forecasts", {
       method: "PUT",

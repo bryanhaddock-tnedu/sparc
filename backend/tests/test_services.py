@@ -22,6 +22,7 @@ from app.models import (
     ProductBudget,
     ProductJiraSpace,
     ProductTeamMember,
+    RoadmapForecastAllocation,
     RoadmapItem,
     RoadmapItemIssueLink,
     TeamMember,
@@ -31,6 +32,7 @@ from app.services.aggregations import dashboard_labor_mix, dashboard_products, d
 from app.services.costs import calculate_cost
 from app.services.fiscal_year import current_fiscal_year, fiscal_sequence_for_date, fiscal_year_for_date, get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
+from app.services.roadmap_forecasting import team_roadmap_forecast_plan, upsert_team_roadmap_forecast_allocations
 from app.services.forecast_recommendations import (
     create_forecast_recommendation_decision,
     list_forecast_recommendation_decisions,
@@ -137,6 +139,82 @@ def test_forecast_upsert_creates_product_team_assignment():
         )
         assert assignment is not None
         assert assignment.status == "active"
+
+
+def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="TNSD", slug="tnsd")
+        member = TeamMember(name="Rojina Thapa", slug="rojina-thapa", role="QA", team="Product Maintenance", bill_rate=Decimal("70"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        assert bucket is not None
+        roadmap_item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            product_id=product.id,
+            bucket_id=bucket.id,
+            jira_issue_id="100159",
+            jira_issue_key="ROADMAP-159",
+            title="Automate data update",
+            issue_type="Idea",
+            source_team="Product Maintenance",
+        )
+        db.add(roadmap_item)
+        db.flush()
+
+        result = upsert_team_roadmap_forecast_allocations(
+            db,
+            "product-maintenance",
+            2027,
+            [
+                {
+                    "roadmap_item_id": roadmap_item.id,
+                    "product_id": product.id,
+                    "team_member_id": member.id,
+                    "bucket_id": bucket.id,
+                    "fiscal_year": 2027,
+                    "month_sequence": 1,
+                    "hours": Decimal("12"),
+                }
+            ],
+        )
+
+        allocation = db.scalar(select(RoadmapForecastAllocation))
+        forecast = db.scalar(select(ForecastEntry))
+        assert allocation is not None
+        assert allocation.hours == Decimal("12")
+        assert forecast is not None
+        assert forecast.product_id == product.id
+        assert forecast.team_member_id == member.id
+        assert forecast.bucket_id == bucket.id
+        assert forecast.hours == Decimal("12")
+        assert result["team"] == "Product Maintenance"
+        assert result["rows"][0]["forecast_hours"] == Decimal("12")
+
+        cleared = upsert_team_roadmap_forecast_allocations(
+            db,
+            "Product Maintenance",
+            2027,
+            [
+                {
+                    "roadmap_item_id": roadmap_item.id,
+                    "product_id": product.id,
+                    "team_member_id": member.id,
+                    "bucket_id": bucket.id,
+                    "fiscal_year": 2027,
+                    "month_sequence": 1,
+                    "hours": Decimal("0"),
+                }
+            ],
+        )
+
+        assert db.scalar(select(RoadmapForecastAllocation)) is None
+        assert db.scalar(select(ForecastEntry)).hours == Decimal("0")
+        assert cleared["rows"][0]["forecast_hours"] == Decimal("0")
 
 
 def test_product_summary_includes_budget_tracker_metrics():
@@ -312,13 +390,14 @@ def test_roadmap_issue_normalization_uses_fiscal_year_label_and_agency_office():
             "labels": ["FY27", "billing"],
             "customfield_12345": {"value": "Academics"},
             "customfield_45678": {"value": "Enhancements"},
+            "customfield_77777": {"value": "Product Maintenance"},
             "status": {"name": "In Progress", "statusCategory": {"name": "In Progress"}},
             "issuetype": {"name": "Idea"},
             "issuelinks": [],
         },
     }
 
-    payload = _normalize_roadmap_issue("https://tndoe.atlassian.net", issue, ["customfield_12345"], ["customfield_45678"])
+    payload = _normalize_roadmap_issue("https://tndoe.atlassian.net", issue, ["customfield_12345"], ["customfield_45678"], ["customfield_77777"])
 
     assert _roadmap_fiscal_year_label(2027) == "FY27"
     assert _has_fiscal_year_label(payload.labels, 2027)
@@ -327,6 +406,7 @@ def test_roadmap_issue_normalization_uses_fiscal_year_label_and_agency_office():
     assert payload.issue_type == "Idea"
     assert payload.program_area == "Academics"
     assert payload.category == "Enhancements"
+    assert payload.source_team == "Product Maintenance"
 
 
 def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
@@ -345,6 +425,7 @@ def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
             labels=("FY27",),
             program_area="Academics",
             category="Enhancements",
+            source_team="Product Maintenance",
             source_url="https://tndoe.atlassian.net/browse/ROADMAP-1",
             links=tuple(),
         )
@@ -353,6 +434,7 @@ def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
 
         assert item.bucket_id == enhance.id
         assert item.source_category == "Enhancements"
+        assert item.source_team == "Product Maintenance"
 
 
 def test_stale_roadmap_items_move_out_of_selected_fiscal_year():

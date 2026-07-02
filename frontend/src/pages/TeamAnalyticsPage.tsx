@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Plus, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -9,6 +9,7 @@ import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { TeamMemberRankingsTable } from "../components/TeamMemberRankingsTable";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
@@ -27,7 +28,15 @@ import {
   type TeamRankingDimension,
 } from "../lib/teamAnalytics";
 import { formatHours } from "../lib/utils";
-import type { DeliveryFlowIssue, ReportedValueRow, TeamMember, TeamMemberStoryPointMetric } from "../types/api";
+import type {
+  DeliveryFlowIssue,
+  RoadmapForecastAllocationUpsertPayload,
+  ReportedValueRow,
+  TeamMember,
+  TeamMemberStoryPointMetric,
+  TeamRoadmapForecastPlan,
+  TeamRoadmapForecastRow,
+} from "../types/api";
 
 export function TeamAnalyticsPage() {
   const params = useParams();
@@ -38,23 +47,34 @@ export function TeamAnalyticsPage() {
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [storyMetrics, setStoryMetrics] = useState<TeamMemberStoryPointMetric[]>([]);
   const [deliveryIssues, setDeliveryIssues] = useState<DeliveryFlowIssue[]>([]);
+  const [roadmapPlan, setRoadmapPlan] = useState<TeamRoadmapForecastPlan | null>(null);
   const [rankingDimension, setRankingDimension] = useState<TeamRankingDimension>("fytd_actual");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [plannerSaving, setPlannerSaving] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([api.teamMembers(), api.reportedValues({}, fiscalYear), api.teamMemberStoryPointMetrics(fiscalYear), api.deliveryFlowIssues(fiscalYear)])
-      .then(([memberRows, reportedValueRows, storyPointRows, deliveryFlowRows]) => {
+    Promise.all([
+      api.teamMembers(),
+      api.reportedValues({}, fiscalYear),
+      api.teamMemberStoryPointMetrics(fiscalYear),
+      api.deliveryFlowIssues(fiscalYear),
+      api.teamRoadmapForecastPlan(teamRef, fiscalYear),
+    ])
+      .then(([memberRows, reportedValueRows, storyPointRows, deliveryFlowRows, roadmapPlanRows]) => {
         setMembers(memberRows);
         setReportedRows(reportedValueRows);
         setStoryMetrics(storyPointRows);
         setDeliveryIssues(deliveryFlowRows);
+        setRoadmapPlan(roadmapPlanRows);
         setError(null);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load team analytics"))
       .finally(() => setLoading(false));
-  }, [fiscalYear]);
+  }, [fiscalYear, teamRef]);
 
   const teamName = useMemo(() => teamDisplayNameFromRef(teamRef, members), [members, teamRef]);
   const analytics = useMemo(() => buildSingleTeamAnalytics(teamName, members, reportedRows, fiscalYear), [fiscalYear, members, reportedRows, teamName]);
@@ -101,8 +121,22 @@ export function TeamAnalyticsPage() {
 
       {analytics.members.length ? (
         <>
+          {notice ? <div className="rounded-md border border-[color:var(--spark-cyan)] bg-accent/10 px-3 py-2 text-sm text-primary">{notice}</div> : null}
+          {actionError ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{actionError}</div> : null}
           <TeamSummaryCards analytics={analytics} />
           <TeamDeliveryFlowPanel flow={deliveryFlow} />
+          {roadmapPlan ? (
+            <RoadmapForecastPlanner
+              fiscalYear={fiscalYear}
+              onError={setActionError}
+              onNotice={setNotice}
+              onPlanChange={setRoadmapPlan}
+              plan={roadmapPlan}
+              saving={plannerSaving}
+              setSaving={setPlannerSaving}
+              teamRef={teamRef}
+            />
+          ) : null}
           <TeamMonthlyForecastActualCard analytics={analytics} />
           <TeamMemberRankingsTable
             description={`${analytics.team} members ranked by the selected hours, ticket, or story point signal.`}
@@ -239,6 +273,302 @@ function stageSummariesWithDefaults(summaries: TeamDeliveryFlowStageSummary[]) {
 function formatDays(value: number | null) {
   if (value == null) return "N/A";
   return `${value}d`;
+}
+
+function RoadmapForecastPlanner({
+  fiscalYear,
+  onError,
+  onNotice,
+  onPlanChange,
+  plan,
+  saving,
+  setSaving,
+  teamRef,
+}: {
+  fiscalYear: number;
+  onError: (message: string | null) => void;
+  onNotice: (message: string | null) => void;
+  onPlanChange: (plan: TeamRoadmapForecastPlan) => void;
+  plan: TeamRoadmapForecastPlan;
+  saving: boolean;
+  setSaving: (saving: boolean) => void;
+  teamRef: string;
+}) {
+  const [draftHours, setDraftHours] = useState<Record<string, string>>({});
+  const [rowMembers, setRowMembers] = useState<Record<string, number[]>>({});
+  const [selectedMembers, setSelectedMembers] = useState<Record<string, string>>({});
+  const existingCellKeys = useMemo(() => new Set(plan.rows.flatMap((row) => row.allocations.map((allocation) => plannerCellKey(row, allocation.team_member_id, allocation.month_sequence)))), [plan]);
+  const allocationTotal = plan.rows.reduce((total, row) => total + row.forecast_hours, 0);
+  const actualTotal = plan.rows.reduce((total, row) => total + row.actual_hours, 0);
+
+  useEffect(() => {
+    const nextDraft: Record<string, string> = {};
+    const nextMembers: Record<string, number[]> = {};
+    plan.rows.forEach((row) => {
+      const rowKey = plannerRowKey(row);
+      const memberIds = new Set<number>();
+      row.allocations.forEach((allocation) => {
+        memberIds.add(allocation.team_member_id);
+        nextDraft[plannerCellKey(row, allocation.team_member_id, allocation.month_sequence)] = formatPlannerInput(allocation.hours);
+      });
+      nextMembers[rowKey] = [...memberIds].sort((left, right) => memberName(left, plan.team_members).localeCompare(memberName(right, plan.team_members)));
+    });
+    setDraftHours(nextDraft);
+    setRowMembers(nextMembers);
+    setSelectedMembers({});
+  }, [plan]);
+
+  function addMember(row: TeamRoadmapForecastRow) {
+    const rowKey = plannerRowKey(row);
+    const selectedMemberId = Number(selectedMembers[rowKey]);
+    if (!Number.isFinite(selectedMemberId)) return;
+    setRowMembers((current) => {
+      const existing = current[rowKey] ?? [];
+      if (existing.includes(selectedMemberId)) return current;
+      return { ...current, [rowKey]: [...existing, selectedMemberId] };
+    });
+    setSelectedMembers((current) => ({ ...current, [rowKey]: "" }));
+  }
+
+  function updateCell(row: TeamRoadmapForecastRow, memberId: number, monthSequence: number, value: string) {
+    setDraftHours((current) => ({ ...current, [plannerCellKey(row, memberId, monthSequence)]: value }));
+  }
+
+  async function savePlanner() {
+    const entries = roadmapPlannerEntries(plan, rowMembers, draftHours, existingCellKeys, fiscalYear);
+    if (!entries.length) {
+      onError(null);
+      onNotice("No roadmap forecast changes to save.");
+      return;
+    }
+
+    setSaving(true);
+    onError(null);
+    onNotice(null);
+    try {
+      const updated = await api.upsertTeamRoadmapForecastPlan(teamRef, fiscalYear, entries);
+      onPlanChange(updated);
+      onNotice(`Roadmap forecast saved: ${entries.length} monthly allocation ${entries.length === 1 ? "cell" : "cells"} updated.`);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Unable to save roadmap forecast plan");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
+        <div>
+          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Roadmap Forecast Planner</h2>
+          <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
+            Assign Team Members to team-owned Roadmap Items and enter monthly forecast hours. Saved allocations roll up to the normal Product/Bucket forecast.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 lg:justify-end">
+          <PlannerMetric label="Roadmap Fcst" value={formatHours(allocationTotal)} />
+          <PlannerMetric label="Roadmap Actual" value={formatHours(actualTotal)} />
+          <Button disabled={saving || !plan.rows.length} onClick={savePlanner}>
+            <Save className="h-4 w-4" />
+            {saving ? "Saving" : "Save Planner"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {plan.rows.length ? (
+          plan.rows.map((row) => {
+            const rowKey = plannerRowKey(row);
+            const memberIds = rowMembers[rowKey] ?? [];
+            const canForecast = row.product_id != null && row.bucket_id != null;
+            const availableMembers = plan.team_members.filter((member) => !memberIds.includes(member.id));
+            return (
+              <div key={rowKey} className="overflow-hidden rounded-lg border">
+                <div className="flex flex-col gap-3 border-b bg-secondary/30 p-3 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {row.source_url ? (
+                        <a className="font-semibold text-primary hover:underline" href={row.source_url} rel="noreferrer" target="_blank">
+                          {row.roadmap_item_key}
+                        </a>
+                      ) : (
+                        <span className="font-semibold text-primary">{row.roadmap_item_key}</span>
+                      )}
+                      {row.roadmap_item_status ? <Badge className="border-primary/30 text-primary">{row.roadmap_item_status}</Badge> : null}
+                      <Badge className={row.source_team_matches ? "border-[color:var(--spark-cyan)] text-primary" : "border-muted text-muted-foreground"}>
+                        {row.source_team_matches ? row.source_team ?? plan.team : "Inferred from product team"}
+                      </Badge>
+                    </div>
+                    <div className="mt-1 truncate text-sm font-medium" title={row.roadmap_item_title}>
+                      {row.roadmap_item_title}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      <span>{row.product ?? "Needs product mapping"}</span>
+                      <span>/</span>
+                      <span>{row.bucket ?? "Needs bucket/category"}</span>
+                      {row.program_area ? (
+                        <>
+                          <span>/</span>
+                          <span>{row.program_area}</span>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <PlannerMetric label="Forecast" value={formatHours(row.forecast_hours)} />
+                    <PlannerMetric label="Actual" value={formatHours(row.actual_hours)} />
+                    <PlannerMetric label="Tickets" value={String(row.ticket_count)} />
+                    <div className="flex gap-2">
+                      <select
+                        aria-label={`Add Team Member to ${row.roadmap_item_key}`}
+                        className="h-9 min-w-56 rounded-md border border-input bg-background px-3 text-sm"
+                        disabled={!canForecast || !availableMembers.length}
+                        value={selectedMembers[rowKey] ?? ""}
+                        onChange={(event) => setSelectedMembers((current) => ({ ...current, [rowKey]: event.target.value }))}
+                      >
+                        <option value="">{canForecast ? "Add Team Member" : "Map product and bucket first"}</option>
+                        {availableMembers.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))}
+                      </select>
+                      <Button disabled={!canForecast || !selectedMembers[rowKey]} onClick={() => addMember(row)} size="sm" type="button" variant="outline">
+                        <Plus className="h-4 w-4" />
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-52">Team Member</TableHead>
+                        {plan.months.map((month) => (
+                          <TableHead key={month.id} className="min-w-24 text-right">
+                            {month.label}
+                          </TableHead>
+                        ))}
+                        <TableHead className="min-w-24 text-right">Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {memberIds.length ? (
+                        memberIds.map((memberId) => (
+                          <TableRow key={`${rowKey}:${memberId}`}>
+                            <TableCell className="font-medium">{memberName(memberId, plan.team_members)}</TableCell>
+                            {plan.months.map((month) => {
+                              const key = plannerCellKey(row, memberId, month.sequence);
+                              return (
+                                <TableCell key={month.id}>
+                                  <Input
+                                    aria-label={`${row.roadmap_item_key} ${memberName(memberId, plan.team_members)} ${month.label} forecast hours`}
+                                    className="numeric-cell h-8 min-w-20 text-right"
+                                    disabled={!canForecast || saving}
+                                    inputMode="decimal"
+                                    min={0}
+                                    step="0.25"
+                                    type="number"
+                                    value={draftHours[key] ?? ""}
+                                    onChange={(event) => updateCell(row, memberId, month.sequence, event.target.value)}
+                                  />
+                                </TableCell>
+                              );
+                            })}
+                            <TableCell className="numeric-cell text-right font-semibold">{formatHours(memberRowTotal(row, memberId, plan.months, draftHours))}</TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell className="py-4 text-muted-foreground" colSpan={plan.months.length + 2}>
+                            No Team Members allocated yet.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="rounded-lg border bg-secondary/20 p-5 text-sm text-muted-foreground">
+            No Roadmap Items are assigned to {plan.team} for this fiscal year yet.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PlannerMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-28 rounded-md bg-secondary/60 px-3 py-2 text-right">
+      <div className="text-[10px] font-semibold uppercase text-muted-foreground">{label}</div>
+      <div className="numeric-cell text-sm font-semibold text-primary">{value}</div>
+    </div>
+  );
+}
+
+function plannerRowKey(row: TeamRoadmapForecastRow) {
+  return `${row.roadmap_item_id}:${row.product_id ?? "none"}:${row.bucket_id ?? "none"}`;
+}
+
+function plannerCellKey(row: TeamRoadmapForecastRow, teamMemberId: number, monthSequence: number) {
+  return `${plannerRowKey(row)}:${teamMemberId}:${monthSequence}`;
+}
+
+function memberName(memberId: number, members: TeamMember[]) {
+  return members.find((member) => member.id === memberId)?.name ?? `Team Member ${memberId}`;
+}
+
+function formatPlannerInput(value: number) {
+  return value > 0 ? String(value) : "";
+}
+
+function plannerNumber(value: string | undefined) {
+  if (value == null || value.trim() === "") return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function memberRowTotal(row: TeamRoadmapForecastRow, memberId: number, months: TeamRoadmapForecastPlan["months"], draftHours: Record<string, string>) {
+  return months.reduce((total, month) => total + plannerNumber(draftHours[plannerCellKey(row, memberId, month.sequence)]), 0);
+}
+
+function roadmapPlannerEntries(
+  plan: TeamRoadmapForecastPlan,
+  rowMembers: Record<string, number[]>,
+  draftHours: Record<string, string>,
+  existingCellKeys: Set<string>,
+  fiscalYear: number,
+): RoadmapForecastAllocationUpsertPayload[] {
+  const entries: RoadmapForecastAllocationUpsertPayload[] = [];
+  plan.rows.forEach((row) => {
+    if (row.product_id == null || row.bucket_id == null) return;
+    const productId = row.product_id;
+    const bucketId = row.bucket_id;
+    const memberIds = rowMembers[plannerRowKey(row)] ?? [];
+    memberIds.forEach((teamMemberId) => {
+      plan.months.forEach((month) => {
+        const key = plannerCellKey(row, teamMemberId, month.sequence);
+        const hours = plannerNumber(draftHours[key]);
+        if (!existingCellKeys.has(key) && hours <= 0) return;
+        entries.push({
+          roadmap_item_id: row.roadmap_item_id,
+          product_id: productId,
+          team_member_id: teamMemberId,
+          bucket_id: bucketId,
+          fiscal_year: fiscalYear,
+          month_sequence: month.sequence,
+          hours,
+        });
+      });
+    });
+  });
+  return entries;
 }
 
 function TeamSummaryCards({ analytics }: { analytics: TeamAnalytics }) {

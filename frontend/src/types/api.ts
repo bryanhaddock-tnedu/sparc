@@ -182,6 +182,7 @@ export interface RoadmapItem {
   issue_type: string | null;
   program_area: string | null;
   source_category: string | null;
+  source_team: string | null;
   source_url: string | null;
   linked_issue_count: number;
   linked_issues: RoadmapItemLinkedIssue[];
@@ -249,6 +250,58 @@ export interface RoadmapActualRow {
   ticket_count: number;
   ticket_keys: string[];
   mapping_status: string;
+}
+
+export interface RoadmapForecastAllocation {
+  id: number;
+  roadmap_item_id: number;
+  product_id: number;
+  team_member_id: number;
+  team_member: string;
+  team_member_slug: string;
+  bucket_id: number;
+  fiscal_month_id: number;
+  month_sequence: number;
+  hours: number;
+}
+
+export interface TeamRoadmapForecastRow {
+  roadmap_item_id: number;
+  roadmap_item_key: string;
+  roadmap_item_title: string;
+  roadmap_item_status: string | null;
+  source_team: string | null;
+  source_team_matches: boolean;
+  program_area: string | null;
+  source_url: string | null;
+  product_id: number | null;
+  product: string | null;
+  product_slug: string | null;
+  bucket_id: number | null;
+  bucket: string | null;
+  forecast_hours: number;
+  actual_hours: number;
+  worklog_count: number;
+  ticket_count: number;
+  allocations: RoadmapForecastAllocation[];
+}
+
+export interface TeamRoadmapForecastPlan {
+  team: string;
+  fiscal_year: number;
+  months: FiscalMonth[];
+  team_members: TeamMember[];
+  rows: TeamRoadmapForecastRow[];
+}
+
+export interface RoadmapForecastAllocationUpsertPayload {
+  roadmap_item_id: number;
+  product_id: number;
+  team_member_id: number;
+  bucket_id: number;
+  fiscal_year: number;
+  month_sequence: number;
+  hours: number;
 }
 
 export interface RoadmapSyncResult {

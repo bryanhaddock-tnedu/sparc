@@ -37,6 +37,7 @@ class Product(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     forecasts: Mapped[list["ForecastEntry"]] = relationship(back_populates="product", cascade="all, delete-orphan")
+    roadmap_forecast_allocations: Mapped[list["RoadmapForecastAllocation"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     actuals: Mapped[list["ActualEntry"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     estimates: Mapped[list["EstimatedEntry"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     forecast_recommendation_decisions: Mapped[list["ForecastRecommendationDecision"]] = relationship(
@@ -78,6 +79,7 @@ class TeamMember(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(40), default="active", nullable=False)
 
     forecasts: Mapped[list["ForecastEntry"]] = relationship(back_populates="team_member", cascade="all, delete-orphan")
+    roadmap_forecast_allocations: Mapped[list["RoadmapForecastAllocation"]] = relationship(back_populates="team_member", cascade="all, delete-orphan")
     actuals: Mapped[list["ActualEntry"]] = relationship(back_populates="team_member", cascade="all, delete-orphan")
     estimates: Mapped[list["EstimatedEntry"]] = relationship(back_populates="team_member", cascade="all, delete-orphan")
     forecast_recommendation_decisions: Mapped[list["ForecastRecommendationDecision"]] = relationship(
@@ -96,6 +98,7 @@ class Bucket(Base):
     name: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
 
     forecasts: Mapped[list["ForecastEntry"]] = relationship(back_populates="bucket")
+    roadmap_forecast_allocations: Mapped[list["RoadmapForecastAllocation"]] = relationship(back_populates="bucket")
     actuals: Mapped[list["ActualEntry"]] = relationship(back_populates="bucket")
     estimates: Mapped[list["EstimatedEntry"]] = relationship(back_populates="bucket")
     forecast_recommendation_decisions: Mapped[list["ForecastRecommendationDecision"]] = relationship(back_populates="bucket")
@@ -178,6 +181,7 @@ class RoadmapItem(TimestampMixin, Base):
     issue_type: Mapped[str | None] = mapped_column(String(120))
     program_area: Mapped[str | None] = mapped_column(String(160))
     source_category: Mapped[str | None] = mapped_column(String(160))
+    source_team: Mapped[str | None] = mapped_column(String(160))
     source_url: Mapped[str | None] = mapped_column(Text)
     source_payload_hash: Mapped[str | None] = mapped_column(String(128))
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -185,6 +189,7 @@ class RoadmapItem(TimestampMixin, Base):
     product: Mapped[Product | None] = relationship(back_populates="roadmap_items")
     bucket: Mapped[Bucket | None] = relationship(back_populates="roadmap_items")
     issue_links: Mapped[list["RoadmapItemIssueLink"]] = relationship(back_populates="roadmap_item", cascade="all, delete-orphan")
+    forecast_allocations: Mapped[list["RoadmapForecastAllocation"]] = relationship(back_populates="roadmap_item", cascade="all, delete-orphan")
 
 
 class RoadmapItemIssueLink(TimestampMixin, Base):
@@ -226,6 +231,7 @@ class FiscalMonth(Base):
     ends_on: Mapped[date] = mapped_column(Date, nullable=False)
 
     forecasts: Mapped[list["ForecastEntry"]] = relationship(back_populates="fiscal_month")
+    roadmap_forecast_allocations: Mapped[list["RoadmapForecastAllocation"]] = relationship(back_populates="fiscal_month")
     actuals: Mapped[list["ActualEntry"]] = relationship(back_populates="fiscal_month")
     estimates: Mapped[list["EstimatedEntry"]] = relationship(back_populates="fiscal_month")
     estimated_issue_allocations: Mapped[list["EstimatedIssueAllocation"]] = relationship(back_populates="fiscal_month")
@@ -254,6 +260,34 @@ class ForecastEntry(TimestampMixin, Base):
     team_member: Mapped[TeamMember] = relationship(back_populates="forecasts")
     bucket: Mapped[Bucket] = relationship(back_populates="forecasts")
     fiscal_month: Mapped[FiscalMonth] = relationship(back_populates="forecasts")
+
+
+class RoadmapForecastAllocation(TimestampMixin, Base):
+    __tablename__ = "roadmap_forecast_allocations"
+    __table_args__ = (
+        UniqueConstraint(
+            "roadmap_item_id",
+            "product_id",
+            "team_member_id",
+            "bucket_id",
+            "fiscal_month_id",
+            name="uq_roadmap_forecast_cell",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    roadmap_item_id: Mapped[int] = mapped_column(ForeignKey("roadmap_items.id"), nullable=False)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id"), nullable=False)
+    bucket_id: Mapped[int] = mapped_column(ForeignKey("buckets.id"), nullable=False)
+    fiscal_month_id: Mapped[int] = mapped_column(ForeignKey("fiscal_months.id"), nullable=False)
+    hours: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
+
+    roadmap_item: Mapped[RoadmapItem] = relationship(back_populates="forecast_allocations")
+    product: Mapped[Product] = relationship(back_populates="roadmap_forecast_allocations")
+    team_member: Mapped[TeamMember] = relationship(back_populates="roadmap_forecast_allocations")
+    bucket: Mapped[Bucket] = relationship(back_populates="roadmap_forecast_allocations")
+    fiscal_month: Mapped[FiscalMonth] = relationship(back_populates="roadmap_forecast_allocations")
 
 
 class ForecastRecommendationDecision(TimestampMixin, Base):
