@@ -307,6 +307,7 @@ function RoadmapForecastPlanner({
   const changeVersionRef = useRef(0);
   const savedVersionRef = useRef(0);
   const inFlightVersionRef = useRef<number | null>(null);
+  const queuedSaveRef = useRef(false);
   const draftHoursRef = useRef<Record<string, string>>({});
   const rowMembersRef = useRef<Record<string, number[]>>({});
   const productGroupsRef = useRef<PlannerProductGroup[]>([]);
@@ -400,20 +401,32 @@ function RoadmapForecastPlanner({
   }
 
   async function savePlannerSnapshot(version: number) {
-    if (inFlightVersionRef.current === version) return;
+    if (inFlightVersionRef.current !== null) {
+      queuedSaveRef.current = true;
+      setAutosaveState("pending");
+      return;
+    }
     const entries = productPlannerEntries(productGroupsRef.current, rowMembersRef.current, draftHoursRef.current, fiscalYear, plan.months);
     if (!entries.length) {
       onError(null);
-      savedVersionRef.current = version;
-      setAutosaveState("saved");
+      if (version === changeVersionRef.current) {
+        savedVersionRef.current = version;
+        setAutosaveState("saved");
+      } else {
+        queuedSaveRef.current = true;
+        setAutosaveState("pending");
+        requestAnimationFrame(() => void savePlannerSnapshot(changeVersionRef.current));
+      }
       return;
     }
 
     inFlightVersionRef.current = version;
+    queuedSaveRef.current = false;
     setSaving(true);
     setAutosaveState("saving");
     onError(null);
     onNotice(null);
+    let shouldSaveLatestAfterFlight = false;
     try {
       const updated = await api.upsertTeamRoadmapForecastPlan(teamRef, fiscalYear, entries);
       if (version === changeVersionRef.current) {
@@ -421,18 +434,27 @@ function RoadmapForecastPlanner({
         onPlanChange(updated);
         setLastSavedAt(new Date());
         setAutosaveState("saved");
+      } else {
+        shouldSaveLatestAfterFlight = true;
+        setAutosaveState("pending");
       }
     } catch (err) {
       if (version === changeVersionRef.current) {
         setAutosaveState("error");
         onError(err instanceof Error ? err.message : "Unable to autosave Product Forecast");
+      } else {
+        shouldSaveLatestAfterFlight = true;
+        setAutosaveState("pending");
       }
     } finally {
       if (inFlightVersionRef.current === version) {
         inFlightVersionRef.current = null;
       }
-      if (version === changeVersionRef.current) {
-        setSaving(false);
+      setSaving(false);
+      if (queuedSaveRef.current || shouldSaveLatestAfterFlight) {
+        queuedSaveRef.current = false;
+        setAutosaveState("pending");
+        requestAnimationFrame(() => void savePlannerSnapshot(changeVersionRef.current));
       }
     }
   }
