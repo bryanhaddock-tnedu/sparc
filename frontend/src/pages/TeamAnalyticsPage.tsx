@@ -307,8 +307,10 @@ function RoadmapForecastPlanner({
   const changeVersionRef = useRef(0);
   const savedVersionRef = useRef(0);
   const inFlightVersionRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
   const queuedSaveRef = useRef(false);
   const draftHoursRef = useRef<Record<string, string>>({});
+  const flushPendingAutosaveRef = useRef<() => void>(() => {});
   const rowMembersRef = useRef<Record<string, number[]>>({});
   const productGroupsRef = useRef<PlannerProductGroup[]>([]);
   const productGroups = useMemo(() => groupProductPlannerRows(plan.rows), [plan.rows]);
@@ -350,14 +352,25 @@ function RoadmapForecastPlanner({
     setSelectedMembers({});
   }, [plan.team_members, productGroups]);
 
-  useEffect(
-    () => () => {
-      if (autosaveTimerRef.current) {
-        clearTimeout(autosaveTimerRef.current);
+  useEffect(() => {
+    mountedRef.current = true;
+    const flushOnPageExit = () => flushPendingAutosaveRef.current();
+    const flushOnVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushPendingAutosaveRef.current();
       }
-    },
-    [],
-  );
+    };
+
+    window.addEventListener("pagehide", flushOnPageExit);
+    document.addEventListener("visibilitychange", flushOnVisibilityChange);
+
+    return () => {
+      mountedRef.current = false;
+      flushPendingAutosaveRef.current();
+      window.removeEventListener("pagehide", flushOnPageExit);
+      document.removeEventListener("visibilitychange", flushOnVisibilityChange);
+    };
+  }, []);
 
   function addMember(group: PlannerProductGroup) {
     const rowKey = plannerGroupKey(group);
@@ -392,6 +405,10 @@ function RoadmapForecastPlanner({
   }
 
   function flushAutosave() {
+    flushPendingAutosave();
+  }
+
+  function flushPendingAutosave() {
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
@@ -400,21 +417,23 @@ function RoadmapForecastPlanner({
     void savePlannerSnapshot(changeVersionRef.current);
   }
 
+  flushPendingAutosaveRef.current = flushPendingAutosave;
+
   async function savePlannerSnapshot(version: number) {
     if (inFlightVersionRef.current !== null) {
       queuedSaveRef.current = true;
-      setAutosaveState("pending");
+      if (mountedRef.current) setAutosaveState("pending");
       return;
     }
     const entries = productPlannerEntries(productGroupsRef.current, rowMembersRef.current, draftHoursRef.current, fiscalYear, plan.months);
     if (!entries.length) {
-      onError(null);
+      if (mountedRef.current) onError(null);
       if (version === changeVersionRef.current) {
         savedVersionRef.current = version;
-        setAutosaveState("saved");
+        if (mountedRef.current) setAutosaveState("saved");
       } else {
         queuedSaveRef.current = true;
-        setAutosaveState("pending");
+        if (mountedRef.current) setAutosaveState("pending");
         requestAnimationFrame(() => void savePlannerSnapshot(changeVersionRef.current));
       }
       return;
@@ -422,38 +441,44 @@ function RoadmapForecastPlanner({
 
     inFlightVersionRef.current = version;
     queuedSaveRef.current = false;
-    setSaving(true);
-    setAutosaveState("saving");
-    onError(null);
-    onNotice(null);
+    if (mountedRef.current) {
+      setSaving(true);
+      setAutosaveState("saving");
+      onError(null);
+      onNotice(null);
+    }
     let shouldSaveLatestAfterFlight = false;
     try {
       const updated = await api.upsertTeamRoadmapForecastPlan(teamRef, fiscalYear, entries);
       if (version === changeVersionRef.current) {
         savedVersionRef.current = version;
-        onPlanChange(updated);
-        setLastSavedAt(new Date());
-        setAutosaveState("saved");
+        if (mountedRef.current) {
+          onPlanChange(updated);
+          setLastSavedAt(new Date());
+          setAutosaveState("saved");
+        }
       } else {
         shouldSaveLatestAfterFlight = true;
-        setAutosaveState("pending");
+        if (mountedRef.current) setAutosaveState("pending");
       }
     } catch (err) {
       if (version === changeVersionRef.current) {
-        setAutosaveState("error");
-        onError(err instanceof Error ? err.message : "Unable to autosave Product Forecast");
+        if (mountedRef.current) {
+          setAutosaveState("error");
+          onError(err instanceof Error ? err.message : "Unable to autosave Product Forecast");
+        }
       } else {
         shouldSaveLatestAfterFlight = true;
-        setAutosaveState("pending");
+        if (mountedRef.current) setAutosaveState("pending");
       }
     } finally {
       if (inFlightVersionRef.current === version) {
         inFlightVersionRef.current = null;
       }
-      setSaving(false);
+      if (mountedRef.current) setSaving(false);
       if (queuedSaveRef.current || shouldSaveLatestAfterFlight) {
         queuedSaveRef.current = false;
-        setAutosaveState("pending");
+        if (mountedRef.current) setAutosaveState("pending");
         requestAnimationFrame(() => void savePlannerSnapshot(changeVersionRef.current));
       }
     }
