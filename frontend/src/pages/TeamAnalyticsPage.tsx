@@ -32,7 +32,7 @@ import {
 import { formatHours } from "../lib/utils";
 import type {
   DeliveryFlowIssue,
-  RoadmapForecastAllocationUpsertPayload,
+  ForecastUpsertPayload,
   ReportedValueRow,
   TeamMember,
   TeamMemberStoryPointMetric,
@@ -40,7 +40,7 @@ import type {
   TeamRoadmapForecastRow,
 } from "../types/api";
 
-const PLANNER_AUTOSAVE_DELAY_MS = 700;
+const PLANNER_AUTOSAVE_DELAY_MS = 250;
 
 export function TeamAnalyticsPage() {
   const params = useParams();
@@ -134,11 +134,9 @@ export function TeamAnalyticsPage() {
               fiscalYear={fiscalYear}
               onError={setActionError}
               onNotice={setNotice}
-              onPlanChange={setRoadmapPlan}
               plan={roadmapPlan}
               saving={plannerSaving}
               setSaving={setPlannerSaving}
-              teamRef={teamRef}
             />
           ) : null}
           <TeamMonthlyForecastActualCard analytics={analytics} />
@@ -283,20 +281,16 @@ function RoadmapForecastPlanner({
   fiscalYear,
   onError,
   onNotice,
-  onPlanChange,
   plan,
   saving,
   setSaving,
-  teamRef,
 }: {
   fiscalYear: number;
   onError: (message: string | null) => void;
   onNotice: (message: string | null) => void;
-  onPlanChange: (plan: TeamRoadmapForecastPlan) => void;
   plan: TeamRoadmapForecastPlan;
   saving: boolean;
   setSaving: (saving: boolean) => void;
-  teamRef: string;
 }) {
   const [draftHours, setDraftHours] = useState<Record<string, string>>({});
   const [rowMembers, setRowMembers] = useState<Record<string, number[]>>({});
@@ -309,6 +303,7 @@ function RoadmapForecastPlanner({
   const inFlightVersionRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const queuedSaveRef = useRef(false);
+  const dirtyCellKeysRef = useRef<Set<string>>(new Set());
   const draftHoursRef = useRef<Record<string, string>>({});
   const flushPendingAutosaveRef = useRef<() => void>(() => {});
   const rowMembersRef = useRef<Record<string, number[]>>({});
@@ -345,6 +340,7 @@ function RoadmapForecastPlanner({
       nextMembers[rowKey] = [...memberIds].sort((left, right) => memberName(left, plan.team_members).localeCompare(memberName(right, plan.team_members)));
     });
     draftHoursRef.current = nextDraft;
+    dirtyCellKeysRef.current = new Set();
     rowMembersRef.current = nextMembers;
     savedVersionRef.current = changeVersionRef.current;
     setDraftHours(nextDraft);
@@ -386,8 +382,10 @@ function RoadmapForecastPlanner({
   }
 
   function updateCell(group: PlannerProductGroup, memberId: number, monthSequence: number, value: string) {
-    const nextDraft = { ...draftHoursRef.current, [plannerGroupCellKey(group, memberId, monthSequence)]: value };
+    const key = plannerGroupCellKey(group, memberId, monthSequence);
+    const nextDraft = { ...draftHoursRef.current, [key]: value };
     changeVersionRef.current += 1;
+    dirtyCellKeysRef.current.add(key);
     draftHoursRef.current = nextDraft;
     setDraftHours(nextDraft);
     scheduleAutosave();
@@ -425,7 +423,8 @@ function RoadmapForecastPlanner({
       if (mountedRef.current) setAutosaveState("pending");
       return;
     }
-    const entries = productPlannerEntries(productGroupsRef.current, rowMembersRef.current, draftHoursRef.current, fiscalYear, plan.months);
+    const dirtyCellKeys = new Set(dirtyCellKeysRef.current);
+    const entries = productPlannerEntries(productGroupsRef.current, rowMembersRef.current, draftHoursRef.current, dirtyCellKeys, fiscalYear, plan.months);
     if (!entries.length) {
       if (mountedRef.current) onError(null);
       if (version === changeVersionRef.current) {
@@ -441,6 +440,7 @@ function RoadmapForecastPlanner({
 
     inFlightVersionRef.current = version;
     queuedSaveRef.current = false;
+    const savedCellValues = new Map([...dirtyCellKeys].map((key) => [key, draftHoursRef.current[key] ?? ""]));
     if (mountedRef.current) {
       setSaving(true);
       setAutosaveState("saving");
@@ -449,11 +449,11 @@ function RoadmapForecastPlanner({
     }
     let shouldSaveLatestAfterFlight = false;
     try {
-      const updated = await api.upsertTeamRoadmapForecastPlan(teamRef, fiscalYear, entries);
+      await api.upsertForecastBatch(entries);
+      clearSavedDirtyCells(savedCellValues, dirtyCellKeysRef.current, draftHoursRef.current);
       if (version === changeVersionRef.current) {
         savedVersionRef.current = version;
         if (mountedRef.current) {
-          onPlanChange(updated);
           setLastSavedAt(new Date());
           setAutosaveState("saved");
         }
@@ -823,25 +823,22 @@ function productPlannerEntries(
   groups: PlannerProductGroup[],
   rowMembers: Record<string, number[]>,
   draftHours: Record<string, string>,
+  dirtyCellKeys: Set<string>,
   fiscalYear: number,
   months: TeamRoadmapForecastPlan["months"],
-): RoadmapForecastAllocationUpsertPayload[] {
-  const entries: RoadmapForecastAllocationUpsertPayload[] = [];
+): ForecastUpsertPayload[] {
+  const entries: ForecastUpsertPayload[] = [];
   groups.forEach((group) => {
     if (group.product_id == null || group.bucket_id == null) return;
     const productId = group.product_id;
     const bucketId = group.bucket_id;
     const memberIds = rowMembers[plannerGroupKey(group)] ?? [];
     memberIds.forEach((teamMemberId) => {
-      const memberHasForecastInput = months.some((month) => plannerGroupCellKey(group, teamMemberId, month.sequence) in draftHours);
-      if (!memberHasForecastInput) return;
       months.forEach((month) => {
-        const row = sourceRowForGroupMonth(group, month);
-        if (!row) return;
         const key = plannerGroupCellKey(group, teamMemberId, month.sequence);
+        if (!dirtyCellKeys.has(key)) return;
         const hours = plannerNumber(draftHours[key]);
         entries.push({
-          roadmap_item_id: row.roadmap_item_id,
           product_id: productId,
           team_member_id: teamMemberId,
           bucket_id: bucketId,
@@ -855,8 +852,12 @@ function productPlannerEntries(
   return entries;
 }
 
-function sourceRowForGroupMonth(group: PlannerProductGroup, month: TeamRoadmapForecastPlan["months"][number]) {
-  return group.rows.find((row) => rowMonthIsActive(row, month)) ?? group.rows.find(rowHasPlanningSchedule) ?? group.rows[0] ?? null;
+function clearSavedDirtyCells(savedCellValues: Map<string, string>, dirtyCellKeys: Set<string>, draftHours: Record<string, string>) {
+  savedCellValues.forEach((savedValue, key) => {
+    if ((draftHours[key] ?? "") === savedValue) {
+      dirtyCellKeys.delete(key);
+    }
+  });
 }
 
 function TeamSummaryCards({ analytics }: { analytics: TeamAnalytics }) {
