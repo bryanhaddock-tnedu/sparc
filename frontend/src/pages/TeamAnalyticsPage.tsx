@@ -1,5 +1,5 @@
 import { ArrowLeft, Plus, Save } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
@@ -38,6 +38,8 @@ import type {
   TeamRoadmapForecastPlan,
   TeamRoadmapForecastRow,
 } from "../types/api";
+
+const PLANNER_AUTOSAVE_DELAY_MS = 700;
 
 export function TeamAnalyticsPage() {
   const params = useParams();
@@ -298,19 +300,26 @@ function RoadmapForecastPlanner({
   const [draftHours, setDraftHours] = useState<Record<string, string>>({});
   const [rowMembers, setRowMembers] = useState<Record<string, number[]>>({});
   const [selectedMembers, setSelectedMembers] = useState<Record<string, string>>({});
+  const [autosaveState, setAutosaveState] = useState<"idle" | "pending" | "saving" | "saved" | "error">("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const changeVersionRef = useRef(0);
+  const savedVersionRef = useRef(0);
+  const inFlightVersionRef = useRef<number | null>(null);
+  const draftHoursRef = useRef<Record<string, string>>({});
+  const rowMembersRef = useRef<Record<string, number[]>>({});
+  const productGroupsRef = useRef<PlannerProductGroup[]>([]);
   const productGroups = useMemo(() => groupProductPlannerRows(plan.rows), [plan.rows]);
-  const existingCellKeys = useMemo(
-    () =>
-      new Set(
-        productGroups.flatMap((group) =>
-          group.rows.flatMap((row) => row.allocations.map((allocation) => plannerGroupCellKey(group, allocation.team_member_id, allocation.month_sequence))),
-        ),
-      ),
-    [productGroups],
+  const allocationTotal = productGroups.reduce(
+    (total, group) => total + groupForecastTotal(group, rowMembers[plannerGroupKey(group)] ?? [], plan.months, draftHours),
+    0,
   );
-  const allocationTotal = productGroups.reduce((total, group) => total + group.forecast_hours, 0);
   const actualTotal = productGroups.reduce((total, group) => total + group.actual_hours, 0);
   const scheduledRowCount = productGroups.filter(groupHasPlanningSchedule).length;
+
+  useEffect(() => {
+    productGroupsRef.current = productGroups;
+  }, [productGroups]);
 
   useEffect(() => {
     const nextDraft: Record<string, string> = {};
@@ -331,46 +340,99 @@ function RoadmapForecastPlanner({
       });
       nextMembers[rowKey] = [...memberIds].sort((left, right) => memberName(left, plan.team_members).localeCompare(memberName(right, plan.team_members)));
     });
+    draftHoursRef.current = nextDraft;
+    rowMembersRef.current = nextMembers;
+    savedVersionRef.current = changeVersionRef.current;
     setDraftHours(nextDraft);
     setRowMembers(nextMembers);
     setSelectedMembers({});
   }, [plan.team_members, productGroups]);
 
+  useEffect(
+    () => () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+      }
+    },
+    [],
+  );
+
   function addMember(group: PlannerProductGroup) {
     const rowKey = plannerGroupKey(group);
     const selectedMemberId = Number(selectedMembers[rowKey]);
     if (!Number.isFinite(selectedMemberId)) return;
-    setRowMembers((current) => {
-      const existing = current[rowKey] ?? [];
-      if (existing.includes(selectedMemberId)) return current;
-      return { ...current, [rowKey]: [...existing, selectedMemberId] };
-    });
+    const existing = rowMembersRef.current[rowKey] ?? [];
+    if (!existing.includes(selectedMemberId)) {
+      const nextMembers = { ...rowMembersRef.current, [rowKey]: [...existing, selectedMemberId] };
+      rowMembersRef.current = nextMembers;
+      setRowMembers(nextMembers);
+    }
     setSelectedMembers((current) => ({ ...current, [rowKey]: "" }));
   }
 
   function updateCell(group: PlannerProductGroup, memberId: number, monthSequence: number, value: string) {
-    setDraftHours((current) => ({ ...current, [plannerGroupCellKey(group, memberId, monthSequence)]: value }));
+    const nextDraft = { ...draftHoursRef.current, [plannerGroupCellKey(group, memberId, monthSequence)]: value };
+    changeVersionRef.current += 1;
+    draftHoursRef.current = nextDraft;
+    setDraftHours(nextDraft);
+    scheduleAutosave();
   }
 
-  async function savePlanner() {
-    const entries = productPlannerEntries(productGroups, rowMembers, draftHours, existingCellKeys, fiscalYear, plan.months);
+  function scheduleAutosave() {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+    }
+    setAutosaveState("pending");
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      void savePlannerSnapshot(changeVersionRef.current);
+    }, PLANNER_AUTOSAVE_DELAY_MS);
+  }
+
+  function flushAutosave() {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    if (changeVersionRef.current === savedVersionRef.current) return;
+    void savePlannerSnapshot(changeVersionRef.current);
+  }
+
+  async function savePlannerSnapshot(version: number) {
+    if (inFlightVersionRef.current === version) return;
+    const entries = productPlannerEntries(productGroupsRef.current, rowMembersRef.current, draftHoursRef.current, fiscalYear, plan.months);
     if (!entries.length) {
       onError(null);
-      onNotice("No Product Forecast changes to save.");
+      savedVersionRef.current = version;
+      setAutosaveState("saved");
       return;
     }
 
+    inFlightVersionRef.current = version;
     setSaving(true);
+    setAutosaveState("saving");
     onError(null);
     onNotice(null);
     try {
       const updated = await api.upsertTeamRoadmapForecastPlan(teamRef, fiscalYear, entries);
-      onPlanChange(updated);
-      onNotice(`Product Forecast saved: ${entries.length} monthly ${entries.length === 1 ? "cell" : "cells"} updated.`);
+      if (version === changeVersionRef.current) {
+        savedVersionRef.current = version;
+        onPlanChange(updated);
+        setLastSavedAt(new Date());
+        setAutosaveState("saved");
+      }
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Unable to save Product Forecast plan");
+      if (version === changeVersionRef.current) {
+        setAutosaveState("error");
+        onError(err instanceof Error ? err.message : "Unable to autosave Product Forecast");
+      }
     } finally {
-      setSaving(false);
+      if (inFlightVersionRef.current === version) {
+        inFlightVersionRef.current = null;
+      }
+      if (version === changeVersionRef.current) {
+        setSaving(false);
+      }
     }
   }
 
@@ -386,10 +448,7 @@ function RoadmapForecastPlanner({
         <div className="flex flex-wrap gap-2 lg:justify-end">
           <PlannerMetric label="Product Fcst" value={formatHours(allocationTotal)} />
           <PlannerMetric label="Actual" value={formatHours(actualTotal)} />
-          <Button disabled={saving || !plan.rows.length} onClick={savePlanner}>
-            <Save className="h-4 w-4" />
-            {saving ? "Saving" : "Save Planner"}
-          </Button>
+          <PlannerAutosaveStatus lastSavedAt={lastSavedAt} saving={saving} state={autosaveState} />
         </div>
       </div>
 
@@ -425,7 +484,7 @@ function RoadmapForecastPlanner({
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-end">
                     <div className="flex gap-2">
-                      <PlannerMetric label="Forecast" value={formatHours(group.forecast_hours)} />
+                      <PlannerMetric label="Forecast" value={formatHours(groupForecastTotal(group, memberIds, plan.months, draftHours))} />
                       <PlannerMetric label="Actual" value={formatHours(group.actual_hours)} />
                       <PlannerMetric label="Tickets" value={String(group.ticket_count)} />
                     </div>
@@ -488,12 +547,13 @@ function RoadmapForecastPlanner({
                                   <Input
                                     aria-label={`${group.product ?? "Product Forecast"} ${memberName(memberId, plan.team_members)} ${month.label} forecast hours`}
                                     className={`numeric-cell h-8 w-full min-w-0 px-1 text-right text-xs sm:text-sm ${isPlannedMonth ? "roadmap-schedule-input" : ""}`}
-                                    disabled={!canForecast || saving}
+                                    disabled={!canForecast}
                                     inputMode="decimal"
                                     pattern="[0-9]*[.]?[0-9]*"
                                     type="text"
                                     value={draftHours[key] ?? ""}
                                     onChange={(event) => updateCell(group, memberId, month.sequence, event.target.value)}
+                                    onBlur={flushAutosave}
                                     onKeyDown={(event) => {
                                       if (event.key === "Enter") {
                                         event.currentTarget.blur();
@@ -536,6 +596,42 @@ function PlannerMetric({ label, value }: { label: string; value: string }) {
     <div className="min-w-28 rounded-md bg-secondary/60 px-3 py-2 text-right">
       <div className="text-[10px] font-semibold uppercase text-muted-foreground">{label}</div>
       <div className="numeric-cell text-sm font-semibold text-primary">{value}</div>
+    </div>
+  );
+}
+
+function PlannerAutosaveStatus({
+  lastSavedAt,
+  saving,
+  state,
+}: {
+  lastSavedAt: Date | null;
+  saving: boolean;
+  state: "idle" | "pending" | "saving" | "saved" | "error";
+}) {
+  const label =
+    state === "error"
+      ? "Save failed"
+      : saving || state === "saving"
+        ? "Saving"
+        : state === "pending"
+          ? "Queued"
+          : state === "saved"
+            ? lastSavedAt
+              ? `Saved ${lastSavedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+              : "Saved"
+            : "Autosave";
+  const tone =
+    state === "error"
+      ? "border-destructive/40 bg-destructive/10 text-destructive"
+      : state === "saved"
+        ? "border-[color:var(--spark-cyan)] bg-accent/10 text-primary"
+        : "border-border bg-secondary/60 text-muted-foreground";
+
+  return (
+    <div className={`flex min-w-32 items-center justify-end gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${tone}`}>
+      <Save className="h-4 w-4" />
+      <span>{label}</span>
     </div>
   );
 }
@@ -658,11 +754,19 @@ function memberGroupTotal(group: PlannerProductGroup, memberId: number, months: 
   return months.reduce((total, month) => total + plannerNumber(draftHours[plannerGroupCellKey(group, memberId, month.sequence)]), 0);
 }
 
+function groupForecastTotal(
+  group: PlannerProductGroup,
+  memberIds: number[],
+  months: TeamRoadmapForecastPlan["months"],
+  draftHours: Record<string, string>,
+) {
+  return memberIds.reduce((total, memberId) => total + memberGroupTotal(group, memberId, months, draftHours), 0);
+}
+
 function productPlannerEntries(
   groups: PlannerProductGroup[],
   rowMembers: Record<string, number[]>,
   draftHours: Record<string, string>,
-  existingCellKeys: Set<string>,
   fiscalYear: number,
   months: TeamRoadmapForecastPlan["months"],
 ): RoadmapForecastAllocationUpsertPayload[] {
@@ -673,12 +777,13 @@ function productPlannerEntries(
     const bucketId = group.bucket_id;
     const memberIds = rowMembers[plannerGroupKey(group)] ?? [];
     memberIds.forEach((teamMemberId) => {
+      const memberHasForecastInput = months.some((month) => plannerGroupCellKey(group, teamMemberId, month.sequence) in draftHours);
+      if (!memberHasForecastInput) return;
       months.forEach((month) => {
         const row = sourceRowForGroupMonth(group, month);
         if (!row) return;
         const key = plannerGroupCellKey(group, teamMemberId, month.sequence);
         const hours = plannerNumber(draftHours[key]);
-        if (!existingCellKeys.has(key) && hours <= 0) return;
         entries.push({
           roadmap_item_id: row.roadmap_item_id,
           product_id: productId,
