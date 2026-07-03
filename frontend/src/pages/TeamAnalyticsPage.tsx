@@ -7,6 +7,7 @@ import { MetricCard } from "../components/MetricCard";
 import { PageNav } from "../components/PageNav";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { TeamMemberRankingsTable } from "../components/TeamMemberRankingsTable";
+import { TeamMemberNameLink } from "../components/TeamMemberNameLink";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -538,7 +539,11 @@ function RoadmapForecastPlanner({
                       {memberIds.length ? (
                         memberIds.map((memberId) => (
                           <TableRow key={`${groupKey}:${memberId}`}>
-                            <TableCell className="truncate px-2 font-medium">{memberName(memberId, plan.team_members)}</TableCell>
+                            <TableCell className="truncate px-2 font-medium">
+                              <TeamMemberNameLink className="text-primary hover:underline" member={memberForId(memberId, plan.team_members) ?? { id: memberId }}>
+                                {memberName(memberId, plan.team_members)}
+                              </TeamMemberNameLink>
+                            </TableCell>
                             {plan.months.map((month) => {
                               const key = plannerGroupCellKey(group, memberId, month.sequence);
                               const isPlannedMonth = groupMonthIsActive(group, month);
@@ -737,7 +742,11 @@ function parseDateOnly(value: string | null | undefined) {
 }
 
 function memberName(memberId: number, members: TeamMember[]) {
-  return members.find((member) => member.id === memberId)?.name ?? `Team Member ${memberId}`;
+  return memberForId(memberId, members)?.name ?? `Team Member ${memberId}`;
+}
+
+function memberForId(memberId: number, members: TeamMember[]) {
+  return members.find((member) => member.id === memberId);
 }
 
 function formatPlannerInput(value: number) {

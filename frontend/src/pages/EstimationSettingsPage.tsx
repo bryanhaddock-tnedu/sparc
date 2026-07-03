@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { PageNav } from "../components/PageNav";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
+import { TeamMemberNameLink } from "../components/TeamMemberNameLink";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -395,7 +396,11 @@ function AllocationAudit({ rows }: { rows: EstimatedIssueAllocation[] }) {
                       <div className="max-w-72 truncate text-xs text-muted-foreground">{row.issue_summary}</div>
                     </TableCell>
                     <TableCell>{row.jira_project_key}</TableCell>
-                    <TableCell>{row.team_member}</TableCell>
+                    <TableCell>
+                      <TeamMemberNameLink className="font-medium text-primary hover:underline" member={row}>
+                        {row.team_member}
+                      </TeamMemberNameLink>
+                    </TableCell>
                     <TableCell>{row.product ?? "-"}</TableCell>
                     <TableCell>{row.bucket ?? "-"}</TableCell>
                     <TableCell>{row.month_label ?? "-"}</TableCell>

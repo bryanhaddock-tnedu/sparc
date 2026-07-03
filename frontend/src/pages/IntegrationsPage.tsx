@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { PageNav } from "../components/PageNav";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
+import { TeamMemberNameLink } from "../components/TeamMemberNameLink";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -596,7 +597,11 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
                     </div>
                   </TableCell>
                   <TableCell>{gap.row.product}</TableCell>
-                  <TableCell>{gap.row.team_member}</TableCell>
+                  <TableCell>
+                    <TeamMemberNameLink className="font-medium text-primary hover:underline" member={gap.row}>
+                      {gap.row.team_member}
+                    </TeamMemberNameLink>
+                  </TableCell>
                   <TableCell>{gap.row.bucket}</TableCell>
                   <TableCell>
                     <Badge className={gap.row.mapping_status === "ambiguous" ? "border-warning/50 text-warning" : "border-muted text-muted-foreground"}>
@@ -1236,7 +1241,15 @@ function ForecastRecommendationDecisionHistory({
                   <TableCell>
                     {decision.action === "applied" ? (
                       <>
-                        <div>{decision.target_team_member ?? "Unknown Team Member"}</div>
+                        <div>
+                          {decision.target_team_member_id ? (
+                            <TeamMemberNameLink className="font-medium text-primary hover:underline" member={{ team_member_id: decision.target_team_member_id }}>
+                              {decision.target_team_member ?? "Unknown Team Member"}
+                            </TeamMemberNameLink>
+                          ) : (
+                            (decision.target_team_member ?? "Unknown Team Member")
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           {decision.target_month_sequence ? fiscalMonthLabel(fiscalYear, decision.target_month_sequence) : "No month"}
                         </div>

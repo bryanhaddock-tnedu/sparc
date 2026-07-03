@@ -5,7 +5,7 @@ type ProductRouteTarget = {
   product_slug?: string | null;
 };
 
-type TeamMemberRouteTarget = {
+export type TeamMemberRouteTarget = {
   id?: number;
   slug?: string | null;
   memberId?: number;
