@@ -55,7 +55,7 @@ export function TeamMemberRankingsTable({
             <span className="block text-xs font-semibold uppercase text-muted-foreground">Employment Type</span>
             <select
               aria-label={`${title} employment type filter`}
-              className="h-9 min-w-40 rounded-md border border-input bg-background px-3 text-sm"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-36"
               value={employmentTypeFilter}
               onChange={(event) => setEmploymentTypeFilter(event.target.value as EmploymentTypeFilter)}
             >
@@ -69,7 +69,7 @@ export function TeamMemberRankingsTable({
             <span className="block text-xs font-semibold uppercase text-muted-foreground">Rank By</span>
             <select
               aria-label={`${title} ranking dimension`}
-              className="h-9 min-w-60 rounded-md border border-input bg-background px-3 text-sm"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-60"
               value={dimension}
               onChange={(event) => onDimensionChange(event.target.value as TeamRankingDimension)}
             >
@@ -82,54 +82,78 @@ export function TeamMemberRankingsTable({
           </label>
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <Table className="min-w-[1600px]">
+      <div className="overflow-hidden">
+        <Table className="w-full table-fixed">
+          <colgroup>
+            <col className="w-[4%]" />
+            <col className={showTeam ? "w-[15%]" : "w-[23%]"} />
+            <col className={showTeam ? "w-[10%]" : "w-[12%]"} />
+            {showTeam ? <col className="w-[10%]" /> : null}
+            <col className="w-[7%]" />
+            <col className="w-[11%]" />
+            <col className={showTeam ? "w-[12%]" : "w-[13%]"} />
+            <col className={showTeam ? "w-[8%]" : "w-[7%]"} />
+            <col className={showTeam ? "w-[10%]" : "w-[11%]"} />
+            <col className={showTeam ? "w-[8%]" : "w-[6%]"} />
+            <col className={showTeam ? "w-[5%]" : "w-[6%]"} />
+          </colgroup>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-12">Rank</TableHead>
+              <TableHead className="px-2">Rank</TableHead>
               <TableHead>Team Member</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Employment Type</TableHead>
+              <TableHead>Role / Type</TableHead>
               {showTeam ? <TableHead>Team</TableHead> : null}
-              <TableHead className="text-right">Bill Rate</TableHead>
-              <TableHead className="text-right">Annual Hrs</TableHead>
+              <TableHead className="text-right">Rate</TableHead>
               <TableHead className="text-right">Annual Cap</TableHead>
-              <TableHead className="text-right">FY Forecast Hrs</TableHead>
-              <TableHead className="text-right">Forecast $</TableHead>
-              <TableHead className="text-right">Cap Coverage</TableHead>
-              <TableHead className="text-right">FYTD Actual Hrs</TableHead>
-              <TableHead className="text-right">FYTD Actual $</TableHead>
-              <TableHead className="text-right">Tickets</TableHead>
-              <TableHead className="text-right">SP / Hr</TableHead>
-              <TableHead className="text-right">Rank Metric</TableHead>
+              <TableHead className="text-right">Forecast</TableHead>
+              <TableHead className="text-right">Coverage</TableHead>
+              <TableHead className="text-right">FYTD Actual</TableHead>
+              <TableHead className="text-right">Delivery</TableHead>
+              <TableHead className="text-right" title={selectedDimension}>
+                Metric
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rankedRows.length ? (
               rankedRows.map((row, index) => (
                 <TableRow key={row.memberId}>
-                  <TableCell className="numeric-cell text-muted-foreground">{index + 1}</TableCell>
-                  <TableCell>
-                    <Link className="font-medium text-primary hover:underline" to={teamMemberDetailPath(row)}>
+                  <TableCell className="numeric-cell px-2 text-muted-foreground">{index + 1}</TableCell>
+                  <TableCell className="min-w-0">
+                    <Link className="block truncate font-medium text-primary hover:underline" title={row.name} to={teamMemberDetailPath(row)}>
                       {row.name}
                     </Link>
                     {row.status !== "active" ? <Badge className="ml-2 border-muted text-muted-foreground">{row.status}</Badge> : null}
                   </TableCell>
-                  <TableCell>{row.role}</TableCell>
-                  <TableCell>
-                    <Badge className={employmentBadgeClass(row.employmentType)}>{employmentTypeLabel(row.employmentType)}</Badge>
+                  <TableCell className="min-w-0">
+                    <div className="truncate" title={row.role}>
+                      {row.role}
+                    </div>
+                    <Badge className={`mt-1 max-w-full truncate ${employmentBadgeClass(row.employmentType)}`}>{employmentTypeLabel(row.employmentType)}</Badge>
                   </TableCell>
-                  {showTeam ? <TableCell>{row.team}</TableCell> : null}
-                  <TableCell className="numeric-cell text-right font-medium text-primary">{formatBillRate(row.billRate, row.employmentType, { includeUnit: true })}</TableCell>
-                  <TableCell className="numeric-cell text-right">{formatHours(row.annualCapacityHours)}</TableCell>
-                  <TableCell className="numeric-cell text-right font-medium">{formatCurrency(row.annualCostCap)}</TableCell>
-                  <TableCell className="numeric-cell text-right font-semibold text-primary">{formatHours(row.fyForecastHours)}</TableCell>
-                  <TableCell className="numeric-cell text-right font-medium text-primary">{formatCurrency(row.fyForecastCost)}</TableCell>
+                  {showTeam ? (
+                    <TableCell className="truncate" title={row.team}>
+                      {row.team}
+                    </TableCell>
+                  ) : null}
+                  <TableCell className="numeric-cell text-right font-medium text-primary">{formatBillRate(row.billRate, row.employmentType)}</TableCell>
+                  <TableCell className="numeric-cell text-right">
+                    <div className="font-medium">{formatCurrency(row.annualCostCap)}</div>
+                    <div className="text-xs text-muted-foreground">{formatHours(row.annualCapacityHours)} hrs</div>
+                  </TableCell>
+                  <TableCell className="numeric-cell text-right">
+                    <div className="font-semibold text-primary">{formatHours(row.fyForecastHours)} hrs</div>
+                    <div className="text-xs text-muted-foreground">{formatCurrency(row.fyForecastCost)}</div>
+                  </TableCell>
                   <TableCell className="numeric-cell text-right">{formatPercent(row.forecastCapCoveragePercent)}</TableCell>
-                  <TableCell className="numeric-cell text-right">{formatHours(row.fytdActualHours)}</TableCell>
-                  <TableCell className="numeric-cell text-right">{formatCurrency(row.fytdActualCost)}</TableCell>
-                  <TableCell className="numeric-cell text-right">{row.ticketsTouched}</TableCell>
-                  <TableCell className="numeric-cell text-right">{formatNullableHours(row.storyPointsPerLoggedHour)}</TableCell>
+                  <TableCell className="numeric-cell text-right">
+                    <div>{formatHours(row.fytdActualHours)} hrs</div>
+                    <div className="text-xs text-muted-foreground">{formatCurrency(row.fytdActualCost)}</div>
+                  </TableCell>
+                  <TableCell className="numeric-cell text-right">
+                    <div>{row.ticketsTouched} tickets</div>
+                    <div className="text-xs text-muted-foreground">{formatNullableHours(row.storyPointsPerLoggedHour)} SP/hr</div>
+                  </TableCell>
                   <TableCell className="numeric-cell text-right font-semibold text-primary" title={selectedDimension}>
                     {formatRankingValue(row, dimension)}
                   </TableCell>
@@ -137,7 +161,7 @@ export function TeamMemberRankingsTable({
               ))
             ) : (
               <TableRow>
-                <TableCell className="py-5 text-muted-foreground" colSpan={showTeam ? 16 : 15}>
+                <TableCell className="py-5 text-muted-foreground" colSpan={showTeam ? 11 : 10}>
                   {emptyMessage}
                 </TableCell>
               </TableRow>
