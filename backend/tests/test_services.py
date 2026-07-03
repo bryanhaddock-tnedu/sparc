@@ -503,6 +503,100 @@ def test_team_roadmap_forecast_plan_uses_existing_product_forecast():
         assert result["rows"][0]["allocations"][0]["hours"] == 40
 
 
+def test_team_roadmap_forecast_plan_uses_existing_product_forecast_without_roadmap_item():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Core Infrastructure", slug="core-infrastructure")
+        member = TeamMember(name="Lalitha Battini", slug="lalitha-battini", role="Dev", team="Product Maintenance", bill_rate=Decimal("82"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        assert bucket is not None
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_id=bucket.id,
+            fiscal_year=2027,
+            month_sequence=1,
+            hours=20,
+        )
+
+        result = team_roadmap_forecast_plan(db, "Product Maintenance", 2027)
+
+        assert len(result["rows"]) == 1
+        assert result["rows"][0]["roadmap_item_id"] is None
+        assert result["rows"][0]["product"] == "Core Infrastructure"
+        assert result["rows"][0]["bucket"] == "Maintenance"
+        assert result["rows"][0]["forecast_hours"] == Decimal("20")
+        assert result["rows"][0]["allocations"][0]["roadmap_item_id"] is None
+        assert result["rows"][0]["allocations"][0]["team_member_id"] == member.id
+
+
+def test_team_roadmap_forecast_plan_includes_assigned_product_bucket_without_roadmap_item():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Core Infrastructure", slug="core-infrastructure")
+        member = TeamMember(name="Greg Marcum", slug="greg-marcum", role="Sr. Dev", team="Product Maintenance", bill_rate=Decimal("50"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        assert bucket is not None
+        db.add(ProductTeamMember(product_id=product.id, team_member_id=member.id, default_bucket_id=bucket.id, status="active"))
+        db.flush()
+
+        result = team_roadmap_forecast_plan(db, "Product Maintenance", 2027)
+
+        assert len(result["rows"]) == 1
+        assert result["rows"][0]["roadmap_item_id"] is None
+        assert result["rows"][0]["product"] == "Core Infrastructure"
+        assert result["rows"][0]["bucket"] == "Maintenance"
+        assert result["rows"][0]["forecast_hours"] == Decimal("0")
+        assert result["rows"][0]["allocations"] == []
+
+
+def test_team_roadmap_forecast_plan_saves_product_forecast_without_roadmap_item():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Core Infrastructure", slug="core-infrastructure")
+        member = TeamMember(name="Ryan Daily", slug="ryan-daily", role="Sr. Dev", team="Product Maintenance", bill_rate=Decimal("0"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        assert bucket is not None
+
+        result = upsert_team_roadmap_forecast_allocations(
+            db,
+            "Product Maintenance",
+            2027,
+            [
+                {
+                    "roadmap_item_id": None,
+                    "product_id": product.id,
+                    "team_member_id": member.id,
+                    "bucket_id": bucket.id,
+                    "fiscal_year": 2027,
+                    "month_sequence": 1,
+                    "hours": Decimal("40"),
+                }
+            ],
+        )
+        tables = product_bucket_tables(db, product.id, 2027)
+        maintenance = next(bucket_payload for bucket_payload in tables["buckets"] if bucket_payload["code"] == "MAINTENANCE")
+        row = next(member_row for member_row in maintenance["rows"] if member_row["team_member_id"] == member.id)
+
+        assert result["rows"][0]["roadmap_item_id"] is None
+        assert result["rows"][0]["forecast_hours"] == Decimal("40")
+        assert result["rows"][0]["allocations"][0]["roadmap_item_id"] is None
+        assert row["months"][0]["forecast_hours"] == 40
+
+
 def test_team_roadmap_forecast_plan_retains_product_forecast_when_planning_rows_overlap():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

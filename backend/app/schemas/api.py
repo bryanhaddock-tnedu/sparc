@@ -820,7 +820,7 @@ class RoadmapActualRowResponse(BaseModel):
 
 class RoadmapForecastAllocationResponse(BaseModel):
     id: int
-    roadmap_item_id: int
+    roadmap_item_id: int | None
     product_id: int
     team_member_id: int
     team_member: str
@@ -848,7 +848,7 @@ class RoadmapPlannerDeliverableResponse(BaseModel):
 
 
 class TeamRoadmapForecastRowResponse(BaseModel):
-    roadmap_item_id: int
+    roadmap_item_id: int | None
     roadmap_item_key: str
     roadmap_item_title: str
     roadmap_item_status: str | None
@@ -880,7 +880,7 @@ class TeamRoadmapForecastPlanResponse(BaseModel):
 
 
 class RoadmapForecastAllocationUpsert(BaseModel):
-    roadmap_item_id: int
+    roadmap_item_id: int | None = None
     product_id: int
     team_member_id: int
     bucket_id: int

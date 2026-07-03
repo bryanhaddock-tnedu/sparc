@@ -266,7 +266,7 @@ export interface RoadmapActualRow {
 
 export interface RoadmapForecastAllocation {
   id: number;
-  roadmap_item_id: number;
+  roadmap_item_id: number | null;
   product_id: number;
   team_member_id: number;
   team_member: string;
@@ -278,7 +278,7 @@ export interface RoadmapForecastAllocation {
 }
 
 export interface TeamRoadmapForecastRow {
-  roadmap_item_id: number;
+  roadmap_item_id: number | null;
   roadmap_item_key: string;
   roadmap_item_title: string;
   roadmap_item_status: string | null;
@@ -326,7 +326,7 @@ export interface TeamRoadmapForecastPlan {
 }
 
 export interface RoadmapForecastAllocationUpsertPayload {
-  roadmap_item_id: number;
+  roadmap_item_id: number | null;
   product_id: number;
   team_member_id: number;
   bucket_id: number;
