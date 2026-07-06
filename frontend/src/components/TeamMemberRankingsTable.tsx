@@ -38,7 +38,8 @@ export function TeamMemberRankingsTable({
     () => [...filteredRows].sort((left, right) => compareRankingRows(left, right, dimension)),
     [dimension, filteredRows],
   );
-  const selectedDimension = TEAM_RANKING_DIMENSIONS.find((option) => option.key === dimension)?.label ?? "Metric";
+  const selectedDimension = TEAM_RANKING_DIMENSIONS.find((option) => option.key === dimension)?.label ?? "Rank Value";
+  const rankValueDetail = rankingValueDetail(dimension);
 
   return (
     <section className="overflow-hidden rounded-lg border bg-card">
@@ -109,8 +110,9 @@ export function TeamMemberRankingsTable({
               <TableHead className="text-right">Coverage</TableHead>
               <TableHead className="text-right">FYTD Actual</TableHead>
               <TableHead className="text-right">Delivery</TableHead>
-              <TableHead className="text-right" title={selectedDimension}>
-                Metric
+              <TableHead className="text-right" title={`Ranked by ${selectedDimension}`}>
+                <div>Rank Value</div>
+                <div className="text-[10px] font-medium text-muted-foreground">{rankValueDetail}</div>
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -234,8 +236,42 @@ function rankingNumericValue(row: TeamMemberRankingRow, dimension: TeamRankingDi
 function formatRankingValue(row: TeamMemberRankingRow, dimension: TeamRankingDimension) {
   const value = rankingNumericValue(row, dimension);
   if (value == null) return "N/A";
-  if (dimension === "tickets_touched" || dimension === "products_supported") return String(value);
-  return formatHours(value);
+  if (dimension === "tickets_touched") return `${value.toLocaleString()} tickets`;
+  if (dimension === "products_supported") return `${value.toLocaleString()} products`;
+  if (dimension === "story_points") return `${formatHours(value)} SP`;
+  if (dimension === "hours_per_ticket") return `${formatHours(value)} hrs/ticket`;
+  if (dimension === "hours_per_story_point") return `${formatHours(value)} hrs/SP`;
+  if (dimension === "story_points_per_logged_hour") return `${formatHours(value)} SP/hr`;
+  return `${formatHours(value)} hrs`;
+}
+
+function rankingValueDetail(dimension: TeamRankingDimension) {
+  switch (dimension) {
+    case "fytd_actual":
+      return "FYTD hrs";
+    case "current_actual":
+      return "Current hrs";
+    case "previous_actual":
+      return "Previous hrs";
+    case "avg_monthly_actual":
+      return "Avg/mo";
+    case "fy_forecast":
+      return "Forecast hrs";
+    case "fytd_variance":
+      return "Actual - Fcst";
+    case "products_supported":
+      return "Products";
+    case "tickets_touched":
+      return "Tickets";
+    case "hours_per_ticket":
+      return "Hrs/ticket";
+    case "story_points":
+      return "Story pts";
+    case "hours_per_story_point":
+      return "Hrs/SP";
+    case "story_points_per_logged_hour":
+      return "SP/hr";
+  }
 }
 
 function formatNullableHours(value: number | null) {
