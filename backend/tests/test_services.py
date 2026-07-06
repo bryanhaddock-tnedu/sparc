@@ -320,6 +320,7 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
             source_team="Product Maintenance",
             roadmap_start_date=date(2026, 9, 1),
             roadmap_end_date=date(2026, 11, 30),
+            roadmap_schedule_months=[3, 4, 5],
         )
         db.add(roadmap_item)
         db.flush()
@@ -369,6 +370,7 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
         assert result["rows"][0]["forecast_hours"] == Decimal("12")
         assert result["rows"][0]["roadmap_start_date"] == date(2026, 9, 1)
         assert result["rows"][0]["roadmap_end_date"] == date(2026, 11, 30)
+        assert result["rows"][0]["roadmap_schedule_months"] == [3, 4, 5]
         assert result["rows"][0]["deliverables"][0]["jira_issue_key"] == "TNSD-266"
         assert result["rows"][0]["deliverables"][0]["jira_issue_summary"] == "TNSD continuous maintenance"
 
@@ -971,6 +973,7 @@ def test_roadmap_issue_normalization_uses_fiscal_year_label_and_agency_office():
     assert payload.source_team == "Product Maintenance"
     assert payload.roadmap_start_date == date(2026, 9, 1)
     assert payload.roadmap_end_date == date(2026, 11, 30)
+    assert payload.roadmap_schedule_months == (3, 4, 5)
 
 
 def test_roadmap_date_field_discovery_matches_product_discovery_schedule_names():
@@ -1020,6 +1023,7 @@ def test_roadmap_project_start_month_range_sets_schedule_months():
 
     assert payload.roadmap_start_date == date(2026, 7, 1)
     assert payload.roadmap_end_date == date(2026, 9, 30)
+    assert payload.roadmap_schedule_months == (1, 2, 3)
 
 
 def test_roadmap_schedule_falls_back_to_product_discovery_month_text():
@@ -1049,6 +1053,7 @@ def test_roadmap_schedule_falls_back_to_product_discovery_month_text():
 
     assert payload.roadmap_start_date == date(2026, 7, 1)
     assert payload.roadmap_end_date == date(2026, 9, 30)
+    assert payload.roadmap_schedule_months == (1, 2, 3)
 
 
 def test_roadmap_schedule_reads_product_discovery_rendered_field_names():
@@ -1086,6 +1091,7 @@ def test_roadmap_schedule_reads_product_discovery_rendered_field_names():
 
     assert payload.roadmap_start_date == date(2026, 7, 1)
     assert payload.roadmap_end_date == date(2026, 9, 30)
+    assert payload.roadmap_schedule_months == (1, 2, 3, 4, 5, 6)
 
 
 def test_roadmap_schedule_reads_product_discovery_iso_month_ranges():
@@ -1119,6 +1125,71 @@ def test_roadmap_schedule_reads_product_discovery_iso_month_ranges():
 
     assert payload.roadmap_start_date == date(2026, 7, 1)
     assert payload.roadmap_end_date == date(2026, 9, 30)
+    assert payload.roadmap_schedule_months == (1, 2, 3, 4, 5, 6)
+
+
+def test_roadmap_schedule_keeps_separate_fiscal_windows():
+    issue = {
+        "id": "100152",
+        "key": "ROADMAP-152",
+        "names": {
+            "customfield_10005": "Project start",
+            "customfield_10006": "Project target",
+        },
+        "fields": {
+            "summary": "Modernize the CCMS application",
+            "labels": ["FY27"],
+            "customfield_10005": {"value": "Jul-Sep, 2026"},
+            "customfield_10006": {"value": "Jan-Mar, 2027"},
+            "status": {"name": "Backlog", "statusCategory": {"name": "To Do"}},
+            "issuetype": {"name": "Idea"},
+            "issuelinks": [],
+        },
+    }
+
+    payload = _normalize_roadmap_issue(
+        "https://tndoe.atlassian.net",
+        issue,
+        [],
+        [],
+        [],
+        [],
+        [],
+        fiscal_year=2027,
+    )
+
+    assert payload.roadmap_schedule_months == (1, 2, 3, 7, 8, 9)
+
+
+def test_roadmap_schedule_reads_fiscal_year_maintenance_span():
+    issue = {
+        "id": "100180",
+        "key": "ROADMAP-180",
+        "names": {
+            "customfield_10005": "Project start",
+        },
+        "fields": {
+            "summary": "TDOE Application Portfolio Annual Maintenance",
+            "labels": ["FY27"],
+            "customfield_10005": {"value": "Jul-Jun, 2027"},
+            "status": {"name": "Backlog", "statusCategory": {"name": "To Do"}},
+            "issuetype": {"name": "Idea"},
+            "issuelinks": [],
+        },
+    }
+
+    payload = _normalize_roadmap_issue(
+        "https://tndoe.atlassian.net",
+        issue,
+        [],
+        [],
+        [],
+        [],
+        [],
+        fiscal_year=2027,
+    )
+
+    assert payload.roadmap_schedule_months == tuple(range(1, 13))
 
 
 def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
@@ -1142,6 +1213,7 @@ def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
             links=tuple(),
             roadmap_start_date=date(2026, 9, 1),
             roadmap_end_date=date(2026, 11, 30),
+            roadmap_schedule_months=(3, 4, 5),
         )
 
         item = _upsert_roadmap_item(db, payload, 2027)
@@ -1151,6 +1223,7 @@ def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
         assert item.source_team == "Product Maintenance"
         assert item.roadmap_start_date == date(2026, 9, 1)
         assert item.roadmap_end_date == date(2026, 11, 30)
+        assert item.roadmap_schedule_months == [3, 4, 5]
 
 
 def test_stale_roadmap_items_move_out_of_selected_fiscal_year():

@@ -175,6 +175,7 @@ class RoadmapIssuePayload:
     links: tuple[RoadmapIssueLinkPayload, ...]
     roadmap_start_date: date | None = None
     roadmap_end_date: date | None = None
+    roadmap_schedule_months: tuple[int, ...] = tuple()
 
 
 def serialize_roadmap_item(item: RoadmapItem, *, product_id: int | None = None) -> dict[str, object]:
@@ -199,6 +200,7 @@ def serialize_roadmap_item(item: RoadmapItem, *, product_id: int | None = None) 
         "source_team": item.source_team,
         "roadmap_start_date": item.roadmap_start_date,
         "roadmap_end_date": item.roadmap_end_date,
+        "roadmap_schedule_months": item.roadmap_schedule_months or [],
         "source_url": item.source_url,
         "linked_issue_count": len(scoped_links),
         "linked_issues": [_serialize_roadmap_issue_link(link) for link in scoped_links],
@@ -455,6 +457,7 @@ def fetch_live_roadmap_items(roadmap_project_key: str, fiscal_year: int) -> list
                         field_ids["team"],
                         field_ids["start_date"],
                         field_ids["end_date"],
+                        fiscal_year=fiscal_year,
                     )
                 )
         return _enrich_roadmap_payload_links(client, site_url, payloads, field_ids["category"])
@@ -585,6 +588,7 @@ def _upsert_roadmap_item(db: Session, payload: RoadmapIssuePayload, fiscal_year:
     item.source_team = payload.source_team
     item.roadmap_start_date = payload.roadmap_start_date
     item.roadmap_end_date = payload.roadmap_end_date
+    item.roadmap_schedule_months = list(payload.roadmap_schedule_months)
     bucket_id = _bucket_id_from_category(db, payload.category)
     if bucket_id is not None:
         item.bucket_id = bucket_id
@@ -753,6 +757,7 @@ def _normalize_roadmap_issue(
     team_field_ids: list[str],
     start_date_field_ids: list[str] | None = None,
     end_date_field_ids: list[str] | None = None,
+    fiscal_year: int = 2027,
 ) -> RoadmapIssuePayload:
     fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
     rendered_fields = issue.get("renderedFields") if isinstance(issue.get("renderedFields"), dict) else {}
@@ -784,6 +789,12 @@ def _normalize_roadmap_issue(
         preferred_keys=("end", "endDate", "target", "targetDate", "due", "dueDate", "to"),
         range_position="end",
     ) or _roadmap_date_from_any_issue_field_sources(field_sources, range_position="end")
+    roadmap_schedule_months = _roadmap_schedule_months_from_issue_field_sources(
+        field_sources,
+        start_date_ids,
+        end_date_ids,
+        fiscal_year=fiscal_year,
+    )
     return RoadmapIssuePayload(
         issue_id=str(issue.get("id") or issue_key),
         issue_key=issue_key,
@@ -797,6 +808,7 @@ def _normalize_roadmap_issue(
         source_team=_team_from_issue_fields(fields, team_field_ids),
         roadmap_start_date=roadmap_start_date,
         roadmap_end_date=roadmap_end_date,
+        roadmap_schedule_months=roadmap_schedule_months,
         source_url=f"{site_url}/browse/{issue_key}" if issue_key else None,
         links=links,
     )
@@ -924,6 +936,7 @@ def _enrich_roadmap_payload_links(
                 source_team=payload.source_team,
                 roadmap_start_date=payload.roadmap_start_date,
                 roadmap_end_date=payload.roadmap_end_date,
+                roadmap_schedule_months=payload.roadmap_schedule_months,
                 source_url=payload.source_url,
                 links=enriched_links,
             )
@@ -1139,6 +1152,136 @@ def _roadmap_date_from_any_issue_field_sources(field_sources: list[dict[str, obj
     return None
 
 
+def _roadmap_schedule_months_from_issue_field_sources(
+    field_sources: list[dict[str, object]],
+    start_date_ids: list[str],
+    end_date_ids: list[str],
+    *,
+    fiscal_year: int,
+) -> tuple[int, ...]:
+    month_sequences: set[int] = set()
+    date_field_ids = _unique_strings([*start_date_ids, *end_date_ids])
+    for fields in field_sources:
+        for field_id in date_field_ids:
+            if field_id in fields:
+                month_sequences.update(_roadmap_schedule_months_from_value(fields.get(field_id), fiscal_year=fiscal_year))
+
+    if not month_sequences:
+        for fields in field_sources:
+            for raw_text in _jira_field_text_values(fields):
+                if not re.search(MONTH_NAME_PATTERN, raw_text, flags=re.IGNORECASE) or not re.search(r"\b20\d{2}\b", raw_text):
+                    continue
+                month_sequences.update(_roadmap_schedule_months_from_value(raw_text, fiscal_year=fiscal_year))
+
+    return tuple(sorted(month_sequences))
+
+
+def _roadmap_schedule_months_from_value(value: object, *, fiscal_year: int) -> set[int]:
+    if value is None:
+        return set()
+    if isinstance(value, datetime):
+        sequence = _fiscal_month_sequence(value.date(), fiscal_year=fiscal_year)
+        return {sequence} if sequence is not None else set()
+    if isinstance(value, date):
+        sequence = _fiscal_month_sequence(value, fiscal_year=fiscal_year)
+        return {sequence} if sequence is not None else set()
+    if isinstance(value, (list, tuple)):
+        month_sequences: set[int] = set()
+        for item in value:
+            month_sequences.update(_roadmap_schedule_months_from_value(item, fiscal_year=fiscal_year))
+        return month_sequences
+    if isinstance(value, dict):
+        month_sequences: set[int] = set()
+        start = _parse_jira_date(value, preferred_keys=("start", "startDate", "from"), range_position="start")
+        end = _parse_jira_date(
+            value,
+            preferred_keys=("end", "endDate", "target", "targetDate", "due", "dueDate", "to"),
+            range_position="end",
+        )
+        if start is not None or end is not None:
+            first = start or end
+            last = end or start
+            if first is not None and last is not None:
+                month_sequences.update(_fiscal_month_sequences_between(first, last, fiscal_year=fiscal_year))
+        for nested_value in value.values():
+            month_sequences.update(_roadmap_schedule_months_from_value(nested_value, fiscal_year=fiscal_year))
+        return month_sequences
+
+    raw = re.sub(r"<[^>]+>", " ", str(value)).strip()
+    if not raw:
+        return set()
+
+    month_sequences = _roadmap_schedule_months_from_text(raw, fiscal_year=fiscal_year)
+    if month_sequences:
+        return month_sequences
+
+    start = _parse_jira_date(raw, range_position="start")
+    end = _parse_jira_date(raw, range_position="end")
+    if start is None and end is None:
+        return set()
+    first = start or end
+    last = end or start
+    if first is None or last is None:
+        return set()
+    return _fiscal_month_sequences_between(first, last, fiscal_year=fiscal_year)
+
+
+def _roadmap_schedule_months_from_text(raw: str, *, fiscal_year: int) -> set[int]:
+    normalized = raw.replace("\u2013", "-").replace("\u2014", "-")
+    month_pattern = f"(?P<start>{MONTH_NAME_PATTERN})(?:\\s*-\\s*(?P<end>{MONTH_NAME_PATTERN}))?\\s*,?\\s*(?P<year>20\\d{{2}})"
+    month_sequences: set[int] = set()
+    for match in re.finditer(month_pattern, normalized, flags=re.IGNORECASE):
+        start_month = MONTH_NAME_LOOKUP[match.group("start").casefold()]
+        end_month = MONTH_NAME_LOOKUP[(match.group("end") or match.group("start")).casefold()]
+        year = int(match.group("year"))
+        month_sequences.update(_fiscal_month_sequences_for_named_range(start_month, end_month, year, fiscal_year=fiscal_year))
+    return month_sequences
+
+
+def _fiscal_month_sequences_for_named_range(start_month: int, end_month: int, year: int, *, fiscal_year: int) -> set[int]:
+    if start_month <= end_month:
+        return _fiscal_month_sequences_between(date(year, start_month, 1), date(year, end_month, _last_day_of_month(year, end_month)), fiscal_year=fiscal_year)
+
+    start_year_candidates = {year, year - 1}
+    month_sequences: set[int] = set()
+    for start_year in start_year_candidates:
+        end_year = start_year + 1
+        month_sequences.update(
+            _fiscal_month_sequences_between(
+                date(start_year, start_month, 1),
+                date(end_year, end_month, _last_day_of_month(end_year, end_month)),
+                fiscal_year=fiscal_year,
+            )
+        )
+    return month_sequences
+
+
+def _fiscal_month_sequences_between(start: date, end: date, *, fiscal_year: int) -> set[int]:
+    first = start if start <= end else end
+    last = end if start <= end else start
+    month_sequences: set[int] = set()
+    current_year = first.year
+    current_month = first.month
+    while (current_year, current_month) <= (last.year, last.month):
+        sequence = _fiscal_month_sequence(date(current_year, current_month, 1), fiscal_year=fiscal_year)
+        if sequence is not None:
+            month_sequences.add(sequence)
+        if current_month == 12:
+            current_year += 1
+            current_month = 1
+        else:
+            current_month += 1
+    return month_sequences
+
+
+def _fiscal_month_sequence(value: date, *, fiscal_year: int) -> int | None:
+    if value.year == fiscal_year - 1 and value.month >= 7:
+        return value.month - 6
+    if value.year == fiscal_year and value.month <= 6:
+        return value.month + 6
+    return None
+
+
 def _jira_field_text_values(value: object) -> list[str]:
     if value is None:
         return []
@@ -1304,6 +1447,7 @@ def _roadmap_payload_hash(payload: RoadmapIssuePayload) -> str:
             payload.source_team or "",
             payload.roadmap_start_date.isoformat() if payload.roadmap_start_date else "",
             payload.roadmap_end_date.isoformat() if payload.roadmap_end_date else "",
+            ",".join(str(month_sequence) for month_sequence in payload.roadmap_schedule_months),
             ",".join(
                 sorted(
                     "|".join(

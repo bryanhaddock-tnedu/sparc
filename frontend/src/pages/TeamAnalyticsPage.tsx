@@ -757,7 +757,7 @@ function plannerGroupCellKey(group: PlannerProductGroup, teamMemberId: number, m
 }
 
 function rowHasPlanningSchedule(row: TeamRoadmapForecastRow) {
-  return Boolean(row.roadmap_start_date || row.roadmap_end_date);
+  return Boolean(row.roadmap_schedule_months?.length || row.roadmap_start_date || row.roadmap_end_date);
 }
 
 function groupHasPlanningSchedule(group: PlannerProductGroup) {
@@ -769,6 +769,9 @@ function groupMonthIsActive(group: PlannerProductGroup, month: TeamRoadmapForeca
 }
 
 function rowMonthIsActive(row: TeamRoadmapForecastRow, month: TeamRoadmapForecastPlan["months"][number]) {
+  if (row.roadmap_schedule_months?.length) {
+    return row.roadmap_schedule_months.includes(month.sequence);
+  }
   const start = parseDateOnly(row.roadmap_start_date);
   const end = parseDateOnly(row.roadmap_end_date) ?? start;
   if (!start && !end) return false;

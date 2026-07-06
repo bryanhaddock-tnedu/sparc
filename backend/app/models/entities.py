@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -184,6 +184,7 @@ class RoadmapItem(TimestampMixin, Base):
     source_team: Mapped[str | None] = mapped_column(String(160))
     roadmap_start_date: Mapped[date | None] = mapped_column(Date)
     roadmap_end_date: Mapped[date | None] = mapped_column(Date)
+    roadmap_schedule_months: Mapped[list[int]] = mapped_column(JSON, default=list, nullable=False)
     source_url: Mapped[str | None] = mapped_column(Text)
     source_payload_hash: Mapped[str | None] = mapped_column(String(128))
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

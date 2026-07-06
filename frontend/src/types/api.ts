@@ -185,6 +185,7 @@ export interface RoadmapItem {
   source_team: string | null;
   roadmap_start_date: string | null;
   roadmap_end_date: string | null;
+  roadmap_schedule_months: number[];
   source_url: string | null;
   linked_issue_count: number;
   linked_issues: RoadmapItemLinkedIssue[];
@@ -287,6 +288,7 @@ export interface TeamRoadmapForecastRow {
   program_area: string | null;
   roadmap_start_date: string | null;
   roadmap_end_date: string | null;
+  roadmap_schedule_months: number[];
   source_url: string | null;
   product_id: number | null;
   product: string | null;
