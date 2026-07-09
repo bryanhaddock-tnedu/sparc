@@ -18,6 +18,7 @@ export interface DashboardSummary {
 
 export interface AuthStatus {
   auth_enabled: boolean;
+  entra_enabled: boolean;
   authenticated: boolean;
   username: string | null;
   user: AuthenticatedUser | null;

@@ -1,4 +1,4 @@
-import { LockKeyhole } from "lucide-react";
+import { LockKeyhole, LogIn } from "lucide-react";
 import { FormEvent, useState } from "react";
 
 import tdoeLogo from "../assets/tdoe-logo.png";
@@ -6,9 +6,10 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { useAuth } from "../lib/auth";
+import { appConfig } from "../lib/config";
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, status } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +26,10 @@ export function LoginPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function signInWithEntra() {
+    window.location.assign(`${appConfig.apiBaseUrl}/api/auth/entra/login`);
   }
 
   return (
@@ -54,10 +59,24 @@ export function LoginPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {status?.entra_enabled ? (
+              <div className="mb-5 space-y-4">
+                <Button className="w-full" type="button" onClick={signInWithEntra}>
+                  <LogIn className="h-4 w-4" />
+                  Sign in with TDOE SSO
+                </Button>
+                <div className="flex items-center gap-3 text-xs uppercase text-muted-foreground">
+                  <div className="h-px flex-1 bg-border" />
+                  or
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+              </div>
+            ) : null}
+
             <form className="space-y-4" onSubmit={(event) => void submit(event)}>
               <div className="space-y-2">
                 <label className="text-sm font-medium" htmlFor="username">
-                  Username
+                  Email or username
                 </label>
                 <Input
                   id="username"
@@ -84,6 +103,7 @@ export function LoginPage() {
               {error ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div> : null}
 
               <Button className="w-full" type="submit" disabled={submitting}>
+                <LockKeyhole className="h-4 w-4" />
                 {submitting ? "Signing in" : "Sign in"}
               </Button>
             </form>

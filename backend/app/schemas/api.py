@@ -61,6 +61,7 @@ class AuthenticatedUserResponse(BaseModel):
 
 class AuthStatusResponse(BaseModel):
     auth_enabled: bool
+    entra_enabled: bool = False
     authenticated: bool
     username: str | None
     user: AuthenticatedUserResponse | None = None

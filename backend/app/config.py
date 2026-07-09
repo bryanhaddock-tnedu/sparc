@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     auth_password: str | None = Field(default=None, validation_alias=AliasChoices("AUTH_PASSWORD", "SPARC_AUTH_PASSWORD"))
     auth_session_secret: str | None = Field(default=None, validation_alias=AliasChoices("AUTH_SESSION_SECRET", "SPARC_AUTH_SESSION_SECRET"))
     auth_session_minutes: int = Field(default=720, validation_alias=AliasChoices("AUTH_SESSION_MINUTES", "SPARC_AUTH_SESSION_MINUTES"))
+    entra_enabled: bool = Field(default=False, validation_alias=AliasChoices("ENTRA_ENABLED", "SPARC_ENTRA_ENABLED"))
+    entra_tenant_id: str | None = Field(default=None, validation_alias=AliasChoices("ENTRA_TENANT_ID", "SPARC_ENTRA_TENANT_ID"))
+    entra_client_id: str | None = Field(default=None, validation_alias=AliasChoices("ENTRA_CLIENT_ID", "SPARC_ENTRA_CLIENT_ID"))
+    entra_client_secret: str | None = Field(default=None, validation_alias=AliasChoices("ENTRA_CLIENT_SECRET", "SPARC_ENTRA_CLIENT_SECRET"))
+    entra_redirect_uri: str | None = Field(default=None, validation_alias=AliasChoices("ENTRA_REDIRECT_URI", "SPARC_ENTRA_REDIRECT_URI"))
+    entra_authority_url: str | None = Field(default=None, validation_alias=AliasChoices("ENTRA_AUTHORITY_URL", "SPARC_ENTRA_AUTHORITY_URL"))
+    entra_post_logout_redirect_uri: str | None = Field(default=None, validation_alias=AliasChoices("ENTRA_POST_LOGOUT_REDIRECT_URI", "SPARC_ENTRA_POST_LOGOUT_REDIRECT_URI"))
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

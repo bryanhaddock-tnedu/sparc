@@ -21,6 +21,12 @@ Key Vault / container environment values:
 - `AUTH_PASSWORD`
 - `AUTH_SESSION_SECRET`
 - `AUTH_SESSION_MINUTES=720`
+- `ENTRA_ENABLED=false` until the stage Entra app registration secret is available
+- `ENTRA_TENANT_ID`
+- `ENTRA_CLIENT_ID`
+- `ENTRA_CLIENT_SECRET`
+- `ENTRA_REDIRECT_URI=https://sparc.uat.tnedu.gov/api/auth/entra/callback`
+- `ENTRA_POST_LOGOUT_REDIRECT_URI=https://sparc.uat.tnedu.gov/`
 - `JIRA_SITE_URL`
 - `JIRA_API_EMAIL`
 - `JIRA_API_TOKEN`
@@ -34,7 +40,13 @@ Container constants for stage:
 - `AUTO_CREATE_SCHEMA=false`
 - `SEED_ON_STARTUP=false`
 
-Authentication is intentionally basic for the first stage release. The app reads one username/password pair from environment variables and gives every authenticated user the same permissions. The password and session secret should come from Key Vault. Generate `AUTH_SESSION_SECRET` as a long random value; it is used only to sign the HTTP-only session cookie.
+Authentication uses SPARC-owned sessions. The `sparc` username/password remains a break-glass Admin login from environment variables, while app-created users can sign in with email plus temporary local password before SSO is enabled. After `ENTRA_ENABLED=true`, Microsoft Entra handles authentication and SPARC links the Entra identity to an existing active SPARC user by tenant/object ID or first-time email match. Roles and Program Area assignments remain managed inside SPARC. The password, Entra client secret, and session secret should come from Key Vault. Generate `AUTH_SESSION_SECRET` as a long random value; it is used only to sign HTTP-only SPARC session and Entra state cookies.
+
+Optional Entra override:
+
+- `ENTRA_AUTHORITY_URL=https://login.microsoftonline.com/<tenant-id>`
+
+If omitted, SPARC uses the standard Microsoft tenant authority built from `ENTRA_TENANT_ID`. SPARC requests only `openid`, `profile`, and `email` scopes and does not require Microsoft Graph application permissions or Entra app roles.
 
 For local testing of the stage container, copy `stage.env.example` to `stage.env` and fill in local/test values:
 

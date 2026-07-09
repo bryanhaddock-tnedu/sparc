@@ -146,6 +146,27 @@ def get_app_user(db: Session, user_id: int) -> AppUser | None:
     )
 
 
+def get_app_user_by_email(db: Session, email: str) -> AppUser | None:
+    normalized_email = normalize_email(email)
+    return db.scalar(
+        select(AppUser)
+        .options(selectinload(AppUser.program_area_assignments))
+        .where(func.lower(AppUser.email) == normalized_email.lower())
+    )
+
+
+def get_app_user_by_entra_identity(db: Session, tenant_id: str, object_id: str) -> AppUser | None:
+    tenant = str(tenant_id or "").strip()
+    oid = str(object_id or "").strip()
+    if not tenant or not oid:
+        return None
+    return db.scalar(
+        select(AppUser)
+        .options(selectinload(AppUser.program_area_assignments))
+        .where(AppUser.entra_tenant_id == tenant, AppUser.entra_object_id == oid)
+    )
+
+
 def create_app_user(
     db: Session,
     *,
@@ -229,6 +250,38 @@ def authenticate_local_user(db: Session, identifier: str, password: str) -> AppU
         return None
     if not verify_password(password, user.password_hash):
         return None
+    user.last_login_at = datetime.now(timezone.utc)
+    db.flush()
+    return user
+
+
+def authenticate_entra_user(
+    db: Session,
+    *,
+    tenant_id: str,
+    object_id: str,
+    email: str | None,
+) -> AppUser | None:
+    tenant = str(tenant_id or "").strip()
+    oid = str(object_id or "").strip()
+    if not tenant or not oid:
+        return None
+
+    user = get_app_user_by_entra_identity(db, tenant, oid)
+    if user is None and email:
+        try:
+            user = get_app_user_by_email(db, email)
+        except ValueError:
+            user = None
+        if user is not None:
+            if (user.entra_tenant_id or user.entra_object_id) and (user.entra_tenant_id != tenant or user.entra_object_id != oid):
+                return None
+            user.entra_tenant_id = tenant
+            user.entra_object_id = oid
+
+    if user is None or not user.is_active:
+        return None
+
     user.last_login_at = datetime.now(timezone.utc)
     db.flush()
     return user

@@ -21,6 +21,7 @@ from app.services.access_control import (
     role_capabilities,
     serialize_authenticated_user,
 )
+from app.services.entra_auth import entra_is_configured
 
 AUTH_COOKIE_NAME = "sparc_session"
 
@@ -29,10 +30,10 @@ def auth_status(request: Request, db: Session | None = None) -> dict[str, object
     settings = get_settings()
     if not settings.auth_enabled:
         user = local_disabled_admin()
-        return _auth_response(auth_enabled=False, authenticated=True, user=user)
+        return _auth_response(auth_enabled=False, authenticated=True, user=user, entra_enabled=False)
 
     user = current_principal(request, db)
-    return _auth_response(auth_enabled=True, authenticated=user is not None, user=user)
+    return _auth_response(auth_enabled=True, authenticated=user is not None, user=user, entra_enabled=entra_is_configured(settings))
 
 
 def login(response: Response, username: str, password: str, db: Session | None = None) -> dict[str, object]:
@@ -45,8 +46,7 @@ def login(response: Response, username: str, password: str, db: Session | None =
         except ValueError:
             user = None
         if user is not None:
-            token = _create_session_token(str(user.id), auth_type="app_user")
-            _set_session_cookie(response, token)
+            set_app_user_session(response, user.id, auth_type="app_user")
             db.commit()
             principal = authenticated_user_from_app_user(user)
             return _auth_response(auth_enabled=True, authenticated=True, user=principal)
@@ -61,7 +61,13 @@ def login(response: Response, username: str, password: str, db: Session | None =
 
 def logout(response: Response) -> dict[str, object]:
     response.delete_cookie(AUTH_COOKIE_NAME, path="/")
-    return _auth_response(auth_enabled=get_settings().auth_enabled, authenticated=False, user=None)
+    settings = get_settings()
+    return _auth_response(
+        auth_enabled=settings.auth_enabled,
+        authenticated=False,
+        user=None,
+        entra_enabled=entra_is_configured(settings),
+    )
 
 
 def require_auth(request: Request) -> None:
@@ -112,20 +118,35 @@ def current_principal(request: Request, db: Session | None = None) -> Authentica
         return None
 
     if auth_type == "app_user":
-        if db is None:
-            return None
-        try:
-            user_id = int(subject)
-        except (TypeError, ValueError):
-            return None
-        from app.services.access_control import get_app_user
-
-        user = get_app_user(db, user_id)
-        if user is None or not user.is_active:
-            return None
-        return authenticated_user_from_app_user(user)
+        return _current_database_user(db, subject, auth_type)
+    if auth_type == "entra":
+        return _current_database_user(db, subject, auth_type)
 
     return break_glass_admin(str(subject))
+
+
+def _current_database_user(db: Session | None, subject: object, auth_type: str) -> AuthenticatedUser | None:
+    if db is None:
+        return None
+    try:
+        user_id = int(subject)
+    except (TypeError, ValueError):
+        return None
+    from app.services.access_control import get_app_user
+
+    user = get_app_user(db, user_id)
+    if user is None or not user.is_active:
+        return None
+    return authenticated_user_from_app_user(user, auth_type=auth_type)
+
+
+def set_app_user_session(response: Response, user_id: int, *, auth_type: str) -> None:
+    token = _create_session_token(str(user_id), auth_type=auth_type)
+    _set_session_cookie(response, token)
+
+
+def secure_auth_cookie() -> bool:
+    return _secure_cookie()
 
 
 def current_username(request: Request) -> str | None:
@@ -217,10 +238,17 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
-def _auth_response(auth_enabled: bool, authenticated: bool, user: AuthenticatedUser | None) -> dict[str, object]:
+def _auth_response(
+    auth_enabled: bool,
+    authenticated: bool,
+    user: AuthenticatedUser | None,
+    *,
+    entra_enabled: bool | None = None,
+) -> dict[str, object]:
     username = user.email or user.display_name if user else None
     return {
         "auth_enabled": auth_enabled,
+        "entra_enabled": entra_is_configured() if entra_enabled is None else entra_enabled,
         "authenticated": authenticated,
         "username": username,
         "user": serialize_authenticated_user(user) if user else None,
