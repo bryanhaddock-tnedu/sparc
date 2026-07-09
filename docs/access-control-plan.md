@@ -173,3 +173,10 @@ It must not scope by `RoadmapItem.program_area`.
 - Match by active SPARC user email on first SSO login.
 - Store Entra tenant/object ID after first successful match.
 - Keep `sparc` break-glass login available for stage.
+
+### Milestone 11: Access-Control Hardening
+
+- Add focused regression tests for Program Area product scoping.
+- Add focused regression tests for restricted person-level report access.
+- Add focused regression tests for bill-rate redaction in named rows.
+- Ensure forecast detail rows require named Team Member visibility because they include Team Member names.

@@ -1,0 +1,120 @@
+from decimal import Decimal
+
+import pytest
+from fastapi.routing import APIRoute
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.api import forecasts as forecasts_api
+from app.db.seed import _seed_buckets
+from app.models import Base, Bucket, Product, TeamMember
+from app.services.access_control import AuthenticatedUser, UserRole
+from app.services.aggregations import dashboard_products, product_bucket_tables
+from app.services.auth import require_named_people_access
+from app.services.fiscal_year import get_fiscal_month
+from app.services.forecasting import upsert_forecast_entry
+from app.services.reporting import build_labor_cost_report
+
+
+def test_program_area_user_sees_only_assigned_product_scope():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        _seed_access_scope_data(db)
+        user = _authenticated_user(UserRole.PROGRAM_AREA_VIEW_ONLY, ("Academics",))
+
+        rows = dashboard_products(db, 2027, user=user)
+        report = build_labor_cost_report(db, 2027, dimensions=["product"], user=user)
+
+    assert [row["product"] for row in rows] == ["Academics Product"]
+    assert [value["label"] for row in report["rows"] for value in row["dimension_values"]] == ["Academics Product"]
+    assert report["totals"]["forecast_cost"] == 1000
+
+
+def test_program_area_user_cannot_request_person_level_labor_report():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        _seed_access_scope_data(db)
+        user = _authenticated_user(UserRole.PROGRAM_AREA_VIEW_ONLY, ("Academics",))
+
+        with pytest.raises(PermissionError):
+            build_labor_cost_report(db, 2027, dimensions=["person"], user=user)
+
+
+def test_restricted_rate_viewer_gets_named_rows_without_bill_rates():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        product = _seed_access_scope_data(db)
+        user = _authenticated_user(UserRole.LEADERSHIP_VIEW_ONLY)
+
+        tables = product_bucket_tables(db, product.id, 2027, can_view_rates=False)
+
+    rows = [row for bucket in tables["buckets"] for row in bucket["rows"]]
+    assert rows
+    assert all(row["bill_rate"] is None for row in rows)
+    assert {row["team_member"] for row in rows} == {"Academics Analyst"}
+
+
+def test_forecast_detail_route_requires_named_people_access():
+    route = next(
+        route
+        for route in forecasts_api.router.routes
+        if isinstance(route, APIRoute) and route.path == "/forecasts" and "GET" in route.methods
+    )
+
+    assert any(dependency.call is require_named_people_access for dependency in route.dependant.dependencies)
+
+
+def _authenticated_user(role: UserRole, program_areas: tuple[str, ...] = ()) -> AuthenticatedUser:
+    return AuthenticatedUser(
+        id=1,
+        email="viewer@example.org",
+        display_name="Viewer",
+        role=role,
+        program_areas=program_areas,
+    )
+
+
+def _seed_access_scope_data(db: Session) -> Product:
+    _seed_buckets(db)
+    academics = Product(name="Academics Product", slug="academics-product", office="Academics")
+    programs = Product(name="Programs Product", slug="programs-product", office="Programs")
+    unassigned = Product(name="Unassigned Product", slug="unassigned-product", office=None)
+    member = TeamMember(
+        name="Academics Analyst",
+        slug="academics-analyst",
+        role="Analyst",
+        team="Product",
+        bill_rate=Decimal("100"),
+    )
+    db.add_all([academics, programs, unassigned, member])
+    db.flush()
+
+    bucket = db.query(Bucket).filter_by(code="MAINTENANCE").one()
+    month = get_fiscal_month(db, 2027, 1)
+    _ = month
+    upsert_forecast_entry(
+        db,
+        product_id=academics.id,
+        team_member_id=member.id,
+        bucket_id=bucket.id,
+        fiscal_year=2027,
+        month_sequence=1,
+        hours=10,
+    )
+    upsert_forecast_entry(
+        db,
+        product_id=programs.id,
+        team_member_id=member.id,
+        bucket_id=bucket.id,
+        fiscal_year=2027,
+        month_sequence=1,
+        hours=20,
+    )
+    db.flush()
+    return academics
