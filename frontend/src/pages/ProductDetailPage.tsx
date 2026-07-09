@@ -11,6 +11,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { productDetailPath, teamMemberDetailPath } from "../lib/routes";
 import { formatBillRate } from "../lib/teamMembers";
@@ -47,6 +48,10 @@ export function ProductDetailPage() {
   const navigate = useNavigate();
   const productRef = params.productRef ?? "";
   const { fiscalYear, fiscalYearLabel } = useFiscalYear();
+  const { status } = useAuth();
+  const canAdmin = status?.capabilities.can_admin === true;
+  const canEditForecast = status?.capabilities.can_edit_forecast === true;
+  const canViewNamedPeople = status?.capabilities.can_view_named_people === true;
   const [summary, setSummary] = useState<ProductSummary | null>(null);
   const [tables, setTables] = useState<ProductBucketTables | null>(null);
   const [productSpaces, setProductSpaces] = useState<ProductJiraSpace[]>([]);
@@ -67,21 +72,16 @@ export function ProductDetailPage() {
   async function loadData() {
     const summaryResult = await api.productSummary(productRef, fiscalYear);
     const resolvedProductId = summaryResult.product.id;
-    const [
-      distributionResult,
-      tablesResult,
-      productSpacesResult,
-      productTeamResult,
-      teamMembersResult,
-      reportedRowsResult,
-    ] = await Promise.all([
-      api.bucketDistribution(resolvedProductId, fiscalYear),
-      api.productBucketTables(resolvedProductId, fiscalYear),
-      api.productJiraSpaces(resolvedProductId),
-      api.productTeamMembers(resolvedProductId),
-      api.teamMembers(),
-      api.reportedValues({ product_id: resolvedProductId }, fiscalYear),
-    ]);
+    const distributionResult = await api.bucketDistribution(resolvedProductId, fiscalYear);
+    const [tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = canViewNamedPeople
+      ? await Promise.all([
+          api.productBucketTables(resolvedProductId, fiscalYear),
+          canAdmin ? api.productJiraSpaces(resolvedProductId) : Promise.resolve([]),
+          api.productTeamMembers(resolvedProductId),
+          api.teamMembers(),
+          api.reportedValues({ product_id: resolvedProductId }, fiscalYear),
+        ])
+      : [null, [], [], [], []];
     if (productRef !== summaryResult.product.slug) {
       navigate(productDetailPath(summaryResult.product), { replace: true });
     }
@@ -101,7 +101,7 @@ export function ProductDetailPage() {
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load product"))
       .finally(() => setLoading(false));
-  }, [productRef, fiscalYear]);
+  }, [productRef, fiscalYear, canAdmin, canViewNamedPeople]);
 
   useEffect(() => {
     if (!forecastLineBucketId && tables?.buckets[0]) {
@@ -239,9 +239,9 @@ export function ProductDetailPage() {
 
   if (loading) return <LoadingBlock />;
   if (error) return <ErrorBlock message={error} />;
-  if (!summary || !tables) return null;
+  if (!summary) return null;
 
-  const visibleBuckets = tables.buckets.filter((bucket) => bucket.rows.length > 0);
+  const visibleBuckets = tables?.buckets.filter((bucket) => bucket.rows.length > 0) ?? [];
   const hasActualDistribution = distribution.some((row) => row.hours > 0);
   const chartDistribution = hasActualDistribution ? distribution : [{ bucket: "No actuals yet", hours: 1 }];
 
@@ -251,15 +251,15 @@ export function ProductDetailPage() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold">{summary.product.name}</h1>
-            {productSpaces.length ? (
+            {canAdmin && productSpaces.length ? (
               productSpaces.map((space) => (
                 <Badge key={space.id} className={space.is_active ? "" : "border-muted text-muted-foreground"}>
                   {space.jira_project_key}
                 </Badge>
               ))
-            ) : (
+            ) : canAdmin ? (
               <Badge>No Jira Spaces</Badge>
-            )}
+            ) : null}
             <Badge className={summary.product.is_active ? "border-primary/40 text-primary" : "border-muted text-muted-foreground"}>
               {summary.product.is_active ? "Active" : "Inactive"}
             </Badge>
@@ -284,7 +284,7 @@ export function ProductDetailPage() {
           actualSpend={summary.fytd_cost}
           contextLabel={`${summary.product.name} budget, forecast, and actuals`}
         />
-        <ProductRoleCostCard summary={roleCostSummary} />
+        {canViewNamedPeople ? <ProductRoleCostCard summary={roleCostSummary} /> : null}
         <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
           <div className="rounded-lg border bg-card p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase text-muted-foreground">FYTD Actualized Hours</h2>
@@ -319,48 +319,60 @@ export function ProductDetailPage() {
         </div>
       </section>
 
-      <ProductTeamSection
-        assignments={productTeam}
-        members={teamMembers}
-        onAdd={addProductTeamMember}
-        onRemove={removeProductTeamMember}
-        onUpdate={updateProductTeamMember}
-      />
+      {canViewNamedPeople ? (
+        <ProductTeamSection
+          assignments={productTeam}
+          canEdit={canAdmin}
+          members={teamMembers}
+          onAdd={addProductTeamMember}
+          onRemove={removeProductTeamMember}
+          onUpdate={updateProductTeamMember}
+        />
+      ) : (
+        <section className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
+          Named Team Member rows are hidden for your role. Product totals above remain scoped to your assigned Program Area.
+        </section>
+      )}
 
-      <ForecastLineSection
-        assignments={productTeam}
-        buckets={tables.buckets}
-        existingLineKeys={existingForecastLineKeys}
-        members={teamMembers}
-        message={forecastLineMessage}
-        onAdd={addForecastLine}
-        saving={forecastLineSaving}
-        selectedBucketId={forecastLineBucketId}
-        selectedMemberId={forecastLineMemberId}
-        setSelectedBucketId={setForecastLineBucketId}
-        setSelectedMemberId={setForecastLineMemberId}
-      />
+      {canEditForecast && tables ? (
+        <ForecastLineSection
+          assignments={productTeam}
+          buckets={tables.buckets}
+          existingLineKeys={existingForecastLineKeys}
+          members={teamMembers}
+          message={forecastLineMessage}
+          onAdd={addForecastLine}
+          saving={forecastLineSaving}
+          selectedBucketId={forecastLineBucketId}
+          selectedMemberId={forecastLineMemberId}
+          setSelectedBucketId={setForecastLineBucketId}
+          setSelectedMemberId={setForecastLineMemberId}
+        />
+      ) : null}
 
-      <section className="space-y-5">
-        {visibleBuckets.length ? (
-          visibleBuckets.map((bucket) => (
-            <BucketSection
-              key={bucket.bucket_id}
-              bucket={bucket}
-              drafts={drafts}
-              onDraftChange={updateDraft}
-              onDraftCommit={saveForecastCell}
-              savingCells={savingCells}
-            />
-          ))
-        ) : (
-          <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-            No forecast lines exist for this product yet. Add a Product Team member, then create a forecast line for the bucket they will support.
-          </div>
-        )}
-      </section>
+      {canViewNamedPeople && tables ? (
+        <section className="space-y-5">
+          {visibleBuckets.length ? (
+            visibleBuckets.map((bucket) => (
+              <BucketSection
+                key={bucket.bucket_id}
+                bucket={bucket}
+                drafts={drafts}
+                onDraftChange={updateDraft}
+                onDraftCommit={saveForecastCell}
+                readOnly={!canEditForecast}
+                savingCells={savingCells}
+              />
+            ))
+          ) : (
+            <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
+              No forecast lines exist for this product yet. Add a Product Team member, then create a forecast line for the bucket they will support.
+            </div>
+          )}
+        </section>
+      ) : null}
 
-      <ReportedValuesTable rows={reportedRows} showTeamMember />
+      {canViewNamedPeople ? <ReportedValuesTable rows={reportedRows} showTeamMember /> : null}
     </div>
   );
 }
@@ -439,12 +451,14 @@ function SnapshotRow({ label, value }: { label: string; value: string }) {
 
 function ProductTeamSection({
   assignments,
+  canEdit,
   members,
   onAdd,
   onRemove,
   onUpdate,
 }: {
   assignments: ProductTeamMember[];
+  canEdit: boolean;
   members: TeamMember[];
   onAdd: (teamMemberId: number) => Promise<void>;
   onRemove: (assignmentId: number) => Promise<void>;
@@ -503,26 +517,28 @@ function ProductTeamSection({
 
       {isExpanded ? (
         <div className="space-y-3" id={rosterId}>
-          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <select
-              aria-label="Team member to add"
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-              disabled={saving || availableMembers.length === 0}
-              value={selectedMemberId}
-              onChange={(event) => setSelectedMemberId(event.target.value)}
-            >
-              <option value="">{availableMembers.length ? "Select team member" : "All members assigned"}</option>
-              {availableMembers.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
-            <Button onClick={addAssignment} disabled={saving || !selectedMemberId}>
-              <UserPlus className="h-4 w-4" />
-              Add
-            </Button>
-          </div>
+          {canEdit ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <select
+                aria-label="Team member to add"
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                disabled={saving || availableMembers.length === 0}
+                value={selectedMemberId}
+                onChange={(event) => setSelectedMemberId(event.target.value)}
+              >
+                <option value="">{availableMembers.length ? "Select team member" : "All members assigned"}</option>
+                {availableMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+              <Button onClick={addAssignment} disabled={saving || !selectedMemberId}>
+                <UserPlus className="h-4 w-4" />
+                Add
+              </Button>
+            </div>
+          ) : null}
 
           <div className="overflow-hidden rounded-lg border bg-card">
             <div className="overflow-x-auto">
@@ -535,7 +551,7 @@ function ProductTeamSection({
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bill Rate</th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Status</th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">History</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actions</th>
+                    {canEdit ? <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actions</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -551,15 +567,21 @@ function ProductTeamSection({
                         <td className="px-3 py-3">{assignment.team}</td>
                         <td className="numeric-cell px-3 py-3">{formatBillRate(assignment.bill_rate, assignment.employment_type, { includeUnit: true })}</td>
                         <td className="px-3 py-3">
-                          <select
-                            aria-label={`${assignment.team_member} product status`}
-                            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                            value={assignment.status}
-                            onChange={(event) => void onUpdate(assignment.id, { status: event.target.value })}
-                          >
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                          </select>
+                          {canEdit ? (
+                            <select
+                              aria-label={`${assignment.team_member} product status`}
+                              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                              value={assignment.status}
+                              onChange={(event) => void onUpdate(assignment.id, { status: event.target.value })}
+                            >
+                              <option value="active">Active</option>
+                              <option value="inactive">Inactive</option>
+                            </select>
+                          ) : (
+                            <Badge className={assignment.status === "active" ? "border-primary/40 text-primary" : "border-muted text-muted-foreground"}>
+                              {assignment.status}
+                            </Badge>
+                          )}
                         </td>
                         <td className="px-3 py-3 text-muted-foreground">
                           {assignment.has_forecast_entries
@@ -568,26 +590,28 @@ function ProductTeamSection({
                               ? "Actuals retained"
                               : "No hours yet"}
                         </td>
-                        <td className="px-3 py-3 text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const confirmed = window.confirm(
-                                `Remove ${assignment.team_member} from this product? Forecast lines for this product will be deleted. Jira actuals will stay for historical reporting.`,
-                              );
-                              if (confirmed) void onRemove(assignment.id);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Remove
-                          </Button>
-                        </td>
+                        {canEdit ? (
+                          <td className="px-3 py-3 text-right">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const confirmed = window.confirm(
+                                  `Remove ${assignment.team_member} from this product? Forecast lines for this product will be deleted. Jira actuals will stay for historical reporting.`,
+                                );
+                                if (confirmed) void onRemove(assignment.id);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Remove
+                            </Button>
+                          </td>
+                        ) : null}
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={7}>
+                      <td className="px-3 py-5 text-sm text-muted-foreground" colSpan={canEdit ? 7 : 6}>
                         No team members assigned to this product yet.
                       </td>
                     </tr>
@@ -707,12 +731,14 @@ function BucketSection({
   drafts,
   onDraftChange,
   onDraftCommit,
+  readOnly,
   savingCells,
 }: {
   bucket: BucketTable;
   drafts: Record<string, string>;
   onDraftChange: (bucket: BucketTable, row: BucketTableRow, cell: MonthCell, value: string) => void;
   onDraftCommit: (bucket: BucketTable, row: BucketTableRow, cell: MonthCell) => void;
+  readOnly: boolean;
   savingCells: Record<string, boolean>;
 }) {
   const monthlyTotals =
@@ -785,6 +811,7 @@ function BucketSection({
                           cell={cell}
                           value={drafts[draftKey(bucket, row, cell)] ?? String(cell.forecast_hours)}
                           dirty={drafts[draftKey(bucket, row, cell)] !== undefined}
+                          readOnly={readOnly}
                           saving={savingCells[draftKey(bucket, row, cell)] === true}
                           onChange={(value) => onDraftChange(bucket, row, cell, value)}
                           onCommit={() => onDraftCommit(bucket, row, cell)}
@@ -880,6 +907,7 @@ function ForecastInput({
   cell,
   value,
   dirty,
+  readOnly,
   saving,
   onChange,
   onCommit,
@@ -889,6 +917,7 @@ function ForecastInput({
   cell: MonthCell;
   value: string;
   dirty: boolean;
+  readOnly: boolean;
   saving: boolean;
   onChange: (value: string) => void;
   onCommit: () => void;
@@ -901,7 +930,7 @@ function ForecastInput({
       className={`numeric-cell h-7 min-w-0 px-1 text-right text-xs ${dirty ? "border-primary bg-primary/5" : ""} ${
         invalid ? "border-destructive" : ""
       } ${saving ? "opacity-70" : ""}`}
-      disabled={saving}
+      disabled={saving || readOnly}
       inputMode="decimal"
       pattern="[0-9]*"
       type="text"

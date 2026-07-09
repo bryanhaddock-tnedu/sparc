@@ -8,6 +8,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { OFFICE_OPTIONS, divisionBelongsToOffice, divisionOptionsForOffice } from "../lib/productOrg";
 import { productDetailPath } from "../lib/routes";
@@ -20,6 +21,8 @@ type JiraKeyOwner = { productId: number; productName: string };
 
 export function ProductSettingsPage() {
   const { fiscalYearLabel, fiscalYearRangeLabel, fiscalYear } = useFiscalYear();
+  const { status } = useAuth();
+  const canAdmin = status?.capabilities.can_admin === true;
   const [products, setProducts] = useState<Product[]>([]);
   const [jiraCatalog, setJiraCatalog] = useState<JiraProjectCatalog[]>([]);
   const [productSpaces, setProductSpaces] = useState<ProductSpacesById>({});
@@ -42,14 +45,20 @@ export function ProductSettingsPage() {
   const [unmappedPanelOpen, setUnmappedPanelOpen] = useState(true);
 
   const loadSettings = useCallback(async () => {
-    const [productRows, catalogRows] = await Promise.all([api.products(fiscalYear), api.jiraProjectCatalog()]);
-    const spacesEntries = await Promise.all(
-      productRows.map(async (product) => [product.id, await api.productJiraSpaces(product.id)] as const),
-    );
+    const productRows = await api.products(fiscalYear);
     setProducts(productRows);
+    if (!canAdmin) {
+      setJiraCatalog([]);
+      setProductSpaces({});
+      return;
+    }
+    const [catalogRows, spacesEntries] = await Promise.all([
+      api.jiraProjectCatalog(),
+      Promise.all(productRows.map(async (product) => [product.id, await api.productJiraSpaces(product.id)] as const)),
+    ]);
     setJiraCatalog(catalogRows);
     setProductSpaces(Object.fromEntries(spacesEntries) as ProductSpacesById);
-  }, [fiscalYear]);
+  }, [canAdmin, fiscalYear]);
 
   const mappedJiraKeys = useMemo(() => {
     return new Set(Object.values(productSpaces).flatMap((spaces) => spaces.map((space) => space.jira_project_key)));
@@ -304,81 +313,83 @@ export function ProductSettingsPage() {
       {notice ? <div className="rounded-md border border-[color:var(--spark-cyan)] bg-accent/10 px-3 py-2 text-sm text-primary">{notice}</div> : null}
       {error ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div> : null}
 
-      <section className="rounded-lg border bg-card p-4">
-        <div className="mb-3">
-          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Add Product</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Budget entered here applies to {fiscalYearLabel} only.</p>
-        </div>
-        <div className="grid gap-3 xl:grid-cols-[1.1fr_0.65fr_0.9fr_1.3fr_1.4fr_auto]">
-          <Input
-            aria-label="New product name"
-            disabled={creating}
-            placeholder="Product name"
-            value={newProduct.name}
-            onChange={(event) => setNewProduct((current) => ({ ...current, name: event.target.value }))}
-          />
-          <Input
-            aria-label="New product budget"
-            className="numeric-cell"
-            disabled={creating}
-            inputMode="decimal"
-            placeholder="Budget"
-            value={newProduct.budget}
-            onChange={(event) => setNewProduct((current) => ({ ...current, budget: event.target.value }))}
-          />
-          <select
-            aria-label="New product office"
-            className="h-10 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
-            disabled={creating}
-            value={newProduct.office}
-            onChange={(event) => {
-              const office = event.target.value;
-              setNewProduct((current) => ({
-                ...current,
-                office,
-                division: divisionBelongsToOffice(office, current.division) ? current.division : "",
-              }));
-            }}
-          >
-            <option value="">Office</option>
-            {OFFICE_OPTIONS.map((office) => (
-              <option key={office} value={office}>
-                {office}
+      {canAdmin ? (
+        <section className="rounded-lg border bg-card p-4">
+          <div className="mb-3">
+            <h2 className="text-sm font-semibold uppercase text-muted-foreground">Add Product</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Budget entered here applies to {fiscalYearLabel} only.</p>
+          </div>
+          <div className="grid gap-3 xl:grid-cols-[1.1fr_0.65fr_0.9fr_1.3fr_1.4fr_auto]">
+            <Input
+              aria-label="New product name"
+              disabled={creating}
+              placeholder="Product name"
+              value={newProduct.name}
+              onChange={(event) => setNewProduct((current) => ({ ...current, name: event.target.value }))}
+            />
+            <Input
+              aria-label="New product budget"
+              className="numeric-cell"
+              disabled={creating}
+              inputMode="decimal"
+              placeholder="Budget"
+              value={newProduct.budget}
+              onChange={(event) => setNewProduct((current) => ({ ...current, budget: event.target.value }))}
+            />
+            <select
+              aria-label="New product office"
+              className="h-10 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+              disabled={creating}
+              value={newProduct.office}
+              onChange={(event) => {
+                const office = event.target.value;
+                setNewProduct((current) => ({
+                  ...current,
+                  office,
+                  division: divisionBelongsToOffice(office, current.division) ? current.division : "",
+                }));
+              }}
+            >
+              <option value="">Office</option>
+              {OFFICE_OPTIONS.map((office) => (
+                <option key={office} value={office}>
+                  {office}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="New product division"
+              className="h-10 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+              disabled={creating || !newProduct.office || newProductDivisionOptions.length === 0}
+              value={newProduct.division}
+              onChange={(event) => setNewProduct((current) => ({ ...current, division: event.target.value }))}
+            >
+              <option value="">
+                {!newProduct.office ? "Select office first" : newProductDivisionOptions.length ? "Division" : "No divisions listed"}
               </option>
-            ))}
-          </select>
-          <select
-            aria-label="New product division"
-            className="h-10 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
-            disabled={creating || !newProduct.office || newProductDivisionOptions.length === 0}
-            value={newProduct.division}
-            onChange={(event) => setNewProduct((current) => ({ ...current, division: event.target.value }))}
-          >
-            <option value="">
-              {!newProduct.office ? "Select office first" : newProductDivisionOptions.length ? "Division" : "No divisions listed"}
-            </option>
-            {newProductDivisionOptions.map((division) => (
-              <option key={division} value={division}>
-                {division}
-              </option>
-            ))}
-          </select>
-          <Input
-            aria-label="New product description"
-            disabled={creating}
-            placeholder="Description"
-            value={newProduct.description}
-            onChange={(event) => setNewProduct((current) => ({ ...current, description: event.target.value }))}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void createProduct();
-            }}
-          />
-          <Button onClick={createProduct} disabled={creating || !newProduct.name.trim()}>
-            <Plus className="h-4 w-4" />
-            {creating ? "Adding" : "Add"}
-          </Button>
-        </div>
-      </section>
+              {newProductDivisionOptions.map((division) => (
+                <option key={division} value={division}>
+                  {division}
+                </option>
+              ))}
+            </select>
+            <Input
+              aria-label="New product description"
+              disabled={creating}
+              placeholder="Description"
+              value={newProduct.description}
+              onChange={(event) => setNewProduct((current) => ({ ...current, description: event.target.value }))}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void createProduct();
+              }}
+            />
+            <Button onClick={createProduct} disabled={creating || !newProduct.name.trim()}>
+              <Plus className="h-4 w-4" />
+              {creating ? "Adding" : "Add"}
+            </Button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-4">
         {products.map((product) => (
@@ -392,6 +403,7 @@ export function ProductSettingsPage() {
             jiraKeyOwners={jiraKeyOwners}
             busyIds={spaceActionIds}
             fiscalYearLabel={fiscalYearLabel}
+            canEdit={canAdmin}
             onUpdateProduct={(payload) => updateProduct(product, payload)}
             onDeleteProduct={() => deleteProduct(product)}
             onAddSpace={(payload) => addJiraSpace(product, payload)}
@@ -402,16 +414,18 @@ export function ProductSettingsPage() {
         ))}
       </section>
 
-      <UnmappedJiraProjectsPanel
-        isOpen={unmappedPanelOpen}
-        onToggle={() => setUnmappedPanelOpen((current) => !current)}
-        projects={unmappedCatalogProjects}
-        searchValue={catalogFilter}
-        busyIds={catalogActionIds}
-        totalCatalogCount={jiraCatalog.length}
-        onSearchChange={setCatalogFilter}
-        onVisibilityChange={updateCatalogProjectVisibility}
-      />
+      {canAdmin ? (
+        <UnmappedJiraProjectsPanel
+          isOpen={unmappedPanelOpen}
+          onToggle={() => setUnmappedPanelOpen((current) => !current)}
+          projects={unmappedCatalogProjects}
+          searchValue={catalogFilter}
+          busyIds={catalogActionIds}
+          totalCatalogCount={jiraCatalog.length}
+          onSearchChange={setCatalogFilter}
+          onVisibilityChange={updateCatalogProjectVisibility}
+        />
+      ) : null}
     </div>
   );
 }
@@ -561,6 +575,7 @@ function ProductSettingsCard({
   jiraKeyOwners,
   busyIds,
   fiscalYearLabel,
+  canEdit,
   onUpdateProduct,
   onDeleteProduct,
   onAddSpace,
@@ -576,6 +591,7 @@ function ProductSettingsCard({
   jiraKeyOwners: Map<string, JiraKeyOwner>;
   busyIds: Set<string>;
   fiscalYearLabel: string;
+  canEdit: boolean;
   onUpdateProduct: (payload: ProductUpdate) => void | Promise<void>;
   onDeleteProduct: () => void | Promise<void>;
   onAddSpace: (payload: ProductJiraSpacePayload) => void | Promise<void>;
@@ -588,14 +604,18 @@ function ProductSettingsCard({
       <div className="flex flex-col gap-3 border-b bg-secondary/20 px-3 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
           <div className="min-w-0 sm:max-w-sm sm:flex-1">
-            <TextInput
-              ariaLabel={`${product.name} product name`}
-              allowEmpty={false}
-              className="h-9 text-base font-semibold"
-              disabled={saving}
-              value={product.name}
-              onCommit={(name) => onUpdateProduct({ name })}
-            />
+            {canEdit ? (
+              <TextInput
+                ariaLabel={`${product.name} product name`}
+                allowEmpty={false}
+                className="h-9 text-base font-semibold"
+                disabled={saving}
+                value={product.name}
+                onCommit={(name) => onUpdateProduct({ name })}
+              />
+            ) : (
+              <h2 className="truncate text-base font-semibold">{product.name}</h2>
+            )}
           </div>
           <Link
             className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-1 text-sm font-medium text-primary hover:underline"
@@ -605,31 +625,34 @@ function ProductSettingsCard({
             <ExternalLink className="h-3.5 w-3.5" />
           </Link>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <StatusSelect product={product} disabled={saving || deleting} onCommit={(is_active) => onUpdateProduct({ is_active })} />
-          <Button
-            aria-label={deleting ? `Deleting ${product.name}` : `Delete ${product.name}`}
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={saving || deleting || spaces.length > 0}
-            title={spaces.length > 0 ? "Remove mapped Jira projects before deleting this product" : `Delete ${product.name}`}
-            onClick={() => void onDeleteProduct()}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
+        {canEdit ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <StatusSelect product={product} disabled={saving || deleting} onCommit={(is_active) => onUpdateProduct({ is_active })} />
+            <Button
+              aria-label={deleting ? `Deleting ${product.name}` : `Delete ${product.name}`}
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={saving || deleting || spaces.length > 0}
+              title={spaces.length > 0 ? "Remove mapped Jira projects before deleting this product" : `Delete ${product.name}`}
+              onClick={() => void onDeleteProduct()}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : null}
       </div>
 
-      <div className="grid gap-4 p-3 xl:grid-cols-[minmax(20rem,0.9fr)_minmax(0,1.6fr)]">
+      <div className={`grid gap-4 p-3 ${canEdit ? "xl:grid-cols-[minmax(20rem,0.9fr)_minmax(0,1.6fr)]" : ""}`}>
         <ProductMetadataFields
-          disabled={saving}
+          disabled={saving || !canEdit}
           fiscalYearLabel={fiscalYearLabel}
           product={product}
           onUpdateProduct={onUpdateProduct}
         />
 
-        <div className="min-w-0 space-y-3 xl:border-l xl:pl-4">
+        {canEdit ? (
+          <div className="min-w-0 space-y-3 xl:border-l xl:pl-4">
           <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
             <div className="min-w-0">
               <h2 className="text-sm font-semibold uppercase text-muted-foreground">Jira Projects</h2>
@@ -650,7 +673,8 @@ function ProductSettingsCard({
             onValidate={onValidateSpace}
             onRemove={onRemoveSpace}
           />
-        </div>
+          </div>
+        ) : null}
       </div>
     </article>
   );

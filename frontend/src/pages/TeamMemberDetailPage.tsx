@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { productDetailPath, teamMemberDetailPath } from "../lib/routes";
 import { formatBillRate } from "../lib/teamMembers";
@@ -39,6 +40,9 @@ export function TeamMemberDetailPage() {
   const navigate = useNavigate();
   const teamMemberRef = params.teamMemberRef ?? "";
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
+  const { status } = useAuth();
+  const canAdmin = status?.capabilities.can_admin === true;
+  const canEditForecast = status?.capabilities.can_edit_forecast === true;
   const [data, setData] = useState<TeamMemberProducts | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [bucketOptions, setBucketOptions] = useState<BucketTable[]>([]);
@@ -168,6 +172,7 @@ export function TeamMemberDetailPage() {
   }
 
   async function saveForecastCell(line: MemberForecastLine, cell: MemberForecastMonthCell) {
+    if (!canEditForecast) return;
     const key = memberForecastDraftKey(line, cell);
     const draft = forecastDrafts[key];
     if (draft === undefined) return;
@@ -212,6 +217,7 @@ export function TeamMemberDetailPage() {
   }
 
   async function addForecastLine() {
+    if (!canEditForecast) return;
     const productId = Number(forecastLineProductId);
     const bucketId = Number(forecastLineBucketId);
     if (!Number.isFinite(productId) || !Number.isFinite(bucketId) || !data?.months[0]) return;
@@ -258,6 +264,7 @@ export function TeamMemberDetailPage() {
   }
 
   function startEditing() {
+    if (!canAdmin) return;
     setForm(formFromMember(member));
     setFormError(null);
     setEditing(true);
@@ -270,6 +277,7 @@ export function TeamMemberDetailPage() {
   }
 
   async function saveProfile() {
+    if (!canAdmin) return;
     if (!form) return;
     const nextBillRate = form.billRate.trim() === "" ? 0 : Number(form.billRate);
     if (!form.name.trim() || !form.role.trim() || !form.team.trim() || !form.employmentType.trim()) {
@@ -340,12 +348,12 @@ export function TeamMemberDetailPage() {
                     {saving ? "Saving" : "Save"}
                   </Button>
                 </div>
-              ) : (
+              ) : canAdmin ? (
                 <Button size="sm" variant="outline" onClick={startEditing}>
                   <Pencil className="h-4 w-4" />
                   Edit
                 </Button>
-              )}
+              ) : null}
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
@@ -412,6 +420,7 @@ export function TeamMemberDetailPage() {
 
       <MemberForecastTable
         bucketOptions={bucketOptions}
+        canEdit={canEditForecast}
         drafts={forecastDrafts}
         forecastLineMessage={forecastLineMessage}
         forecastLineSaving={forecastLineSaving}
@@ -807,6 +816,7 @@ function buildMemberRoadmapBillingRows(rows: RoadmapActualRow[]) {
 
 function MemberForecastTable({
   bucketOptions,
+  canEdit,
   drafts,
   forecastLineMessage,
   forecastLineSaving,
@@ -822,6 +832,7 @@ function MemberForecastTable({
   setSelectedProductId,
 }: {
   bucketOptions: BucketTable[];
+  canEdit: boolean;
   drafts: Record<string, string>;
   forecastLineMessage: string | null;
   forecastLineSaving: boolean;
@@ -863,47 +874,49 @@ function MemberForecastTable({
           <p className="mt-1 text-sm text-muted-foreground">Manage this team member&apos;s forecasted hours across each fiscal month.</p>
           <p className="mt-1 text-xs text-muted-foreground">Cost variance = actual - forecast.</p>
         </div>
-        <div className="flex flex-col gap-2 xl:items-end">
-          <div className="flex flex-wrap gap-2">
-            <select
-              aria-label="Product to add"
-              className="h-9 min-w-52 rounded-md border border-input bg-background px-2 text-sm"
-              disabled={forecastLineSaving || products.length === 0}
-              value={selectedProductId}
-              onChange={(event) => setSelectedProductId(event.target.value)}
-            >
-              <option value="">{products.length ? "Select product" : "No products available"}</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>
-                  {product.name}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Bucket to add"
-              className="h-9 min-w-44 rounded-md border border-input bg-background px-2 text-sm"
-              disabled={forecastLineSaving || !selectedProductId || bucketOptions.length === 0}
-              value={selectedBucketId}
-              onChange={(event) => setSelectedBucketId(event.target.value)}
-            >
-              <option value="">{bucketOptions.length ? "Select bucket" : "No buckets available"}</option>
-              {bucketOptions.map((bucket) => (
-                <option key={bucket.bucket_id} value={bucket.bucket_id}>
-                  {bucket.name}
-                </option>
-              ))}
-            </select>
-            <Button
-              disabled={forecastLineSaving || !selectedProductId || !selectedBucketId}
-              onClick={() => void onForecastLineAdd()}
-              type="button"
-            >
-              <Plus className="h-4 w-4" />
-              {forecastLineSaving ? "Adding" : "Add"}
-            </Button>
+        {canEdit ? (
+          <div className="flex flex-col gap-2 xl:items-end">
+            <div className="flex flex-wrap gap-2">
+              <select
+                aria-label="Product to add"
+                className="h-9 min-w-52 rounded-md border border-input bg-background px-2 text-sm"
+                disabled={forecastLineSaving || products.length === 0}
+                value={selectedProductId}
+                onChange={(event) => setSelectedProductId(event.target.value)}
+              >
+                <option value="">{products.length ? "Select product" : "No products available"}</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Bucket to add"
+                className="h-9 min-w-44 rounded-md border border-input bg-background px-2 text-sm"
+                disabled={forecastLineSaving || !selectedProductId || bucketOptions.length === 0}
+                value={selectedBucketId}
+                onChange={(event) => setSelectedBucketId(event.target.value)}
+              >
+                <option value="">{bucketOptions.length ? "Select bucket" : "No buckets available"}</option>
+                {bucketOptions.map((bucket) => (
+                  <option key={bucket.bucket_id} value={bucket.bucket_id}>
+                    {bucket.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                disabled={forecastLineSaving || !selectedProductId || !selectedBucketId}
+                onClick={() => void onForecastLineAdd()}
+                type="button"
+              >
+                <Plus className="h-4 w-4" />
+                {forecastLineSaving ? "Adding" : "Add"}
+              </Button>
+            </div>
+            {forecastLineMessage ? <div className="max-w-xl text-right text-xs text-muted-foreground">{forecastLineMessage}</div> : null}
           </div>
-          {forecastLineMessage ? <div className="max-w-xl text-right text-xs text-muted-foreground">{forecastLineMessage}</div> : null}
-        </div>
+        ) : null}
       </div>
       {lines.length ? (
         <div className="overflow-hidden rounded-lg border bg-card">
@@ -953,6 +966,7 @@ function MemberForecastTable({
                             line={line}
                             onChange={(value) => onDraftChange(line, cell, value)}
                             onCommit={() => onDraftCommit(line, cell)}
+                            readOnly={!canEdit}
                             saving={savingCells[memberForecastDraftKey(line, cell)] === true}
                             value={drafts[memberForecastDraftKey(line, cell)] ?? String(cell.forecast_hours)}
                           />
@@ -1052,6 +1066,7 @@ function MemberForecastInput({
   line,
   onChange,
   onCommit,
+  readOnly,
   saving,
   value,
 }: {
@@ -1060,6 +1075,7 @@ function MemberForecastInput({
   line: MemberForecastLine;
   onChange: (value: string) => void;
   onCommit: () => void;
+  readOnly: boolean;
   saving: boolean;
   value: string;
 }) {
@@ -1071,7 +1087,7 @@ function MemberForecastInput({
       className={`numeric-cell h-7 min-w-0 px-1 text-right text-xs ${dirty ? "border-primary bg-primary/5" : ""} ${
         invalid ? "border-destructive" : ""
       } ${saving ? "opacity-70" : ""}`}
-      disabled={saving}
+      disabled={saving || readOnly}
       inputMode="decimal"
       pattern="[0-9]*"
       type="text"

@@ -20,6 +20,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { teamMemberDetailPath } from "../lib/routes";
 import {
@@ -65,6 +66,8 @@ type TeamMemberRowGroup = {
 
 export function TeamManagementPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
+  const { status } = useAuth();
+  const canAdmin = status?.capabilities.can_admin === true;
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [storyMetrics, setStoryMetrics] = useState<TeamMemberStoryPointMetric[]>([]);
@@ -162,7 +165,8 @@ export function TeamManagementPage() {
   }, [includeInactive, members, normalizedNameSearch]);
 
   const columns = useMemo<ColumnDef<TeamMember>[]>(
-    () => [
+    () => {
+      const baseColumns: ColumnDef<TeamMember>[] = [
       {
         accessorKey: "name",
         header: "Name",
@@ -202,7 +206,11 @@ export function TeamManagementPage() {
         header: "Last Updated",
         cell: ({ row }) => formatDate(row.original.updated_at),
       },
-      {
+      ];
+      if (!canAdmin) return baseColumns;
+      return [
+        ...baseColumns,
+        {
         id: "roster_action",
         header: "Roster",
         enableSorting: false,
@@ -226,8 +234,9 @@ export function TeamManagementPage() {
           );
         },
       },
-    ],
-    [rosterStatusUpdatingId, updateRosterStatus],
+      ];
+    },
+    [canAdmin, rosterStatusUpdatingId, updateRosterStatus],
   );
 
   const table = useReactTable({
@@ -276,12 +285,14 @@ export function TeamManagementPage() {
         title="All Team Member Rankings"
       />
 
-      <AddTeamMemberPanel
-        creating={creating}
-        form={newMember}
-        onChange={setNewMember}
-        onSubmit={() => void createTeamMember()}
-      />
+      {canAdmin ? (
+        <AddTeamMemberPanel
+          creating={creating}
+          form={newMember}
+          onChange={setNewMember}
+          onSubmit={() => void createTeamMember()}
+        />
+      ) : null}
 
       <section className="flex flex-col justify-between gap-3 rounded-lg border bg-card p-4 md:flex-row md:items-center">
         <div>

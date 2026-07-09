@@ -17,11 +17,12 @@ const navLinks: Array<{ key: PageNavKey; label: string; href: string; icon: Luci
 export function PageNav({ current }: { current?: PageNavKey }) {
   const { status } = useAuth();
   const canAdmin = status?.capabilities.can_admin === true;
+  const canViewNamedPeople = status?.capabilities.can_view_named_people === true;
 
   return (
     <nav aria-label="Page navigation" className="flex flex-nowrap justify-end gap-2">
       {navLinks
-        .filter((link) => link.key !== current && (link.key !== "admin" || canAdmin))
+        .filter((link) => link.key !== current && (link.key !== "admin" || canAdmin) && (link.key !== "team" || canViewNamedPeople))
         .map((link) => {
           const Icon = link.icon;
           if (link.iconOnly) {

@@ -13,6 +13,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { productDetailPath } from "../lib/routes";
 import {
@@ -47,6 +48,8 @@ export function TeamAnalyticsPage() {
   const navigate = useNavigate();
   const teamRef = safeDecodeURIComponent(params.teamSlug ?? "");
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
+  const { status } = useAuth();
+  const canEditForecast = status?.capabilities.can_edit_forecast === true;
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [storyMetrics, setStoryMetrics] = useState<TeamMemberStoryPointMetric[]>([]);
@@ -131,6 +134,7 @@ export function TeamAnalyticsPage() {
           <TeamDeliveryFlowPanel flow={deliveryFlow} />
           {roadmapPlan ? (
             <RoadmapForecastPlanner
+              canEdit={canEditForecast}
               fiscalYear={fiscalYear}
               onError={setActionError}
               onNotice={setNotice}
@@ -278,6 +282,7 @@ function formatDays(value: number | null) {
 }
 
 function RoadmapForecastPlanner({
+  canEdit,
   fiscalYear,
   onError,
   onNotice,
@@ -285,6 +290,7 @@ function RoadmapForecastPlanner({
   saving,
   setSaving,
 }: {
+  canEdit: boolean;
   fiscalYear: number;
   onError: (message: string | null) => void;
   onNotice: (message: string | null) => void;
@@ -369,6 +375,7 @@ function RoadmapForecastPlanner({
   }, []);
 
   function addMember(group: PlannerProductGroup) {
+    if (!canEdit) return;
     const rowKey = plannerGroupKey(group);
     const selectedMemberId = Number(selectedMembers[rowKey]);
     if (!Number.isFinite(selectedMemberId)) return;
@@ -382,6 +389,7 @@ function RoadmapForecastPlanner({
   }
 
   function updateCell(group: PlannerProductGroup, memberId: number, monthSequence: number, value: string) {
+    if (!canEdit) return;
     const key = plannerGroupCellKey(group, memberId, monthSequence);
     const nextDraft = { ...draftHoursRef.current, [key]: value };
     changeVersionRef.current += 1;
@@ -392,6 +400,7 @@ function RoadmapForecastPlanner({
   }
 
   function scheduleAutosave() {
+    if (!canEdit) return;
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
     }
@@ -407,6 +416,7 @@ function RoadmapForecastPlanner({
   }
 
   function flushPendingAutosave() {
+    if (!canEdit) return;
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
@@ -496,7 +506,7 @@ function RoadmapForecastPlanner({
         <div className="flex flex-wrap gap-2 lg:justify-end">
           <PlannerMetric label="Product Fcst" value={formatHours(allocationTotal)} />
           <PlannerMetric label="Actual" value={formatHours(actualTotal)} />
-          <PlannerAutosaveStatus lastSavedAt={lastSavedAt} saving={saving} state={autosaveState} />
+          {canEdit ? <PlannerAutosaveStatus lastSavedAt={lastSavedAt} saving={saving} state={autosaveState} /> : <PlannerMetric label="Mode" value="Read only" />}
         </div>
       </div>
 
@@ -512,7 +522,7 @@ function RoadmapForecastPlanner({
           productGroups.map((group) => {
             const groupKey = plannerGroupKey(group);
             const memberIds = rowMembers[groupKey] ?? [];
-            const canForecast = group.product_id != null && group.bucket_id != null;
+            const canForecast = canEdit && group.product_id != null && group.bucket_id != null;
             const availableMembers = plan.team_members.filter((member) => !memberIds.includes(member.id));
             return (
               <div key={group.group_key} className="overflow-hidden rounded-lg border">
@@ -536,26 +546,28 @@ function RoadmapForecastPlanner({
                       <PlannerMetric label="Actual" value={formatHours(group.actual_hours)} />
                       <PlannerMetric label="Tickets" value={String(group.ticket_count)} />
                     </div>
-                    <div className="flex gap-2">
-                      <select
-                        aria-label={`Add Team Member to ${group.product ?? "Product Forecast"}`}
-                        className="h-9 min-w-56 rounded-md border border-input bg-background px-3 text-sm"
-                        disabled={!canForecast || !availableMembers.length}
-                        value={selectedMembers[groupKey] ?? ""}
-                        onChange={(event) => setSelectedMembers((current) => ({ ...current, [groupKey]: event.target.value }))}
-                      >
-                        <option value="">{canForecast ? "Add Team Member" : "Map product and bucket first"}</option>
-                        {availableMembers.map((member) => (
-                          <option key={member.id} value={member.id}>
-                            {member.name}
-                          </option>
-                        ))}
-                      </select>
-                      <Button disabled={!canForecast || !selectedMembers[groupKey]} onClick={() => addMember(group)} size="sm" type="button" variant="outline">
-                        <Plus className="h-4 w-4" />
-                        Add
-                      </Button>
-                    </div>
+                    {canEdit ? (
+                      <div className="flex gap-2">
+                        <select
+                          aria-label={`Add Team Member to ${group.product ?? "Product Forecast"}`}
+                          className="h-9 min-w-56 rounded-md border border-input bg-background px-3 text-sm"
+                          disabled={!canForecast || !availableMembers.length}
+                          value={selectedMembers[groupKey] ?? ""}
+                          onChange={(event) => setSelectedMembers((current) => ({ ...current, [groupKey]: event.target.value }))}
+                        >
+                          <option value="">{canForecast ? "Add Team Member" : "Map product and bucket first"}</option>
+                          {availableMembers.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name}
+                            </option>
+                          ))}
+                        </select>
+                        <Button disabled={!canForecast || !selectedMembers[groupKey]} onClick={() => addMember(group)} size="sm" type="button" variant="outline">
+                          <Plus className="h-4 w-4" />
+                          Add
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 

@@ -8,6 +8,7 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { cn, formatCurrency, formatHours } from "../lib/utils";
 import type {
@@ -26,11 +27,6 @@ const DIMENSION_OPTIONS: Array<{ key: LaborCostReportDimension; label: string }>
   { key: "bucket", label: "Bucket" },
 ];
 
-const OPTIONAL_DIMENSION_OPTIONS: Array<{ key: LaborCostReportOptionalDimension; label: string }> = [
-  { key: "none", label: "None" },
-  ...DIMENSION_OPTIONS,
-];
-
 const METRIC_OPTIONS: Array<{ key: LaborCostReportMetric; label: string }> = [
   { key: "forecast_cost", label: "Forecast Cost" },
   { key: "actual_cost", label: "Actual Cost" },
@@ -41,9 +37,11 @@ const METRIC_OPTIONS: Array<{ key: LaborCostReportMetric; label: string }> = [
 
 export function ReportsPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
-  const [leadDimension, setLeadDimension] = useState<LaborCostReportDimension>("person");
-  const [secondDimension, setSecondDimension] = useState<LaborCostReportOptionalDimension>("product");
-  const [thirdDimension, setThirdDimension] = useState<LaborCostReportOptionalDimension>("bucket");
+  const { status } = useAuth();
+  const canViewNamedPeople = status?.capabilities.can_view_named_people === true;
+  const [leadDimension, setLeadDimension] = useState<LaborCostReportDimension>(() => (canViewNamedPeople ? "person" : "product"));
+  const [secondDimension, setSecondDimension] = useState<LaborCostReportOptionalDimension>(() => (canViewNamedPeople ? "product" : "bucket"));
+  const [thirdDimension, setThirdDimension] = useState<LaborCostReportOptionalDimension>(() => (canViewNamedPeople ? "bucket" : "none"));
   const [sortMetric, setSortMetric] = useState<LaborCostReportSort>("forecast_cost");
   const [report, setReport] = useState<LaborCostReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,6 +62,21 @@ export function ReportsPage() {
     () => [...activeDimensionOptions(leadDimension, secondDimension, thirdDimension), ...METRIC_OPTIONS],
     [leadDimension, secondDimension, thirdDimension],
   );
+  const dimensionOptions = useMemo(
+    () => DIMENSION_OPTIONS.filter((option) => canViewNamedPeople || option.key !== "person"),
+    [canViewNamedPeople],
+  );
+  const optionalDimensionOptions = useMemo(
+    () => [{ key: "none" as const, label: "None" }, ...dimensionOptions],
+    [dimensionOptions],
+  );
+
+  useEffect(() => {
+    if (canViewNamedPeople) return;
+    if (leadDimension === "person") setLeadDimension("product");
+    if (secondDimension === "person") setSecondDimension("bucket");
+    if (thirdDimension === "person") setThirdDimension("none");
+  }, [canViewNamedPeople, leadDimension, secondDimension, thirdDimension]);
 
   useEffect(() => {
     if (!sortOptions.some((option) => option.key === sortMetric)) {
@@ -135,19 +148,19 @@ export function ReportsPage() {
             <DimensionSelect
               label="Lead Column"
               value={leadDimension}
-              options={DIMENSION_OPTIONS}
+              options={dimensionOptions}
               onChange={(value) => setLeadDimension(value as LaborCostReportDimension)}
             />
             <DimensionSelect
               label="Then"
               value={secondDimension}
-              options={OPTIONAL_DIMENSION_OPTIONS}
+              options={optionalDimensionOptions}
               onChange={(value) => setSecondDimension(value as LaborCostReportOptionalDimension)}
             />
             <DimensionSelect
               label="Then"
               value={thirdDimension}
-              options={OPTIONAL_DIMENSION_OPTIONS}
+              options={optionalDimensionOptions}
               onChange={(value) => setThirdDimension(value as LaborCostReportOptionalDimension)}
             />
             <DimensionSelect label="Sort By" value={sortMetric} options={sortOptions} onChange={(value) => setSortMetric(value as LaborCostReportSort)} />
