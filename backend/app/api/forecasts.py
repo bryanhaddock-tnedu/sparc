@@ -6,8 +6,10 @@ from app.api.errors import bad_request
 from app.db.session import get_db
 from app.models import FiscalMonth, ForecastEntry
 from app.schemas import ForecastBatchUpsert, ForecastResponse, ForecastUpsert
+from app.services.access_control import AuthenticatedUser, can_view_product_office
 from app.services.costs import round_hours
 from app.services.forecasting import upsert_forecast_entry
+from app.services.auth import current_user, require_write_access
 
 router = APIRouter(prefix="/forecasts", tags=["forecasts"])
 
@@ -18,6 +20,7 @@ def list_forecasts(
     team_member_id: int | None = None,
     fiscal_year: int | None = None,
     db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(current_user),
 ) -> list[dict[str, object]]:
     statement = select(ForecastEntry).options(
         joinedload(ForecastEntry.product),
@@ -49,11 +52,12 @@ def list_forecasts(
             "hours": round_hours(entry.hours),
         }
         for entry in entries
+        if can_view_product_office(user, entry.product.office)
     ]
 
 
 @router.put("", response_model=ForecastResponse)
-def upsert_forecast(payload: ForecastUpsert, db: Session = Depends(get_db)) -> dict[str, object]:
+def upsert_forecast(payload: ForecastUpsert, db: Session = Depends(get_db), _writer=Depends(require_write_access)) -> dict[str, object]:
     try:
         entry = upsert_forecast_entry(db, **payload.model_dump())
     except ValueError as exc:
@@ -71,7 +75,11 @@ def upsert_forecast(payload: ForecastUpsert, db: Session = Depends(get_db)) -> d
 
 
 @router.put("/batch", response_model=list[ForecastResponse])
-def upsert_forecast_batch(payload: ForecastBatchUpsert, db: Session = Depends(get_db)) -> list[dict[str, object]]:
+def upsert_forecast_batch(
+    payload: ForecastBatchUpsert,
+    db: Session = Depends(get_db),
+    _writer=Depends(require_write_access),
+) -> list[dict[str, object]]:
     entries = []
     try:
         for item in payload.entries:

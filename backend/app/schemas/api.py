@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.services.product_org import (
+    PRODUCT_OFFICES,
     clean_product_org_value,
     product_division_error,
     product_office_error,
@@ -44,6 +45,107 @@ class AdminDataImportResult(BaseModel):
     excluded_jira_refresh_data: list[str]
 
 
+AccessRole = Literal["ADMIN", "LEADERSHIP_VIEW_ONLY", "PROGRAM_AREA_VIEW_ONLY"]
+
+
+class AuthenticatedUserResponse(BaseModel):
+    id: int | None
+    email: str | None
+    display_name: str
+    role: AccessRole
+    role_label: str
+    program_areas: list[str]
+    auth_type: str
+    active: bool
+
+
+class AuthStatusResponse(BaseModel):
+    auth_enabled: bool
+    authenticated: bool
+    username: str | None
+    user: AuthenticatedUserResponse | None = None
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+
+
+class AppUserResponse(BaseModel):
+    id: int
+    email: str
+    display_name: str
+    role: AccessRole
+    role_label: str
+    program_areas: list[str]
+    active: bool
+    local_login_enabled: bool
+    has_local_password: bool
+    entra_tenant_id: str | None
+    entra_object_id: str | None
+    sso_linked: bool
+    last_login_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AppUserCreate(BaseModel):
+    email: str
+    display_name: str
+    role: AccessRole = "PROGRAM_AREA_VIEW_ONLY"
+    program_areas: list[str] = Field(default_factory=list)
+    active: bool = True
+    local_login_enabled: bool = True
+    temporary_password: str | None = None
+
+    @field_validator("email", "display_name", "temporary_password", mode="before")
+    @classmethod
+    def clean_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("program_areas")
+    @classmethod
+    def validate_program_areas(cls, values: list[str]) -> list[str]:
+        return _validate_program_areas(values)
+
+
+class AppUserUpdate(BaseModel):
+    email: str | None = None
+    display_name: str | None = None
+    role: AccessRole | None = None
+    program_areas: list[str] | None = None
+    active: bool | None = None
+    local_login_enabled: bool | None = None
+    temporary_password: str | None = None
+
+    @field_validator("email", "display_name", "temporary_password", mode="before")
+    @classmethod
+    def clean_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("program_areas")
+    @classmethod
+    def validate_program_areas(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        return _validate_program_areas(values)
+
+
+def _validate_program_areas(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for raw_value in values:
+        value = clean_product_org_value(raw_value)
+        if value is None:
+            continue
+        if value not in PRODUCT_OFFICES:
+            raise ValueError(f"Program Area must be one of: {', '.join(PRODUCT_OFFICES)}")
+        if value not in normalized:
+            normalized.append(value)
+    return normalized
+
+
 class ProductResponse(BaseModel):
     id: int
     name: str
@@ -71,7 +173,7 @@ class TeamMemberResponse(BaseModel):
     slug: str
     role: str
     team: str
-    bill_rate: float
+    bill_rate: float | None
     employment_type: str
     contracting_company: str | None
     status: str
@@ -148,7 +250,7 @@ class ProductTeamMemberResponse(BaseModel):
     team_member_slug: str
     role: str
     team: str
-    bill_rate: float
+    bill_rate: float | None
     employment_type: str
     default_bucket_id: int | None
     default_bucket: str | None
@@ -599,7 +701,7 @@ class BucketTableRowResponse(BaseModel):
     team_member_id: int
     team_member: str
     team_member_slug: str
-    bill_rate: float
+    bill_rate: float | None
     months: list[MonthCellResponse]
     totals: TotalsResponse
 

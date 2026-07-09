@@ -7,70 +7,148 @@ import json
 import time
 from typing import Any
 
-from fastapi import HTTPException, Request, Response, status
+from fastapi import Depends, HTTPException, Request, Response, status
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.db.session import get_db
+from app.services.access_control import (
+    AuthenticatedUser,
+    authenticate_local_user,
+    authenticated_user_from_app_user,
+    break_glass_admin,
+    local_disabled_admin,
+    role_capabilities,
+    serialize_authenticated_user,
+)
 
 AUTH_COOKIE_NAME = "sparc_session"
 
 
-def auth_status(request: Request) -> dict[str, object]:
+def auth_status(request: Request, db: Session | None = None) -> dict[str, object]:
     settings = get_settings()
     if not settings.auth_enabled:
-        return {"auth_enabled": False, "authenticated": True, "username": None}
+        user = local_disabled_admin()
+        return _auth_response(auth_enabled=False, authenticated=True, user=user)
 
-    username = current_username(request)
-    return {"auth_enabled": True, "authenticated": username is not None, "username": username}
+    user = current_principal(request, db)
+    return _auth_response(auth_enabled=True, authenticated=user is not None, user=user)
 
 
-def login(response: Response, username: str, password: str) -> dict[str, object]:
+def login(response: Response, username: str, password: str, db: Session | None = None) -> dict[str, object]:
     settings = get_settings()
-    _require_auth_configured()
-    if not _constant_time_equals(username, settings.auth_username or "") or not _constant_time_equals(password, settings.auth_password or ""):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+    _require_session_configured()
 
-    token = _create_session_token(username)
-    response.set_cookie(
-        AUTH_COOKIE_NAME,
-        token,
-        max_age=settings.auth_session_minutes * 60,
-        httponly=True,
-        secure=_secure_cookie(),
-        samesite="lax",
-        path="/",
-    )
-    return {"auth_enabled": True, "authenticated": True, "username": username}
+    if db is not None:
+        try:
+            user = authenticate_local_user(db, username, password)
+        except ValueError:
+            user = None
+        if user is not None:
+            token = _create_session_token(str(user.id), auth_type="app_user")
+            _set_session_cookie(response, token)
+            db.commit()
+            principal = authenticated_user_from_app_user(user)
+            return _auth_response(auth_enabled=True, authenticated=True, user=principal)
+
+    if _break_glass_credentials_match(username, password):
+        token = _create_session_token(username, auth_type="break_glass")
+        _set_session_cookie(response, token)
+        return _auth_response(auth_enabled=True, authenticated=True, user=break_glass_admin(username))
+
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
 
 
 def logout(response: Response) -> dict[str, object]:
     response.delete_cookie(AUTH_COOKIE_NAME, path="/")
-    return {"auth_enabled": get_settings().auth_enabled, "authenticated": False, "username": None}
+    return _auth_response(auth_enabled=get_settings().auth_enabled, authenticated=False, user=None)
 
 
 def require_auth(request: Request) -> None:
     if not get_settings().auth_enabled:
         return
-    _require_auth_configured()
+    _require_session_configured()
     if current_username(request) is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
 
-def current_username(request: Request) -> str | None:
-    token = request.cookies.get(AUTH_COOKIE_NAME)
-    if not token:
+def current_user(request: Request, db: Session = Depends(get_db)) -> AuthenticatedUser:
+    user = current_principal(request, db)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    return user
+
+
+def require_admin(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
+    if not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return user
+
+
+def require_write_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
+    if not role_capabilities(user.role).get("can_edit_forecast"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Write access required")
+    return user
+
+
+def require_named_people_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
+    if not role_capabilities(user.role).get("can_view_named_people"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Named Team Member access required")
+    return user
+
+
+def current_principal(request: Request, db: Session | None = None) -> AuthenticatedUser | None:
+    settings = get_settings()
+    if not settings.auth_enabled:
+        return local_disabled_admin()
+
+    payload = current_session_payload(request)
+    if payload is None:
         return None
-    payload = _verify_session_token(token)
+
+    auth_type = str(payload.get("auth_type") or "break_glass")
+    subject = payload.get("sub")
+    if not subject:
+        return None
+
+    if auth_type == "app_user":
+        if db is None:
+            return None
+        try:
+            user_id = int(subject)
+        except (TypeError, ValueError):
+            return None
+        from app.services.access_control import get_app_user
+
+        user = get_app_user(db, user_id)
+        if user is None or not user.is_active:
+            return None
+        return authenticated_user_from_app_user(user)
+
+    return break_glass_admin(str(subject))
+
+
+def current_username(request: Request) -> str | None:
+    payload = current_session_payload(request)
     if payload is None:
         return None
     username = payload.get("sub")
     return str(username) if username else None
 
 
-def _create_session_token(username: str) -> str:
+def current_session_payload(request: Request) -> dict[str, Any] | None:
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    if not token:
+        return None
+    return _verify_session_token(token)
+
+
+def _create_session_token(subject: str, *, auth_type: str) -> str:
     now = int(time.time())
     settings = get_settings()
     payload = {
-        "sub": username,
+        "sub": subject,
+        "auth_type": auth_type,
         "iat": now,
         "exp": now + settings.auth_session_minutes * 60,
     }
@@ -113,10 +191,41 @@ def _constant_time_equals(left: str, right: str) -> bool:
     return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
 
 
-def _require_auth_configured() -> None:
+def _require_session_configured() -> None:
     settings = get_settings()
-    if not settings.auth_username or not settings.auth_password or not settings.auth_session_secret:
+    if not settings.auth_session_secret:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Authentication is not configured")
+
+
+def _break_glass_credentials_match(username: str, password: str) -> bool:
+    settings = get_settings()
+    if not settings.auth_username or not settings.auth_password:
+        return False
+    return _constant_time_equals(username, settings.auth_username) and _constant_time_equals(password, settings.auth_password)
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    settings = get_settings()
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        token,
+        max_age=settings.auth_session_minutes * 60,
+        httponly=True,
+        secure=_secure_cookie(),
+        samesite="lax",
+        path="/",
+    )
+
+
+def _auth_response(auth_enabled: bool, authenticated: bool, user: AuthenticatedUser | None) -> dict[str, object]:
+    username = user.email or user.display_name if user else None
+    return {
+        "auth_enabled": auth_enabled,
+        "authenticated": authenticated,
+        "username": username,
+        "user": serialize_authenticated_user(user) if user else None,
+        "capabilities": role_capabilities(user.role) if user else {},
+    }
 
 
 def _secure_cookie() -> bool:

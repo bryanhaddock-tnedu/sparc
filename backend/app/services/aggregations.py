@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import ActualEntry, Bucket, FiscalMonth, ForecastEntry, Product, ProductBudget, ProductTeamMember, TeamMember
+from app.services.access_control import AuthenticatedUser, can_view_product_office, scoped_program_areas, role_capabilities
 from app.services.costs import calculate_cost, round_hours
 from app.services.fiscal_year import ensure_fiscal_months
 from app.services.slugs import product_url_slug, team_member_url_slug
@@ -46,7 +47,7 @@ def product_budget_map(db: Session, fiscal_year: int) -> dict[int, Decimal]:
     }
 
 
-def serialize_team_member(member: TeamMember) -> dict[str, object]:
+def serialize_team_member(member: TeamMember, *, can_view_rates: bool = True) -> dict[str, object]:
     return {
         "id": member.id,
         "staff_id": member.staff_id,
@@ -54,7 +55,7 @@ def serialize_team_member(member: TeamMember) -> dict[str, object]:
         "slug": team_member_url_slug(member),
         "role": member.role,
         "team": member.team,
-        "bill_rate": round_hours(member.bill_rate),
+        "bill_rate": round_hours(member.bill_rate) if can_view_rates else None,
         "employment_type": member.employment_type,
         "contracting_company": member.contracting_company,
         "status": member.status,
@@ -78,6 +79,7 @@ def _forecast_entries(
     db: Session,
     fiscal_year: int,
     product_id: int | None = None,
+    product_ids: set[int] | None = None,
     month_sequence: int | None = None,
 ) -> list[ForecastEntry]:
     statement = (
@@ -93,6 +95,10 @@ def _forecast_entries(
     )
     if product_id is not None:
         statement = statement.where(ForecastEntry.product_id == product_id)
+    if product_ids is not None:
+        if not product_ids:
+            return []
+        statement = statement.where(ForecastEntry.product_id.in_(product_ids))
     if month_sequence is not None:
         statement = statement.where(FiscalMonth.sequence == month_sequence)
     return list(db.scalars(statement))
@@ -102,6 +108,7 @@ def _actual_entries(
     db: Session,
     fiscal_year: int,
     product_id: int | None = None,
+    product_ids: set[int] | None = None,
     month_sequence: int | None = None,
 ) -> list[ActualEntry]:
     statement = (
@@ -117,6 +124,10 @@ def _actual_entries(
     )
     if product_id is not None:
         statement = statement.where(ActualEntry.product_id == product_id)
+    if product_ids is not None:
+        if not product_ids:
+            return []
+        statement = statement.where(ActualEntry.product_id.in_(product_ids))
     if month_sequence is not None:
         statement = statement.where(FiscalMonth.sequence == month_sequence)
     return list(db.scalars(statement))
@@ -151,11 +162,17 @@ def _budget_metrics(budget_amount: Decimal | float, projected_spend: Decimal | f
     }
 
 
-def dashboard_products(db: Session, fiscal_year: int, month_sequence: int | None = None) -> list[dict[str, object]]:
-    products = db.scalars(select(Product).order_by(Product.name)).all()
+def dashboard_products(db: Session, fiscal_year: int, month_sequence: int | None = None, user: AuthenticatedUser | None = None) -> list[dict[str, object]]:
+    product_scope = _product_scope_ids(db, user)
+    product_statement = select(Product).order_by(Product.name)
+    if product_scope is not None:
+        if not product_scope:
+            return []
+        product_statement = product_statement.where(Product.id.in_(product_scope))
+    products = db.scalars(product_statement).all()
     buckets = db.scalars(select(Bucket).order_by(Bucket.id)).all()
-    forecasts = _forecast_entries(db, fiscal_year, month_sequence=month_sequence)
-    actuals = _actual_entries(db, fiscal_year, month_sequence=month_sequence)
+    forecasts = _forecast_entries(db, fiscal_year, product_ids=product_scope, month_sequence=month_sequence)
+    actuals = _actual_entries(db, fiscal_year, product_ids=product_scope, month_sequence=month_sequence)
     budgets = product_budget_map(db, fiscal_year)
 
     forecasts_by_product: dict[int, list[ForecastEntry]] = defaultdict(list)
@@ -166,7 +183,13 @@ def dashboard_products(db: Session, fiscal_year: int, month_sequence: int | None
         forecasts_by_product[entry.product_id].append(entry)
     for entry in actuals:
         actuals_by_product[entry.product_id].append(entry)
-    for assignment in db.scalars(select(ProductTeamMember).where(ProductTeamMember.status == "active")).all():
+    assignment_statement = select(ProductTeamMember).where(ProductTeamMember.status == "active")
+    if product_scope is not None:
+        if product_scope:
+            assignment_statement = assignment_statement.where(ProductTeamMember.product_id.in_(product_scope))
+        else:
+            return []
+    for assignment in db.scalars(assignment_statement).all():
         assignments_by_product[assignment.product_id].add(assignment.team_member_id)
 
     rows: list[dict[str, object]] = []
@@ -199,12 +222,12 @@ def dashboard_products(db: Session, fiscal_year: int, month_sequence: int | None
     return rows
 
 
-def dashboard_summary(db: Session, fiscal_year: int) -> dict[str, float | int]:
-    rows = dashboard_products(db, fiscal_year)
+def dashboard_summary(db: Session, fiscal_year: int, user: AuthenticatedUser | None = None) -> dict[str, float | int]:
+    rows = dashboard_products(db, fiscal_year, user=user)
     summary = {
         "fiscal_year": fiscal_year,
         "product_count": len(rows),
-        "team_member_count": db.scalar(select(func.count()).select_from(TeamMember).where(TeamMember.status == "active")) or 0,
+        "team_member_count": _dashboard_team_member_count(db, fiscal_year, user),
     }
     for key in [
         "budget_amount",
@@ -227,10 +250,16 @@ def dashboard_summary(db: Session, fiscal_year: int) -> dict[str, float | int]:
     return summary
 
 
-def dashboard_work_type_breakdown(db: Session, fiscal_year: int, month_sequence: int | None = None) -> list[dict[str, object]]:
+def dashboard_work_type_breakdown(
+    db: Session,
+    fiscal_year: int,
+    month_sequence: int | None = None,
+    user: AuthenticatedUser | None = None,
+) -> list[dict[str, object]]:
     buckets = db.scalars(select(Bucket).order_by(Bucket.id)).all()
-    forecasts = _forecast_entries(db, fiscal_year, month_sequence=month_sequence)
-    actuals = _actual_entries(db, fiscal_year, month_sequence=month_sequence)
+    product_scope = _product_scope_ids(db, user)
+    forecasts = _forecast_entries(db, fiscal_year, product_ids=product_scope, month_sequence=month_sequence)
+    actuals = _actual_entries(db, fiscal_year, product_ids=product_scope, month_sequence=month_sequence)
     by_bucket: dict[int, dict[str, Decimal | float]] = defaultdict(
         lambda: {"forecast_hours": Decimal("0"), "actual_hours": Decimal("0"), "forecast_cost": 0.0, "actual_cost": 0.0}
     )
@@ -256,9 +285,15 @@ def dashboard_work_type_breakdown(db: Session, fiscal_year: int, month_sequence:
     ]
 
 
-def dashboard_labor_mix(db: Session, fiscal_year: int, month_sequence: int | None = None) -> dict[str, list[dict[str, object]]]:
-    forecasts = _forecast_entries(db, fiscal_year, month_sequence=month_sequence)
-    actuals = _actual_entries(db, fiscal_year, month_sequence=month_sequence)
+def dashboard_labor_mix(
+    db: Session,
+    fiscal_year: int,
+    month_sequence: int | None = None,
+    user: AuthenticatedUser | None = None,
+) -> dict[str, list[dict[str, object]]]:
+    product_scope = _product_scope_ids(db, user)
+    forecasts = _forecast_entries(db, fiscal_year, product_ids=product_scope, month_sequence=month_sequence)
+    actuals = _actual_entries(db, fiscal_year, product_ids=product_scope, month_sequence=month_sequence)
     hire_types: dict[str, dict[str, object]] = defaultdict(
         lambda: {
             "forecast_hours": Decimal("0"),
@@ -341,7 +376,7 @@ def bucket_distribution(db: Session, product_id: int, fiscal_year: int) -> list[
     return rows
 
 
-def product_bucket_tables(db: Session, product_id: int, fiscal_year: int) -> dict[str, object]:
+def product_bucket_tables(db: Session, product_id: int, fiscal_year: int, *, can_view_rates: bool = True) -> dict[str, object]:
     product = db.get(Product, product_id)
     if product is None:
         raise ValueError("Product not found")
@@ -384,7 +419,7 @@ def product_bucket_tables(db: Session, product_id: int, fiscal_year: int) -> dic
                     "team_member_id": member.id,
                     "team_member": member.name,
                     "team_member_slug": team_member_url_slug(member),
-                    "bill_rate": round_hours(member.bill_rate),
+                    "bill_rate": round_hours(member.bill_rate) if can_view_rates else None,
                     "months": month_cells,
                     "totals": _rounded_totals(row_totals),
                 }
@@ -407,7 +442,7 @@ def product_bucket_tables(db: Session, product_id: int, fiscal_year: int) -> dic
     }
 
 
-def team_member_products(db: Session, team_member_id: int, fiscal_year: int) -> dict[str, object]:
+def team_member_products(db: Session, team_member_id: int, fiscal_year: int, user: AuthenticatedUser | None = None) -> dict[str, object]:
     member = db.get(TeamMember, team_member_id)
     if member is None:
         raise ValueError("Team member not found")
@@ -436,6 +471,8 @@ def team_member_products(db: Session, team_member_id: int, fiscal_year: int) -> 
     for values in grouped.values():
         product = values["product"]
         bucket = values["bucket"]
+        if not _can_view_product(user, product):
+            continue
         product_ids.add(product.id)
         forecast_hours = values["forecast_hours"]
         actual_hours = values["actual_hours"]
@@ -458,7 +495,7 @@ def team_member_products(db: Session, team_member_id: int, fiscal_year: int) -> 
         )
     projected_spend = sum(float(row["forecast_cost"]) for row in rows)
     return {
-        "team_member": serialize_team_member(member),
+        "team_member": serialize_team_member(member, can_view_rates=_can_view_rates(user)),
         "fiscal_year": fiscal_year,
         "months": [serialize_month(month) for month in months],
         **_budget_metrics(sum((budgets.get(product_id, Decimal("0")) for product_id in product_ids), Decimal("0")), projected_spend),
@@ -518,6 +555,50 @@ def _labor_mix_rows(source: dict[str, dict[str, object]], key_name: str) -> list
         if row["forecast_hours"] or row["actual_hours"] or row["forecast_resource_count"] or row["actual_resource_count"]:
             rows.append(row)
     return sorted(rows, key=lambda row: (row["forecast_resource_count"], row["forecast_hours"], row["actual_hours"]), reverse=True)
+
+
+def _product_scope_ids(db: Session, user: AuthenticatedUser | None) -> set[int] | None:
+    if user is None:
+        return None
+    program_areas = scoped_program_areas(user)
+    if program_areas is None:
+        return None
+    if not program_areas:
+        return set()
+    return set(db.scalars(select(Product.id).where(Product.office.in_(program_areas))).all())
+
+
+def _dashboard_team_member_count(db: Session, fiscal_year: int, user: AuthenticatedUser | None) -> int:
+    product_scope = _product_scope_ids(db, user)
+    if product_scope is None:
+        return db.scalar(select(func.count()).select_from(TeamMember).where(TeamMember.status == "active")) or 0
+    if not product_scope:
+        return 0
+    member_ids: set[int] = set()
+    member_ids.update(
+        db.scalars(
+            select(ForecastEntry.team_member_id)
+            .join(ForecastEntry.fiscal_month)
+            .where(FiscalMonth.fiscal_year == fiscal_year, ForecastEntry.product_id.in_(product_scope))
+        ).all()
+    )
+    member_ids.update(
+        db.scalars(
+            select(ActualEntry.team_member_id)
+            .join(ActualEntry.fiscal_month)
+            .where(FiscalMonth.fiscal_year == fiscal_year, ActualEntry.product_id.in_(product_scope))
+        ).all()
+    )
+    member_ids.update(db.scalars(select(ProductTeamMember.team_member_id).where(ProductTeamMember.product_id.in_(product_scope))).all())
+    return len(member_ids)
+
+
+def _can_view_product(user: AuthenticatedUser | None, product: Product) -> bool:
+    return True if user is None else can_view_product_office(user, product.office)
+
+
+def _can_view_rates(user: AuthenticatedUser | None) -> bool:
+    return True if user is None else role_capabilities(user.role).get("can_view_rates", False)
 
 
 def _bucket_total_rows(

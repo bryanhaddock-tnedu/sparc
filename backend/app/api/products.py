@@ -25,6 +25,8 @@ from app.schemas import (
     ProductUpdate,
 )
 from app.services.aggregations import bucket_distribution, product_budget_amount, product_budget_map, product_bucket_tables, product_summary, serialize_product
+from app.services.access_control import AuthenticatedUser, can_view_product_office, role_capabilities
+from app.services.auth import current_user, require_admin, require_named_people_access
 from app.services.jira_projects import (
     add_product_jira_space,
     list_product_jira_spaces,
@@ -41,16 +43,26 @@ router = APIRouter(prefix="/products", tags=["products"])
 
 
 @router.get("", response_model=list[ProductResponse])
-def list_products(fiscal_year: int = 2027, db: Session = Depends(get_db)) -> list[dict[str, object]]:
+def list_products(
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(current_user),
+) -> list[dict[str, object]]:
     budgets = product_budget_map(db, fiscal_year)
     return [
         serialize_product(product, budgets.get(product.id, Decimal("0")))
         for product in db.scalars(select(Product).order_by(Product.name)).all()
+        if can_view_product_office(user, product.office)
     ]
 
 
 @router.post("", response_model=ProductResponse)
-def create_product(payload: ProductCreate, fiscal_year: int = 2027, db: Session = Depends(get_db)) -> dict[str, object]:
+def create_product(
+    payload: ProductCreate,
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+) -> dict[str, object]:
     values = payload.model_dump()
     budget_amount = values.pop("budget_amount", Decimal("0.00"))
     product = Product(**values)
@@ -76,8 +88,14 @@ def list_buckets(db: Session = Depends(get_db)) -> list[dict[str, object]]:
 
 
 @router.get("/{product_ref}", response_model=ProductResponse)
-def get_product(product_ref: str, fiscal_year: int = 2027, db: Session = Depends(get_db)) -> dict[str, object]:
+def get_product(
+    product_ref: str,
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(current_user),
+) -> dict[str, object]:
     product = _resolve_product_or_404(db, product_ref)
+    _require_product_visible(product, user)
     product_id = product.id
     if product.slug is None:
         product.slug = unique_product_slug(db, product.name, product.id)
@@ -87,7 +105,13 @@ def get_product(product_ref: str, fiscal_year: int = 2027, db: Session = Depends
 
 
 @router.put("/{product_ref}", response_model=ProductResponse)
-def update_product(product_ref: str, payload: ProductUpdate, fiscal_year: int = 2027, db: Session = Depends(get_db)) -> dict[str, object]:
+def update_product(
+    product_ref: str,
+    payload: ProductUpdate,
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+) -> dict[str, object]:
     product = _resolve_product_or_404(db, product_ref)
     product_id = product.id
     updates = payload.model_dump(exclude_unset=True)
@@ -113,7 +137,7 @@ def update_product(product_ref: str, payload: ProductUpdate, fiscal_year: int = 
 
 
 @router.delete("/{product_ref}", response_model=dict[str, str])
-def delete_product(product_ref: str, db: Session = Depends(get_db)) -> dict[str, str]:
+def delete_product(product_ref: str, db: Session = Depends(get_db), _admin=Depends(require_admin)) -> dict[str, str]:
     product = _resolve_product_or_404(db, product_ref)
     product_id = product.id
     jira_space_count = db.scalar(
@@ -127,8 +151,13 @@ def delete_product(product_ref: str, db: Session = Depends(get_db)) -> dict[str,
 
 
 @router.get("/{product_ref}/team-members", response_model=list[ProductTeamMemberResponse])
-def list_product_team_members(product_ref: str, db: Session = Depends(get_db)) -> list[dict[str, object]]:
+def list_product_team_members(
+    product_ref: str,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_named_people_access),
+) -> list[dict[str, object]]:
     product = _resolve_product_or_404(db, product_ref)
+    _require_product_visible(product, user)
     product_id = product.id
     assignments = db.scalars(
         select(ProductTeamMember)
@@ -140,7 +169,7 @@ def list_product_team_members(product_ref: str, db: Session = Depends(get_db)) -
         .join(ProductTeamMember.team_member)
         .order_by(TeamMember.name)
     ).all()
-    return [_serialize_product_team_member(db, assignment) for assignment in assignments]
+    return [_serialize_product_team_member(db, assignment, can_view_rates=_can_view_rates(user)) for assignment in assignments]
 
 
 @router.post("/{product_ref}/team-members", response_model=ProductTeamMemberResponse)
@@ -148,6 +177,7 @@ def add_product_team_member(
     product_ref: str,
     payload: ProductTeamMemberCreate,
     db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
 ) -> dict[str, object]:
     product = _resolve_product_or_404(db, product_ref)
     product_id = product.id
@@ -183,6 +213,7 @@ def update_product_team_member(
     assignment_id: int,
     payload: ProductTeamMemberUpdate,
     db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
 ) -> dict[str, object]:
     product = _resolve_product_or_404(db, product_ref)
     product_id = product.id
@@ -202,7 +233,12 @@ def update_product_team_member(
 
 
 @router.delete("/{product_ref}/team-members/{assignment_id}", response_model=dict[str, str])
-def remove_product_team_member(product_ref: str, assignment_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+def remove_product_team_member(
+    product_ref: str,
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+) -> dict[str, str]:
     product = _resolve_product_or_404(db, product_ref)
     product_id = product.id
     assignment = db.get(ProductTeamMember, assignment_id)
@@ -222,7 +258,7 @@ def remove_product_team_member(product_ref: str, assignment_id: int, db: Session
 
 
 @router.get("/{product_ref}/jira-spaces", response_model=list[ProductJiraSpaceResponse])
-def get_product_jira_spaces(product_ref: str, db: Session = Depends(get_db)) -> list[dict[str, object]]:
+def get_product_jira_spaces(product_ref: str, db: Session = Depends(get_db), _admin=Depends(require_admin)) -> list[dict[str, object]]:
     product = _resolve_product_or_404(db, product_ref)
     try:
         return list_product_jira_spaces(db, product.id)
@@ -235,6 +271,7 @@ def create_product_jira_space(
     product_ref: str,
     payload: ProductJiraSpaceCreate,
     db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
 ) -> dict[str, object]:
     product = _resolve_product_or_404(db, product_ref)
     try:
@@ -253,6 +290,7 @@ def edit_product_jira_space(
     space_id: int,
     payload: ProductJiraSpaceUpdate,
     db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
 ) -> dict[str, object]:
     product = _resolve_product_or_404(db, product_ref)
     try:
@@ -266,7 +304,12 @@ def edit_product_jira_space(
 
 
 @router.delete("/{product_ref}/jira-spaces/{space_id}", response_model=dict[str, str])
-def delete_product_jira_space(product_ref: str, space_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+def delete_product_jira_space(
+    product_ref: str,
+    space_id: int,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+) -> dict[str, str]:
     product = _resolve_product_or_404(db, product_ref)
     try:
         remove_product_jira_space(db, product.id, space_id)
@@ -278,7 +321,12 @@ def delete_product_jira_space(product_ref: str, space_id: int, db: Session = Dep
 
 
 @router.post("/{product_ref}/jira-spaces/{space_id}/validate", response_model=ProductJiraSpaceResponse)
-def validate_product_jira_space_endpoint(product_ref: str, space_id: int, db: Session = Depends(get_db)) -> dict[str, object]:
+def validate_product_jira_space_endpoint(
+    product_ref: str,
+    space_id: int,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+) -> dict[str, object]:
     product = _resolve_product_or_404(db, product_ref)
     try:
         space = validate_product_jira_space(db, product.id, space_id)
@@ -291,8 +339,14 @@ def validate_product_jira_space_endpoint(product_ref: str, space_id: int, db: Se
 
 
 @router.get("/{product_ref}/summary", response_model=ProductSummaryResponse)
-def get_product_summary(product_ref: str, fiscal_year: int = 2027, db: Session = Depends(get_db)) -> dict[str, object]:
+def get_product_summary(
+    product_ref: str,
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(current_user),
+) -> dict[str, object]:
     product = _resolve_product_or_404(db, product_ref)
+    _require_product_visible(product, user)
     try:
         return product_summary(db, product.id, fiscal_year)
     except ValueError as exc:
@@ -304,8 +358,10 @@ def get_bucket_distribution(
     product_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(current_user),
 ) -> list[dict[str, object]]:
     product = _resolve_product_or_404(db, product_ref)
+    _require_product_visible(product, user)
     return bucket_distribution(db, product.id, fiscal_year)
 
 
@@ -316,11 +372,13 @@ def get_bucket_tables(
     metric: str = "hours",
     data_type: str = "forecast",
     db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_named_people_access),
 ) -> dict[str, object]:
     _ = metric, data_type
     product = _resolve_product_or_404(db, product_ref)
+    _require_product_visible(product, user)
     try:
-        return product_bucket_tables(db, product.id, fiscal_year)
+        return product_bucket_tables(db, product.id, fiscal_year, can_view_rates=_can_view_rates(user))
     except ValueError as exc:
         raise bad_request(str(exc)) from exc
 
@@ -330,8 +388,10 @@ def get_product_roadmap_actuals(
     product_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(current_user),
 ) -> list[dict[str, object]]:
     product = _resolve_product_or_404(db, product_ref)
+    _require_product_visible(product, user)
     return roadmap_actual_rows(db, fiscal_year, product_id=product.id)
 
 
@@ -340,8 +400,10 @@ def get_product_roadmap_items(
     product_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(current_user),
 ) -> list[dict[str, object]]:
     product = _resolve_product_or_404(db, product_ref)
+    _require_product_visible(product, user)
     return product_roadmap_items(db, product.id, fiscal_year)
 
 
@@ -350,6 +412,11 @@ def _resolve_product_or_404(db: Session, product_ref: str) -> Product:
     if product is None:
         raise not_found("Product")
     return product
+
+
+def _require_product_visible(product: Product, user: AuthenticatedUser) -> None:
+    if not can_view_product_office(user, product.office):
+        raise not_found("Product")
 
 
 def _validate_assignment_status(status: str | None) -> None:
@@ -372,7 +439,11 @@ def upsert_product_budget(db: Session, product_id: int, fiscal_year: int, budget
     return budget
 
 
-def _serialize_product_team_member(db: Session, assignment: ProductTeamMember) -> dict[str, object]:
+def _can_view_rates(user: AuthenticatedUser) -> bool:
+    return role_capabilities(user.role).get("can_view_rates", False)
+
+
+def _serialize_product_team_member(db: Session, assignment: ProductTeamMember, *, can_view_rates: bool = True) -> dict[str, object]:
     forecast_count = db.scalar(
         select(func.count())
         .select_from(ForecastEntry)
@@ -399,7 +470,7 @@ def _serialize_product_team_member(db: Session, assignment: ProductTeamMember) -
         "team_member_slug": team_member_url_slug(member),
         "role": member.role,
         "team": member.team,
-        "bill_rate": round(float(member.bill_rate or 0), 2),
+        "bill_rate": round(float(member.bill_rate or 0), 2) if can_view_rates else None,
         "employment_type": member.employment_type,
         "default_bucket_id": assignment.default_bucket_id,
         "default_bucket": bucket.name if bucket else None,

@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends
 
-from app.api import admin_data, auth, dashboard, estimations, forecasts, integrations, products, reports, system_scan, team_members, teams
-from app.services.auth import require_auth
+from app.api import access_users, admin_data, auth, dashboard, estimations, forecasts, integrations, products, reports, system_scan, team_members, teams
+from app.services.auth import current_user
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(auth.router)
 
-protected_router = APIRouter(dependencies=[Depends(require_auth)])
+protected_router = APIRouter(dependencies=[Depends(current_user)])
+protected_router.include_router(access_users.router)
 protected_router.include_router(admin_data.router)
 protected_router.include_router(dashboard.router)
 protected_router.include_router(products.router)

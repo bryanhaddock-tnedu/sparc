@@ -1,5 +1,6 @@
 from app.models.entities import (
     ActualEntry,
+    AppUser,
     Base,
     Bucket,
     EstimatedEntry,
@@ -21,10 +22,12 @@ from app.models.entities import (
     RoadmapItemIssueLink,
     SyncRun,
     TeamMember,
+    UserProgramAreaAssignment,
 )
 
 __all__ = [
     "ActualEntry",
+    "AppUser",
     "Base",
     "Bucket",
     "EstimatedEntry",
@@ -46,4 +49,5 @@ __all__ = [
     "RoadmapItemIssueLink",
     "SyncRun",
     "TeamMember",
+    "UserProgramAreaAssignment",
 ]

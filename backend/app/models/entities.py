@@ -52,6 +52,40 @@ class Product(TimestampMixin, Base):
     roadmap_items: Mapped[list["RoadmapItem"]] = relationship(back_populates="product")
 
 
+class AppUser(TimestampMixin, Base):
+    __tablename__ = "app_users"
+    __table_args__ = (
+        UniqueConstraint("entra_tenant_id", "entra_object_id", name="uq_app_user_entra_identity"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    role: Mapped[str] = mapped_column(String(60), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    local_login_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(512))
+    entra_tenant_id: Mapped[str | None] = mapped_column(String(120))
+    entra_object_id: Mapped[str | None] = mapped_column(String(120))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    program_area_assignments: Mapped[list["UserProgramAreaAssignment"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+
+class UserProgramAreaAssignment(TimestampMixin, Base):
+    __tablename__ = "user_program_area_assignments"
+    __table_args__ = (UniqueConstraint("user_id", "program_area", name="uq_user_program_area_assignment"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("app_users.id"), nullable=False)
+    program_area: Mapped[str] = mapped_column(String(80), nullable=False)
+
+    user: Mapped[AppUser] = relationship(back_populates="program_area_assignments")
+
+
 class ProductBudget(TimestampMixin, Base):
     __tablename__ = "product_budgets"
     __table_args__ = (UniqueConstraint("product_id", "fiscal_year", name="uq_product_budget_product_fiscal_year"),)

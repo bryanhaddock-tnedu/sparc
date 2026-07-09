@@ -83,16 +83,16 @@ export type TeamMemberRankingRow = {
   team: string;
   status: string;
   employmentType: string;
-  billRate: number;
+  billRate: number | null;
   annualCapacityHours: number;
-  annualCostCap: number;
+  annualCostCap: number | null;
   currentActualHours: number;
   previousActualHours: number;
   fytdActualHours: number;
-  fytdActualCost: number;
+  fytdActualCost: number | null;
   avgMonthlyActualHours: number;
   fyForecastHours: number;
-  fyForecastCost: number;
+  fyForecastCost: number | null;
   forecastCapCoveragePercent: number | null;
   fytdForecastHours: number;
   fytdVarianceHours: number;
@@ -252,8 +252,8 @@ export function buildTeamMemberRankingRows(
   return scopedMembers.map((member) => {
     const fytdActual = fytdActualByMemberId.get(member.id) ?? 0;
     const fyForecast = fyForecastByMemberId.get(member.id) ?? 0;
-    const billRate = member.bill_rate ?? 0;
-    const annualCostCap = ANNUAL_WORK_HOURS * billRate;
+    const billRate = member.bill_rate;
+    const annualCostCap = billRate == null ? null : ANNUAL_WORK_HOURS * billRate;
     const fytdForecast = fytdForecastByMemberId.get(member.id) ?? 0;
     const storyMetric = storyMetricByMemberId.get(member.id);
     const storyPoints = storyMetric?.story_points ?? 0;
@@ -269,15 +269,15 @@ export function buildTeamMemberRankingRows(
       employmentType: member.employment_type,
       billRate,
       annualCapacityHours: ANNUAL_WORK_HOURS,
-      annualCostCap: roundMoney(annualCostCap),
+      annualCostCap: annualCostCap == null ? null : roundMoney(annualCostCap),
       currentActualHours: roundHours(currentActualByMemberId.get(member.id) ?? 0),
       previousActualHours: roundHours(previousActualByMemberId.get(member.id) ?? 0),
       fytdActualHours: roundHours(fytdActual),
-      fytdActualCost: roundMoney(fytdActual * billRate),
+      fytdActualCost: billRate == null ? null : roundMoney(fytdActual * billRate),
       avgMonthlyActualHours: elapsedMonths > 0 ? roundHours(fytdActual / elapsedMonths) : 0,
       fyForecastHours: roundHours(fyForecast),
-      fyForecastCost: roundMoney(fyForecast * billRate),
-      forecastCapCoveragePercent: annualCostCap > 0 ? roundPercent((fyForecast * billRate / annualCostCap) * 100) : null,
+      fyForecastCost: billRate == null ? null : roundMoney(fyForecast * billRate),
+      forecastCapCoveragePercent: billRate != null && annualCostCap != null && annualCostCap > 0 ? roundPercent((fyForecast * billRate / annualCostCap) * 100) : null,
       fytdForecastHours: roundHours(fytdForecast),
       fytdVarianceHours: roundHours(fytdActual - fytdForecast),
       productsSupported: productIdsByMemberId.get(member.id)?.size ?? 0,

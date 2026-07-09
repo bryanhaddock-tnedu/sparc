@@ -8,8 +8,9 @@ from app.api.errors import bad_request
 from app.db.session import get_db
 from app.schemas import AdminDataExportOptionResponse, AdminDataImportResult
 from app.services.admin_data import build_admin_data_archive, build_admin_data_export, export_options, import_admin_data_content, normalize_dataset_keys
+from app.services.auth import require_admin
 
-router = APIRouter(prefix="/admin-data", tags=["admin data"])
+router = APIRouter(prefix="/admin-data", tags=["admin data"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/export-options", response_model=list[AdminDataExportOptionResponse])

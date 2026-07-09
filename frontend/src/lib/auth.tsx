@@ -20,7 +20,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     api
       .authStatus()
       .then(setStatus)
-      .catch(() => setStatus({ auth_enabled: true, authenticated: false, username: null }))
+      .catch(() => setStatus({ auth_enabled: true, authenticated: false, username: null, user: null, capabilities: {} }))
       .finally(() => setLoading(false));
   }, []);
 

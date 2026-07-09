@@ -20,6 +20,69 @@ export interface AuthStatus {
   auth_enabled: boolean;
   authenticated: boolean;
   username: string | null;
+  user: AuthenticatedUser | null;
+  capabilities: AuthCapabilities;
+}
+
+export type AccessRole = "ADMIN" | "LEADERSHIP_VIEW_ONLY" | "PROGRAM_AREA_VIEW_ONLY";
+
+export interface AuthenticatedUser {
+  id: number | null;
+  email: string | null;
+  display_name: string;
+  role: AccessRole;
+  role_label: string;
+  program_areas: string[];
+  auth_type: string;
+  active: boolean;
+}
+
+export interface AuthCapabilities {
+  can_admin?: boolean;
+  can_edit_forecast?: boolean;
+  can_run_sync?: boolean;
+  can_view_rates?: boolean;
+  can_view_costs?: boolean;
+  can_view_hours?: boolean;
+  can_view_named_people?: boolean;
+}
+
+export interface AppUser {
+  id: number;
+  email: string;
+  display_name: string;
+  role: AccessRole;
+  role_label: string;
+  program_areas: string[];
+  active: boolean;
+  local_login_enabled: boolean;
+  has_local_password: boolean;
+  entra_tenant_id: string | null;
+  entra_object_id: string | null;
+  sso_linked: boolean;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppUserCreatePayload {
+  email: string;
+  display_name: string;
+  role: AccessRole;
+  program_areas: string[];
+  active: boolean;
+  local_login_enabled: boolean;
+  temporary_password?: string | null;
+}
+
+export interface AppUserUpdatePayload {
+  email?: string;
+  display_name?: string;
+  role?: AccessRole;
+  program_areas?: string[];
+  active?: boolean;
+  local_login_enabled?: boolean;
+  temporary_password?: string | null;
 }
 
 export interface AdminDataExportOption {
@@ -160,7 +223,7 @@ export interface ProductTeamMember {
   team_member_slug: string;
   role: string;
   team: string;
-  bill_rate: number;
+  bill_rate: number | null;
   employment_type: string;
   default_bucket_id: number | null;
   default_bucket: string | null;
@@ -722,7 +785,7 @@ export interface BucketTableRow {
   team_member_id: number;
   team_member: string;
   team_member_slug: string;
-  bill_rate: number;
+  bill_rate: number | null;
   months: MonthCell[];
   totals: Omit<MonthCell, "fiscal_month_id" | "sequence" | "label">;
 }
@@ -749,7 +812,7 @@ export interface TeamMember {
   slug: string;
   role: string;
   team: string;
-  bill_rate: number;
+  bill_rate: number | null;
   employment_type: string;
   contracting_company: string | null;
   status: string;

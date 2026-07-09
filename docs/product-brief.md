@@ -81,10 +81,32 @@ Use a monorepo:
 - Team Member ID is optional and system-generated if not provided.
 - Team Members default to active.
 - Products may be tagged with Office and Division for organizational reporting. Office options are Academics, Operations, Programs, Deputy Commissioner, Commissioners Office, and General Counsel; Division options are constrained by the selected Office.
+- For access-control planning, Product Office is the SPARC Program Area source of truth. User-facing labels should move toward Program Area where this concept is used for reporting or visibility. Product Division is lower-level reporting metadata, not the initial security boundary.
+- Roadmap Item Program Area is source/display metadata only and must not be used for authorization. Program Area View Only access must be scoped through the mapped Product's Program Area (`Product.office`).
 - Product detail URLs use lowercase dash slugs derived from Product names, for example `/products/core-infrastructure`; numeric Product IDs remain accepted only as backwards-compatible references.
 - Team Member detail URLs use lowercase dash slugs derived from Team Member names, for example `/team-members/avery-johnson`; numeric Team Member IDs remain accepted only as backwards-compatible references.
 - Roadmap sync and worklog sync are separate pipelines. Worklog sync owns actual hours; roadmap sync owns Roadmap Items and ticket relationships; SPARC reporting joins them by Jira ticket key.
 - Created date and last updated date are required.
+
+## Access Model
+
+Entra authenticates users; SPARC authorizes users locally.
+
+Initial SPARC roles:
+
+- Admin: can view and edit everything; can see hours, costs, and bill rates; can run admin, sync, import, and configuration operations.
+- Leadership View Only: can view all Program Areas; cannot edit; can see hours and costs; cannot see bill rates.
+- Program Area View Only: can view only assigned Program Area(s); cannot edit; cannot see bill rates; can be assigned multiple Program Areas.
+
+The existing `sparc` basic login remains the break-glass Admin login while Entra SSO is implemented and validated. Other users should be stored as email-based SPARC user records with temporary local password hashes before SSO; those same records should later link to Entra tenant/object IDs after first SSO login.
+
+Program Area View Only filtering must use:
+
+```text
+Product.office IN current_user.assigned_program_areas
+```
+
+Users with Program Area View Only and no assigned Program Area should receive no scoped SPARC data and a clear no-assignment state.
 
 ## Product Buckets
 

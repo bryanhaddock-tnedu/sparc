@@ -15,6 +15,8 @@ from app.schemas import (
     TeamMemberUpdate,
 )
 from app.services.aggregations import serialize_team_member, team_member_products
+from app.services.access_control import AuthenticatedUser, role_capabilities
+from app.services.auth import require_admin, require_named_people_access
 from app.services.roadmap import roadmap_actual_rows
 from app.services.slugs import product_url_slug, resolve_team_member_ref, unique_team_member_slug
 from app.services.team_import import import_team_members
@@ -25,13 +27,16 @@ router = APIRouter(prefix="/team-members", tags=["team members"])
 
 
 @router.get("", response_model=list[TeamMemberResponse])
-def list_team_members(db: Session = Depends(get_db)) -> list[dict[str, object]]:
+def list_team_members(
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_named_people_access),
+) -> list[dict[str, object]]:
     members = db.scalars(select(TeamMember).order_by(TeamMember.name)).all()
-    return [serialize_team_member(member) for member in members]
+    return [serialize_team_member(member, can_view_rates=_can_view_rates(user)) for member in members]
 
 
 @router.post("", response_model=TeamMemberResponse)
-def create_team_member(payload: TeamMemberCreate, db: Session = Depends(get_db)) -> dict[str, object]:
+def create_team_member(payload: TeamMemberCreate, db: Session = Depends(get_db), _admin=Depends(require_admin)) -> dict[str, object]:
     try:
         member = create_member_service(db, payload.model_dump())
         db.commit()
@@ -43,7 +48,7 @@ def create_team_member(payload: TeamMemberCreate, db: Session = Depends(get_db))
 
 
 @router.post("/import", response_model=TeamImportResult)
-async def import_team_member_file(file: UploadFile, db: Session = Depends(get_db)) -> dict[str, object]:
+async def import_team_member_file(file: UploadFile, db: Session = Depends(get_db), _admin=Depends(require_admin)) -> dict[str, object]:
     try:
         result = import_team_members(db, filename=file.filename or "", content=await file.read())
         db.commit()
@@ -54,13 +59,17 @@ async def import_team_member_file(file: UploadFile, db: Session = Depends(get_db
 
 
 @router.get("/{team_member_ref}", response_model=TeamMemberResponse)
-def get_team_member(team_member_ref: str, db: Session = Depends(get_db)) -> dict[str, object]:
+def get_team_member(
+    team_member_ref: str,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_named_people_access),
+) -> dict[str, object]:
     member = _resolve_team_member_or_404(db, team_member_ref)
     if member.slug is None:
         member.slug = unique_team_member_slug(db, member.name, member.id)
         db.commit()
         db.refresh(member)
-    return serialize_team_member(member)
+    return serialize_team_member(member, can_view_rates=_can_view_rates(user))
 
 
 @router.put("/{team_member_ref}", response_model=TeamMemberResponse)
@@ -68,6 +77,7 @@ def update_team_member(
     team_member_ref: str,
     payload: TeamMemberUpdate,
     db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
 ) -> dict[str, object]:
     member = _resolve_team_member_or_404(db, team_member_ref)
     try:
@@ -85,10 +95,11 @@ def get_team_member_product_rows(
     team_member_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_named_people_access),
 ) -> dict[str, object]:
     member = _resolve_team_member_or_404(db, team_member_ref)
     try:
-        return team_member_products(db, member.id, fiscal_year)
+        return team_member_products(db, member.id, fiscal_year, user)
     except ValueError as exc:
         raise not_found(str(exc).replace(" not found", "")) from exc
 
@@ -98,6 +109,7 @@ def get_team_member_actual_worklogs(
     team_member_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
+    _user: AuthenticatedUser = Depends(require_named_people_access),
 ) -> list[dict[str, object]]:
     member = _resolve_team_member_or_404(db, team_member_ref)
 
@@ -143,6 +155,7 @@ def get_team_member_roadmap_actuals(
     team_member_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
+    _user: AuthenticatedUser = Depends(require_named_people_access),
 ) -> list[dict[str, object]]:
     member = _resolve_team_member_or_404(db, team_member_ref)
     return roadmap_actual_rows(db, fiscal_year, team_member_id=member.id)
@@ -153,3 +166,7 @@ def _resolve_team_member_or_404(db: Session, team_member_ref: str) -> TeamMember
     if member is None:
         raise not_found("Team member")
     return member
+
+
+def _can_view_rates(user: AuthenticatedUser) -> bool:
+    return role_capabilities(user.role).get("can_view_rates", False)

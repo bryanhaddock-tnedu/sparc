@@ -43,6 +43,7 @@ from app.services.forecast_recommendations import (
     list_forecast_recommendation_decisions,
 )
 from app.services.reporting import build_labor_cost_report, build_labor_cost_report_workbook
+from app.services.access_control import local_disabled_admin
 from app.services.jira_projects import (
     JiraProjectPayload,
     add_product_jira_space,
@@ -807,11 +808,12 @@ def test_product_slugs_are_generated_and_resolve_with_numeric_fallback():
     with Session(engine) as db:
         first = create_product_endpoint(ProductCreate(name="Core Infrastructure"), fiscal_year=2027, db=db)
         second = create_product_endpoint(ProductCreate(name="Core Infrastructure!"), fiscal_year=2027, db=db)
+        admin = local_disabled_admin()
 
         assert first["slug"] == "core-infrastructure"
         assert second["slug"] == "core-infrastructure-2"
-        assert get_product_endpoint("core-infrastructure", fiscal_year=2027, db=db)["id"] == first["id"]
-        assert get_product_endpoint(str(first["id"]), fiscal_year=2027, db=db)["slug"] == "core-infrastructure"
+        assert get_product_endpoint("core-infrastructure", fiscal_year=2027, db=db, user=admin)["id"] == first["id"]
+        assert get_product_endpoint(str(first["id"]), fiscal_year=2027, db=db, user=admin)["slug"] == "core-infrastructure"
 
 
 def test_team_member_slugs_are_generated_and_resolve_with_numeric_fallback():
@@ -820,11 +822,12 @@ def test_team_member_slugs_are_generated_and_resolve_with_numeric_fallback():
     with Session(engine) as db:
         first = create_team_member_endpoint(TeamMemberCreate(name="Avery Johnson", role="Dev", team="Agency Technology"), db=db)
         second = create_team_member_endpoint(TeamMemberCreate(name="Avery Johnson!", role="QA", team="Agency Technology"), db=db)
+        admin = local_disabled_admin()
 
         assert first["slug"] == "avery-johnson"
         assert second["slug"] == "avery-johnson-2"
-        assert get_team_member_endpoint("avery-johnson", db=db)["id"] == first["id"]
-        assert get_team_member_endpoint(str(first["id"]), db=db)["slug"] == "avery-johnson"
+        assert get_team_member_endpoint("avery-johnson", db=db, user=admin)["id"] == first["id"]
+        assert get_team_member_endpoint(str(first["id"]), db=db, user=admin)["slug"] == "avery-johnson"
 
 
 def test_roadmap_actual_rows_join_worklogs_without_double_counting_ambiguous_links():

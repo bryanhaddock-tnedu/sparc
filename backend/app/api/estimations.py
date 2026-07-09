@@ -20,6 +20,7 @@ from app.schemas import (
     TeamMemberStoryPointMetricResponse,
 )
 from app.services.estimation_policy import ensure_default_estimation_profile, preview_mock_estimation, reported_value_rows, run_mock_estimation
+from app.services.auth import require_admin, require_named_people_access
 from app.services.slugs import product_url_slug, team_member_url_slug
 
 router = APIRouter(prefix="/estimations", tags=["estimations"])
@@ -65,7 +66,7 @@ BLOCKED_PATTERNS = ("blocked", "on hold", "paused")
 
 
 @router.get("/profiles", response_model=list[EstimationProfileResponse])
-def list_estimation_profiles(db: Session = Depends(get_db)) -> list[dict[str, object]]:
+def list_estimation_profiles(db: Session = Depends(get_db), _admin=Depends(require_admin)) -> list[dict[str, object]]:
     ensure_default_estimation_profile(db)
     db.commit()
     profiles = db.scalars(select(EstimationProfile).order_by(EstimationProfile.name)).all()
@@ -77,6 +78,7 @@ def update_estimation_profile(
     profile_id: int,
     payload: EstimationProfileUpdate,
     db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
 ) -> dict[str, object]:
     profile = db.get(EstimationProfile, profile_id)
     if profile is None:
@@ -93,6 +95,7 @@ def list_estimation_runs(
     fiscal_year: int | None = None,
     limit: int = 20,
     db: Session = Depends(get_db),
+    _viewer=Depends(require_named_people_access),
 ) -> list[dict[str, object]]:
     statement = select(EstimationRun).order_by(EstimationRun.started_at.desc())
     if fiscal_year is not None:
@@ -105,6 +108,7 @@ def list_estimation_runs(
 def preview_estimation(
     payload: EstimationRunRequest,
     db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
 ) -> dict[str, object]:
     _require_profile(db, payload.profile_id)
     summary = preview_mock_estimation(db, payload.fiscal_year, profile_id=payload.profile_id)
@@ -116,6 +120,7 @@ def preview_estimation(
 def run_estimation(
     payload: EstimationRunRequest,
     db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
 ) -> dict[str, object]:
     _require_profile(db, payload.profile_id)
     summary = run_mock_estimation(db, payload.fiscal_year, profile_id=payload.profile_id)
@@ -128,6 +133,7 @@ def list_estimation_run_allocations(
     run_id: int,
     limit: int = 100,
     db: Session = Depends(get_db),
+    _viewer=Depends(require_named_people_access),
 ) -> list[dict[str, object]]:
     if db.get(EstimationRun, run_id) is None:
         raise not_found("Estimation run")
@@ -144,6 +150,7 @@ def list_estimation_run_allocations(
 def list_team_member_story_point_metrics(
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
+    _viewer=Depends(require_named_people_access),
 ) -> list[dict[str, object]]:
     latest_run = _latest_completed_estimation_run(db, fiscal_year)
     if latest_run is None:
@@ -157,6 +164,7 @@ def list_team_member_story_point_metrics(
 def list_delivery_flow_issues(
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
+    _viewer=Depends(require_named_people_access),
 ) -> list[dict[str, object]]:
     latest_run = _latest_completed_estimation_run(db, fiscal_year)
     if latest_run is None:
@@ -172,6 +180,7 @@ def get_reported_values(
     product_id: int | None = None,
     team_member_id: int | None = None,
     db: Session = Depends(get_db),
+    _viewer=Depends(require_named_people_access),
 ) -> list[dict[str, object]]:
     return reported_value_rows(db, fiscal_year, product_id=product_id, team_member_id=team_member_id)
 

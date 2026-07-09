@@ -13,6 +13,7 @@ import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { productDetailPath, teamMemberDetailPath } from "../lib/routes";
+import { formatBillRate } from "../lib/teamMembers";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type {
   BucketTable,
@@ -548,7 +549,7 @@ function ProductTeamSection({
                         </td>
                         <td className="px-3 py-3">{assignment.role}</td>
                         <td className="px-3 py-3">{assignment.team}</td>
-                        <td className="numeric-cell px-3 py-3">{formatCurrency(assignment.bill_rate)}/hr</td>
+                        <td className="numeric-cell px-3 py-3">{formatBillRate(assignment.bill_rate, assignment.employment_type, { includeUnit: true })}</td>
                         <td className="px-3 py-3">
                           <select
                             aria-label={`${assignment.team_member} product status`}
@@ -773,7 +774,7 @@ function BucketSection({
                       <Link className="block truncate font-medium text-primary hover:underline" to={teamMemberDetailPath(row)}>
                         {row.team_member}
                       </Link>
-                      <div className="numeric-cell mt-1 truncate text-[11px] text-muted-foreground">{formatCurrency(row.bill_rate)}/hr</div>
+                      <div className="numeric-cell mt-1 truncate text-[11px] text-muted-foreground">{formatBillRate(row.bill_rate, "", { includeUnit: true })}</div>
                     </td>
                     <MetricLabel label="Forecast" />
                     {row.months.map((cell) => (

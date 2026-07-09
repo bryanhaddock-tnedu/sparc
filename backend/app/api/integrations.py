@@ -47,8 +47,9 @@ from app.services.roadmap import (
     run_live_roadmap_sync,
     update_roadmap_item_mapping,
 )
+from app.services.auth import require_admin
 
-router = APIRouter(prefix="/integrations/jira-rovo", tags=["jira-rovo"])
+router = APIRouter(prefix="/integrations/jira-rovo", tags=["jira-rovo"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/status", response_model=JiraIntegrationStatusResponse)

@@ -1,6 +1,7 @@
 import { BarChart3, Settings, LayoutDashboard, Package, Users, type LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
+import { useAuth } from "../lib/auth";
 import { Button } from "./ui/button";
 
 type PageNavKey = "dashboard" | "products" | "team" | "reports" | "admin";
@@ -14,10 +15,13 @@ const navLinks: Array<{ key: PageNavKey; label: string; href: string; icon: Luci
 ];
 
 export function PageNav({ current }: { current?: PageNavKey }) {
+  const { status } = useAuth();
+  const canAdmin = status?.capabilities.can_admin === true;
+
   return (
     <nav aria-label="Page navigation" className="flex flex-nowrap justify-end gap-2">
       {navLinks
-        .filter((link) => link.key !== current)
+        .filter((link) => link.key !== current && (link.key !== "admin" || canAdmin))
         .map((link) => {
           const Icon = link.icon;
           if (link.iconOnly) {

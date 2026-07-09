@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas import SystemScanResponse
 from app.services.system_scan import run_system_scan
+from app.services.auth import require_admin
 
-router = APIRouter(prefix="/system-scan", tags=["system scan"])
+router = APIRouter(prefix="/system-scan", tags=["system scan"], dependencies=[Depends(require_admin)])
 
 
 @router.get("", response_model=SystemScanResponse)

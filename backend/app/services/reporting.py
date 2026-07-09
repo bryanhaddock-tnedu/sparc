@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import TeamMember
+from app.services.access_control import AuthenticatedUser, can_view_product_office, role_capabilities
 from app.services.costs import calculate_cost, round_hours
 from app.services.estimation_policy import reported_value_rows
 from app.services.slugs import slugify
@@ -58,10 +59,17 @@ def build_labor_cost_report(
     *,
     dimensions: list[str],
     sort_metric: str = "forecast_cost",
+    user: AuthenticatedUser | None = None,
 ) -> dict[str, object]:
     normalized_dimensions = normalize_labor_cost_dimensions(*dimensions)
+    if user is not None and "person" in normalized_dimensions and not role_capabilities(user.role).get("can_view_named_people", False):
+        raise PermissionError("Person-level reports are not available for this role")
     normalized_sort_metric = normalize_labor_cost_metric(sort_metric)
-    source_rows = reported_value_rows(db, fiscal_year)
+    source_rows = [
+        row
+        for row in reported_value_rows(db, fiscal_year)
+        if user is None or can_view_product_office(user, str(row["program_area"]) if row["program_area"] else None)
+    ]
     member_ids = {int(row["team_member_id"]) for row in source_rows}
     members = {member.id: member for member in db.scalars(select(TeamMember).where(TeamMember.id.in_(member_ids))).all()} if member_ids else {}
 
@@ -138,8 +146,9 @@ def build_labor_cost_report_workbook(
     *,
     dimensions: list[str],
     sort_metric: str = "forecast_cost",
+    user: AuthenticatedUser | None = None,
 ) -> BytesIO:
-    report = build_labor_cost_report(db, fiscal_year, dimensions=dimensions, sort_metric=sort_metric)
+    report = build_labor_cost_report(db, fiscal_year, dimensions=dimensions, sort_metric=sort_metric, user=user)
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "Labor Cost"

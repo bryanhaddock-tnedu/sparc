@@ -1,6 +1,9 @@
 import type {
   AdminDataExportOption,
   AdminDataImportResult,
+  AppUser,
+  AppUserCreatePayload,
+  AppUserUpdatePayload,
   AuthStatus,
   Bucket,
   BucketDistributionRow,
@@ -175,6 +178,17 @@ export const api = {
       method: "POST",
     }),
   adminDataExportOptions: () => request<AdminDataExportOption[]>("/api/admin-data/export-options"),
+  adminUsers: () => request<AppUser[]>("/api/admin/users"),
+  createAdminUser: (payload: AppUserCreatePayload) =>
+    request<AppUser>("/api/admin/users", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateAdminUser: (userId: number, payload: AppUserUpdatePayload) =>
+    request<AppUser>(`/api/admin/users/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   exportAdminData: (datasets: string[]) => {
     const params = new URLSearchParams();
     datasets.forEach((dataset) => params.append("datasets", dataset));

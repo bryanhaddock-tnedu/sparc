@@ -140,17 +140,17 @@ export function TeamMemberRankingsTable({
                   ) : null}
                   <TableCell className="numeric-cell text-right font-medium text-primary">{formatBillRate(row.billRate, row.employmentType)}</TableCell>
                   <TableCell className="numeric-cell text-right">
-                    <div className="font-medium">{formatCurrency(row.annualCostCap)}</div>
+                    <div className="font-medium">{formatOptionalCurrency(row.annualCostCap)}</div>
                     <div className="text-xs text-muted-foreground">{formatHours(row.annualCapacityHours)} hrs</div>
                   </TableCell>
                   <TableCell className="numeric-cell text-right">
                     <div className="font-semibold text-primary">{formatHours(row.fyForecastHours)} hrs</div>
-                    <div className="text-xs text-muted-foreground">{formatCurrency(row.fyForecastCost)}</div>
+                    <div className="text-xs text-muted-foreground">{formatOptionalCurrency(row.fyForecastCost)}</div>
                   </TableCell>
                   <TableCell className="numeric-cell text-right">{formatPercent(row.forecastCapCoveragePercent)}</TableCell>
                   <TableCell className="numeric-cell text-right">
                     <div>{formatHours(row.fytdActualHours)} hrs</div>
-                    <div className="text-xs text-muted-foreground">{formatCurrency(row.fytdActualCost)}</div>
+                    <div className="text-xs text-muted-foreground">{formatOptionalCurrency(row.fytdActualCost)}</div>
                   </TableCell>
                   <TableCell className="numeric-cell text-right">
                     <div>{row.ticketsTouched} tickets</div>
@@ -243,6 +243,10 @@ function formatRankingValue(row: TeamMemberRankingRow, dimension: TeamRankingDim
   if (dimension === "hours_per_story_point") return `${formatHours(value)} hrs/SP`;
   if (dimension === "story_points_per_logged_hour") return `${formatHours(value)} SP/hr`;
   return `${formatHours(value)} hrs`;
+}
+
+function formatOptionalCurrency(value: number | null) {
+  return value == null ? "Hidden" : formatCurrency(value);
 }
 
 function rankingValueDetail(dimension: TeamRankingDimension) {

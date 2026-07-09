@@ -74,6 +74,8 @@ The frontend embeds the package version when `VITE_BUILD_VERSION` is unset or `l
 
 Stage data lives in Azure PostgreSQL. Do not reset or seed stage with local/demo data.
 
+Alembic revision identifiers must stay short enough for the default `alembic_version.version_num` column. Keep every migration `revision` and `down_revision` value at or below 32 characters, for example `0019_access_users`. Do not use long generated names as revision IDs. The regression test in `backend/tests/test_migrations.py` enforces this because overlong revision IDs have broken stage deployment before.
+
 ## Database Build
 
 DevOps should provision the Azure PostgreSQL server and database before the SPARC container starts. SPARC does not require a hand-written `schema.sql` file; the application schema is created and upgraded through Alembic migrations checked into `backend/alembic/versions`.

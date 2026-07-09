@@ -140,7 +140,7 @@ export function TeamMemberDetailPage() {
   const worklogSummary = useMemo(() => summarizeWorklogs(selectedWorklogs), [selectedWorklogs]);
   const memberAnalytics = useMemo(() => buildMemberAnalytics(reportedRows, data?.months ?? []), [reportedRows, data?.months]);
   const forecastLines = useMemo(
-    () => buildMemberForecastLines(data?.products ?? [], reportedRows, data?.months ?? [], data?.team_member.bill_rate ?? 0),
+    () => buildMemberForecastLines(data?.products ?? [], reportedRows, data?.months ?? [], data?.team_member.bill_rate),
     [data?.products, reportedRows, data?.months, data?.team_member.bill_rate],
   );
 
@@ -845,11 +845,15 @@ function MemberForecastTable({
           acc.actual += cell.actual_hours;
           acc.cost += cell.forecast_cost;
           acc.variance += cell.variance_cost;
+          acc.costsHidden = acc.costsHidden || line.costs_hidden;
           return acc;
         },
-        { fiscalMonthId: month.fiscal_month_id, forecast: 0, actual: 0, cost: 0, variance: 0 },
+        { fiscalMonthId: month.fiscal_month_id, forecast: 0, actual: 0, cost: 0, variance: 0, costsHidden: false },
       );
     }) ?? [];
+  const costsHidden = lines.some((line) => line.costs_hidden);
+  const totalForecastCost = lines.reduce((sum, line) => sum + line.totals.forecast_cost, 0);
+  const totalVarianceCost = lines.reduce((sum, line) => sum + line.totals.variance_cost, 0);
 
   return (
     <section className="space-y-3">
@@ -966,23 +970,23 @@ function MemberForecastTable({
                     <tr>
                       <TeamMemberMetricLabel label="Fcst $" />
                       {line.months.map((cell) => (
-                        <TeamMemberValueCell key={cell.fiscal_month_id} value={formatCurrency(cell.forecast_cost)} />
+                        <TeamMemberValueCell key={cell.fiscal_month_id} value={formatDerivedCurrency(cell.forecast_cost, line.costs_hidden)} />
                       ))}
-                      <TeamMemberValueCell value={formatCurrency(line.totals.forecast_cost)} strong />
+                      <TeamMemberValueCell value={formatDerivedCurrency(line.totals.forecast_cost, line.costs_hidden)} strong />
                     </tr>
                     <tr className="border-b">
                       <TeamMemberMetricLabel label="Actual-Fcst $" title={COST_VARIANCE_HELP} />
                       {line.months.map((cell) => (
                         <TeamMemberValueCell
                           key={cell.fiscal_month_id}
-                          className={varianceCostClassName(cell.variance_cost)}
-                          value={formatCurrency(cell.variance_cost)}
+                          className={line.costs_hidden ? undefined : varianceCostClassName(cell.variance_cost)}
+                          value={formatDerivedCurrency(cell.variance_cost, line.costs_hidden)}
                         />
                       ))}
                       <TeamMemberValueCell
-                        className={varianceCostClassName(line.totals.variance_cost)}
+                        className={line.costs_hidden ? undefined : varianceCostClassName(line.totals.variance_cost)}
                         strong
-                        value={formatCurrency(line.totals.variance_cost)}
+                        value={formatDerivedCurrency(line.totals.variance_cost, line.costs_hidden)}
                       />
                     </tr>
                   </Fragment>
@@ -1007,24 +1011,24 @@ function MemberForecastTable({
                 <tr className="bg-secondary/50 font-semibold">
                   <TeamMemberMetricLabel label="Fcst $" total />
                   {monthlyTotals.map((totals) => (
-                    <TeamMemberValueCell key={totals.fiscalMonthId} value={formatCurrency(totals.cost)} total strong />
+                    <TeamMemberValueCell key={totals.fiscalMonthId} value={formatDerivedCurrency(totals.cost, totals.costsHidden)} total strong />
                   ))}
-                  <TeamMemberValueCell value={formatCurrency(lines.reduce((sum, line) => sum + line.totals.forecast_cost, 0))} total strong />
+                  <TeamMemberValueCell value={formatDerivedCurrency(totalForecastCost, costsHidden)} total strong />
                 </tr>
                 <tr className="bg-secondary/50 font-semibold">
                   <TeamMemberMetricLabel label="Actual-Fcst $" title={COST_VARIANCE_HELP} total />
                   {monthlyTotals.map((totals) => (
                     <TeamMemberValueCell
                       key={totals.fiscalMonthId}
-                      className={varianceCostClassName(totals.variance)}
-                      value={formatCurrency(totals.variance)}
+                      className={totals.costsHidden ? undefined : varianceCostClassName(totals.variance)}
+                      value={formatDerivedCurrency(totals.variance, totals.costsHidden)}
                       total
                       strong
                     />
                   ))}
                   <TeamMemberValueCell
-                    className={varianceCostClassName(lines.reduce((sum, line) => sum + line.totals.variance_cost, 0))}
-                    value={formatCurrency(lines.reduce((sum, line) => sum + line.totals.variance_cost, 0))}
+                    className={costsHidden ? undefined : varianceCostClassName(totalVarianceCost)}
+                    value={formatDerivedCurrency(totalVarianceCost, costsHidden)}
                     total
                     strong
                   />
@@ -1132,7 +1136,7 @@ function formFromMember(member: TeamMember): ProfileFormState {
     name: member.name,
     role: member.role,
     team: member.team,
-    billRate: member.bill_rate > 0 ? String(member.bill_rate) : "",
+    billRate: member.bill_rate != null && member.bill_rate > 0 ? String(member.bill_rate) : "",
     employmentType: member.employment_type,
     contractingCompany: member.contracting_company ?? "",
     status: member.status,
@@ -1232,6 +1236,7 @@ type MemberForecastLine = {
   program_area: string | null;
   bucket_id: number;
   bucket: string;
+  costs_hidden: boolean;
   months: MemberForecastMonthCell[];
   totals: MemberForecastTotals;
 };
@@ -1258,8 +1263,10 @@ function buildMemberForecastLines(
   productRows: TeamMemberProducts["products"],
   reportedRows: ReportedValueRow[],
   months: FiscalMonth[],
-  billRate: number,
+  billRate: number | null | undefined,
 ): MemberForecastLine[] {
+  const costsHidden = billRate == null;
+  const effectiveBillRate = billRate ?? 0;
   const lineMap = new Map<string, { product_id: number; product: string; product_slug: string; program_area: string | null; bucket_id: number; bucket: string }>();
   for (const row of productRows) {
     lineMap.set(memberForecastLineKey(row.product_id, row.bucket_id), {
@@ -1296,8 +1303,8 @@ function buildMemberForecastLines(
         const sourceRow = reportedRowByCell.get(`${memberForecastLineKey(line.product_id, line.bucket_id)}:${month.id}`);
         const forecast = sourceRow?.forecast_hours ?? 0;
         const actual = sourceRow?.actual_hours ?? 0;
-        const forecastCost = roundMoney(forecast * billRate);
-        const actualCost = roundMoney(actual * billRate);
+        const forecastCost = roundMoney(forecast * effectiveBillRate);
+        const actualCost = roundMoney(actual * effectiveBillRate);
         return {
           fiscal_month_id: month.id,
           label: month.label,
@@ -1322,6 +1329,7 @@ function buildMemberForecastLines(
 
       return {
         ...line,
+        costs_hidden: costsHidden,
         months: cells,
         totals: {
           forecast_hours: roundHours(totals.forecast_hours),
@@ -1332,6 +1340,10 @@ function buildMemberForecastLines(
         },
       };
     });
+}
+
+function formatDerivedCurrency(value: number, hidden: boolean) {
+  return hidden ? "Hidden" : formatCurrency(value);
 }
 
 function memberForecastLineKey(productId: number, bucketId: number) {
