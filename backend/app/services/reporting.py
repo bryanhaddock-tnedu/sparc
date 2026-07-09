@@ -17,6 +17,7 @@ from app.services.slugs import slugify
 
 REPORT_DIMENSIONS = {
     "person": "Person",
+    "role": "Role",
     "team": "Team",
     "product": "Product",
     "bucket": "Bucket",
@@ -185,6 +186,9 @@ def build_labor_cost_report_workbook(
 def _dimension_value(dimension: str, row: dict[str, object], member: TeamMember | None) -> tuple[str, str, str | None]:
     if dimension == "person":
         return ("person", str(row["team_member"]), f"/team-members/{row['team_member_slug']}")
+    if dimension == "role":
+        role = member.role if member is not None and member.role else "Unassigned"
+        return ("role", role, None)
     if dimension == "team":
         team = member.team if member is not None and member.team else "Unassigned"
         return ("team", team, f"/teams/{slugify(team, fallback='unassigned')}")

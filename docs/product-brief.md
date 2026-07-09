@@ -366,6 +366,7 @@ Initial report:
 Supported dimensions:
 
 - Person
+- Role
 - Team
 - Product
 - Bucket

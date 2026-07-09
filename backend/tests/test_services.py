@@ -176,6 +176,47 @@ def test_labor_cost_report_rolls_up_by_team_and_bucket():
         assert report["totals"]["forecast_cost"] == 1200
 
 
+def test_labor_cost_report_rolls_up_by_role_and_bucket():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Core Infrastructure", slug="core-infrastructure")
+        engineer = TeamMember(name="Avery Johnson", slug="avery-johnson", role="Engineer", team="Apps", bill_rate=Decimal("100"))
+        qa = TeamMember(name="Jamie Reyes", slug="jamie-reyes", role="QA", team="Apps", bill_rate=Decimal("80"))
+        db.add_all([product, engineer, qa])
+        db.flush()
+
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=engineer.id,
+            bucket_code="NET_NEW",
+            fiscal_year=2027,
+            month_sequence=1,
+            hours=10,
+        )
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=qa.id,
+            bucket_code="NET_NEW",
+            fiscal_year=2027,
+            month_sequence=1,
+            hours=5,
+        )
+
+        report = build_labor_cost_report(db, 2027, dimensions=["role", "bucket"], sort_metric="role")
+
+        assert report["dimensions"] == [{"key": "role", "label": "Role"}, {"key": "bucket", "label": "Bucket"}]
+        assert [[value["label"] for value in row["dimension_values"]] for row in report["rows"]] == [
+            ["Engineer", "Net New"],
+            ["QA", "Net New"],
+        ]
+        assert [row["forecast_cost"] for row in report["rows"]] == [1000, 400]
+        assert report["totals"]["forecast_cost"] == 1400
+
+
 def test_labor_cost_report_sorts_by_selected_dimension():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

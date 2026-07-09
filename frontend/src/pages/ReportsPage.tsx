@@ -22,6 +22,7 @@ import type {
 
 const DIMENSION_OPTIONS: Array<{ key: LaborCostReportDimension; label: string }> = [
   { key: "person", label: "Person" },
+  { key: "role", label: "Role" },
   { key: "team", label: "Team" },
   { key: "product", label: "Product" },
   { key: "bucket", label: "Bucket" },
