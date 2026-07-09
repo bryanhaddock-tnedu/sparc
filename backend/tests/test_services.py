@@ -1977,6 +1977,74 @@ def test_dashboard_breakdowns_can_scope_to_fiscal_month():
         assert labor_mix["hire_types"][0]["actual_hours"] == 4
 
 
+def test_dashboard_labor_mix_counts_distinct_forecast_resources_by_scope():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        first_product = Product(name="Student Information", jira_space_key="SIS")
+        second_product = Product(name="Core Infrastructure", jira_space_key="CORE")
+        contractor = TeamMember(
+            name="Avery Johnson",
+            role="Dev",
+            team="Applications",
+            bill_rate=Decimal("100"),
+            employment_type="Contractor",
+        )
+        fte = TeamMember(
+            name="Bailey Nguyen",
+            role="QA",
+            team="Applications",
+            bill_rate=Decimal("80"),
+            employment_type="FTE",
+        )
+        db.add_all([first_product, second_product, contractor, fte])
+        db.flush()
+
+        upsert_forecast_entry(
+            db,
+            product_id=first_product.id,
+            team_member_id=contractor.id,
+            bucket_code="NET_NEW",
+            fiscal_year=2026,
+            month_sequence=1,
+            hours=10,
+        )
+        upsert_forecast_entry(
+            db,
+            product_id=second_product.id,
+            team_member_id=contractor.id,
+            bucket_code="ENHANCE",
+            fiscal_year=2026,
+            month_sequence=1,
+            hours=5,
+        )
+        upsert_forecast_entry(
+            db,
+            product_id=first_product.id,
+            team_member_id=fte.id,
+            bucket_code="MAINTENANCE",
+            fiscal_year=2026,
+            month_sequence=2,
+            hours=20,
+        )
+
+        july_mix = dashboard_labor_mix(db, 2026, month_sequence=1)
+        fy_mix = dashboard_labor_mix(db, 2026)
+
+        contractor_row = next(row for row in july_mix["hire_types"] if row["employment_type"] == "Contractor")
+        dev_row = next(row for row in july_mix["roles"] if row["role"] == "Dev")
+        fte_row = next(row for row in fy_mix["hire_types"] if row["employment_type"] == "FTE")
+
+        assert contractor_row["forecast_hours"] == 15
+        assert contractor_row["forecast_resource_count"] == 1
+        assert dev_row["forecast_hours"] == 15
+        assert dev_row["forecast_resource_count"] == 1
+        assert fte_row["forecast_hours"] == 20
+        assert fte_row["forecast_resource_count"] == 1
+        assert sum(row["forecast_resource_count"] for row in fy_mix["hire_types"]) == 2
+
+
 def test_product_bucket_tables_use_explicit_forecast_lines_for_bucket_rows():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

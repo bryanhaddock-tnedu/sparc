@@ -259,11 +259,25 @@ def dashboard_work_type_breakdown(db: Session, fiscal_year: int, month_sequence:
 def dashboard_labor_mix(db: Session, fiscal_year: int, month_sequence: int | None = None) -> dict[str, list[dict[str, object]]]:
     forecasts = _forecast_entries(db, fiscal_year, month_sequence=month_sequence)
     actuals = _actual_entries(db, fiscal_year, month_sequence=month_sequence)
-    hire_types: dict[str, dict[str, Decimal | float]] = defaultdict(
-        lambda: {"forecast_hours": Decimal("0"), "actual_hours": Decimal("0"), "forecast_cost": 0.0, "actual_cost": 0.0}
+    hire_types: dict[str, dict[str, object]] = defaultdict(
+        lambda: {
+            "forecast_hours": Decimal("0"),
+            "actual_hours": Decimal("0"),
+            "forecast_cost": 0.0,
+            "actual_cost": 0.0,
+            "forecast_member_ids": set(),
+            "actual_member_ids": set(),
+        }
     )
-    roles: dict[str, dict[str, Decimal | float]] = defaultdict(
-        lambda: {"forecast_hours": Decimal("0"), "actual_hours": Decimal("0"), "forecast_cost": 0.0, "actual_cost": 0.0}
+    roles: dict[str, dict[str, object]] = defaultdict(
+        lambda: {
+            "forecast_hours": Decimal("0"),
+            "actual_hours": Decimal("0"),
+            "forecast_cost": 0.0,
+            "actual_cost": 0.0,
+            "forecast_member_ids": set(),
+            "actual_member_ids": set(),
+        }
     )
 
     for entry in forecasts:
@@ -274,6 +288,9 @@ def dashboard_labor_mix(db: Session, fiscal_year: int, month_sequence: int | Non
         hire_types[employment_type]["forecast_cost"] += cost
         roles[role]["forecast_hours"] += entry.hours
         roles[role]["forecast_cost"] += cost
+        if entry.hours > 0:
+            hire_types[employment_type]["forecast_member_ids"].add(entry.team_member_id)
+            roles[role]["forecast_member_ids"].add(entry.team_member_id)
     for entry in actuals:
         employment_type = entry.team_member.employment_type or "Unspecified"
         role = entry.team_member.role or "Unspecified"
@@ -282,6 +299,9 @@ def dashboard_labor_mix(db: Session, fiscal_year: int, month_sequence: int | Non
         hire_types[employment_type]["actual_cost"] += cost
         roles[role]["actual_hours"] += entry.hours
         roles[role]["actual_cost"] += cost
+        if entry.hours > 0:
+            hire_types[employment_type]["actual_member_ids"].add(entry.team_member_id)
+            roles[role]["actual_member_ids"].add(entry.team_member_id)
 
     return {
         "hire_types": _labor_mix_rows(hire_types, "employment_type"),
@@ -483,18 +503,21 @@ def _rounded_totals(values: dict[str, float]) -> dict[str, float]:
     return {key: round(value, 2) for key, value in values.items()}
 
 
-def _labor_mix_rows(source: dict[str, dict[str, Decimal | float]], key_name: str) -> list[dict[str, object]]:
-    rows = [
-        {
+def _labor_mix_rows(source: dict[str, dict[str, object]], key_name: str) -> list[dict[str, object]]:
+    rows = []
+    for label, values in source.items():
+        row = {
             key_name: label,
             "forecast_hours": round_hours(values["forecast_hours"]),
             "actual_hours": round_hours(values["actual_hours"]),
             "forecast_cost": round(float(values["forecast_cost"]), 2),
             "actual_cost": round(float(values["actual_cost"]), 2),
+            "forecast_resource_count": len(values["forecast_member_ids"]),
+            "actual_resource_count": len(values["actual_member_ids"]),
         }
-        for label, values in source.items()
-    ]
-    return sorted(rows, key=lambda row: (row["forecast_hours"], row["actual_hours"]), reverse=True)
+        if row["forecast_hours"] or row["actual_hours"] or row["forecast_resource_count"] or row["actual_resource_count"]:
+            rows.append(row)
+    return sorted(rows, key=lambda row: (row["forecast_resource_count"], row["forecast_hours"], row["actual_hours"]), reverse=True)
 
 
 def _bucket_total_rows(

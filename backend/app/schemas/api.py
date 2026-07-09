@@ -490,6 +490,8 @@ class DashboardLaborMixHireTypeRowResponse(BaseModel):
     actual_hours: float
     forecast_cost: float
     actual_cost: float
+    forecast_resource_count: int
+    actual_resource_count: int
 
 
 class DashboardLaborMixRoleRowResponse(BaseModel):
@@ -498,6 +500,8 @@ class DashboardLaborMixRoleRowResponse(BaseModel):
     actual_hours: float
     forecast_cost: float
     actual_cost: float
+    forecast_resource_count: int
+    actual_resource_count: int
 
 
 class DashboardLaborMixResponse(BaseModel):

@@ -415,6 +415,7 @@ function LaborMixCard({ data, scopeLabel }: { data: DashboardLaborMix | null; sc
   const hireTypes = data?.hire_types ?? [];
   const roles = data?.roles ?? [];
   const hireTotal = hireTypes.reduce((total, row) => total + row.forecast_hours, 0);
+  const resourceTotal = hireTypes.reduce((total, row) => total + row.forecast_resource_count, 0);
 
   return (
     <section className="rounded-lg border bg-card p-4">
@@ -431,7 +432,10 @@ function LaborMixCard({ data, scopeLabel }: { data: DashboardLaborMix | null; sc
               <div key={row.employment_type}>
                 <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
                   <span className="font-medium">{row.employment_type}</span>
-                  <span className="numeric-cell text-muted-foreground">{hireTotal ? Math.round((row.forecast_hours / hireTotal) * 100) : 0}%</span>
+                  <span className="numeric-cell text-right text-muted-foreground">
+                    {formatResourceCount(row.forecast_resource_count)}
+                    <span className="ml-2">{hireTotal ? Math.round((row.forecast_hours / hireTotal) * 100) : 0}% hrs</span>
+                  </span>
                 </div>
                 <div className="h-3 overflow-hidden rounded-full bg-muted">
                   <div
@@ -442,23 +446,34 @@ function LaborMixCard({ data, scopeLabel }: { data: DashboardLaborMix | null; sc
                     }}
                   />
                 </div>
+                <div className="numeric-cell mt-1 text-xs text-muted-foreground">{formatHours(row.forecast_hours)} forecast hrs</div>
               </div>
             ))
           ) : (
             <div className="rounded-md bg-secondary/50 p-4 text-sm text-muted-foreground">No labor mix data yet.</div>
           )}
         </div>
+        {resourceTotal > 0 ? (
+          <div className="rounded-md border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">{formatResourceCount(resourceTotal)}</span> in the {scopeLabel} forecast.
+          </div>
+        ) : null}
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {roles.map((row) => (
             <div key={row.role} className="rounded-md bg-secondary/50 px-3 py-2">
               <div className="truncate text-xs font-semibold uppercase text-muted-foreground">{row.role}</div>
-              <div className="numeric-cell mt-1 text-lg font-semibold text-primary">{formatHours(row.forecast_hours)}</div>
+              <div className="numeric-cell mt-1 text-lg font-semibold text-primary">{formatResourceCount(row.forecast_resource_count)}</div>
+              <div className="numeric-cell mt-1 text-xs text-muted-foreground">{formatHours(row.forecast_hours)} forecast hrs</div>
             </div>
           ))}
         </div>
       </div>
     </section>
   );
+}
+
+function formatResourceCount(count: number) {
+  return `${count.toLocaleString()} ${count === 1 ? "resource" : "resources"}`;
 }
 
 function StackedBar({

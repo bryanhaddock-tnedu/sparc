@@ -69,6 +69,8 @@ export interface DashboardLaborMixRow {
   actual_hours: number;
   forecast_cost: number;
   actual_cost: number;
+  forecast_resource_count: number;
+  actual_resource_count: number;
 }
 
 export interface DashboardLaborMix {
@@ -78,6 +80,8 @@ export interface DashboardLaborMix {
     actual_hours: number;
     forecast_cost: number;
     actual_cost: number;
+    forecast_resource_count: number;
+    actual_resource_count: number;
   }>;
   roles: Array<{
     role: string;
@@ -85,6 +89,8 @@ export interface DashboardLaborMix {
     actual_hours: number;
     forecast_cost: number;
     actual_cost: number;
+    forecast_resource_count: number;
+    actual_resource_count: number;
   }>;
 }
 
