@@ -25,6 +25,7 @@ from app.services.estimation_policy import (
     complete_estimation_run,
     create_estimation_run,
     ensure_default_estimation_profile,
+    normalize_bucket,
     persist_estimated_entries,
     preview_mock_estimation,
     reported_effective_value,
@@ -230,6 +231,39 @@ def test_unknown_jira_projects_are_unmapped_not_core_infrastructure():
         assert core.product_name == "Core Infrastructure"
 
 
+def test_unknown_work_type_is_unclassified_not_maintenance():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        product, member, _bucket, _month = _foundation(db)
+        profile = ensure_default_estimation_profile(db)
+
+        bucket = normalize_bucket(db, "Core Infrastructure")
+        windows = build_issue_estimation_windows(
+            db,
+            profile,
+            2026,
+            [
+                _issue(
+                    member.id,
+                    "CCTE-1",
+                    created=datetime(2026, 5, 1, 9),
+                    updated=datetime(2026, 5, 1, 10),
+                    source_work_type="Core Infrastructure",
+                )
+            ],
+        )
+
+        assert product.name == "CCTE"
+        assert bucket.bucket_code is None
+        assert bucket.bucket_id is None
+        assert bucket.defaulted is True
+        assert bucket.reason == "Unclassified Jira work type requires review"
+        assert windows[0].included is False
+        assert windows[0].bucket.bucket_code is None
+        assert windows[0].exclusion_reason == "Unclassified Jira work type"
+
+
 def test_excluded_jira_projects_generate_no_counted_estimate():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -395,6 +429,7 @@ def _issue(
     project_key: str = "CCTE",
     created: datetime,
     updated: datetime,
+    source_work_type: str = "Net New",
 ):
     return EstimationIssueEvidence(
         team_member_id=member_id,
@@ -410,5 +445,5 @@ def _issue(
         issue_logged_hours=Decimal("0"),
         created_at_from_jira=created,
         updated_at_from_jira=updated,
-        source_work_type="Net New",
+        source_work_type=source_work_type,
     )

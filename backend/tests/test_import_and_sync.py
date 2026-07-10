@@ -9,7 +9,14 @@ from sqlalchemy.orm import Session
 from app.db.seed import _seed_buckets
 from app.models import ActualEntry, Base, Bucket, JiraProductMapping, JiraUserMapping, Product, ProductJiraSpace, SyncRun, TeamMember
 from app.services.fiscal_year import get_fiscal_month
-from app.services.jira_rovo import MockWorklog, map_jira_product, map_jira_user, run_live_jira_rovo_sync, run_mock_jira_rovo_sync
+from app.services.jira_rovo import (
+    MockWorklog,
+    _bucket_code_from_issue_fields,
+    map_jira_product,
+    map_jira_user,
+    run_live_jira_rovo_sync,
+    run_mock_jira_rovo_sync,
+)
 from app.services.team_import import import_team_members
 
 
@@ -245,6 +252,83 @@ def test_live_sync_deletes_jira_actuals_for_removed_worklogs(monkeypatch):
         assert second["imported_worklogs"] == 1
         assert second["deleted_worklogs"] == 1
         assert [entry.source_worklog_id for entry in remaining] == ["live-wl-1"]
+
+
+def test_live_sync_skips_unclassified_work_type_and_deletes_existing_actual(monkeypatch):
+    with session() as db:
+        _seed_buckets(db)
+        product = Product(name="Live Product")
+        member = TeamMember(name="Live User", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        db.add(
+            ProductJiraSpace(
+                product_id=product.id,
+                jira_project_key="LIVE",
+                jira_project_name="Live Jira Project",
+                is_active=True,
+                validation_status="valid",
+            )
+        )
+        db.add(
+            JiraUserMapping(
+                jira_account_id="acct-live",
+                jira_display_name="Live User",
+                team_member_id=member.id,
+            )
+        )
+        db.flush()
+        current_worklogs = [
+            MockWorklog(
+                "live-wl-1",
+                "900001",
+                "LIVE-1",
+                "Classified worklog",
+                "Done",
+                "LIVE",
+                "Live Jira Project",
+                "acct-live",
+                "Live User",
+                None,
+                "MAINTENANCE",
+                date(2026, 5, 6),
+                Decimal("3.50"),
+            )
+        ]
+
+        monkeypatch.setattr("app.services.jira_rovo.current_live_sync_fiscal_year", lambda: 2026)
+        monkeypatch.setattr("app.services.jira_rovo.fetch_live_jira_worklogs", lambda _db, _fiscal_year: current_worklogs)
+        first = run_live_jira_rovo_sync(db, 2026)
+        current_worklogs = [
+            MockWorklog(
+                "live-wl-1",
+                "900001",
+                "LIVE-1",
+                "Unclassified worklog",
+                "Done",
+                "LIVE",
+                "Live Jira Project",
+                "acct-live",
+                "Live User",
+                None,
+                None,
+                date(2026, 5, 6),
+                Decimal("3.50"),
+            )
+        ]
+        second = run_live_jira_rovo_sync(db, 2026)
+
+        assert first["imported_worklogs"] == 1
+        assert second["imported_worklogs"] == 0
+        assert second["skipped_unmapped_worklogs"] == 1
+        assert second["deleted_worklogs"] == 1
+        assert db.scalar(select(ActualEntry).where(ActualEntry.source_worklog_id == "live-wl-1")) is None
+
+
+def test_jira_work_type_bucket_classifier_does_not_default_to_maintenance():
+    assert _bucket_code_from_issue_fields({"customfield_1": {"value": "Net New"}}, ["customfield_1"]) == "NET_NEW"
+    assert _bucket_code_from_issue_fields({"customfield_1": {"value": "Core Infrastructure"}}, ["customfield_1"]) is None
+    assert _bucket_code_from_issue_fields({}, ["customfield_1"]) is None
 
 
 def test_live_sync_deletes_stale_jira_actuals_even_when_project_mapping_changed(monkeypatch):

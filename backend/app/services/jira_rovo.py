@@ -35,7 +35,7 @@ class MockWorklog:
     jira_account_id: str
     jira_display_name: str
     jira_email: str | None
-    bucket_code: str
+    bucket_code: str | None
     worked_on: date
     hours: Decimal
 
@@ -62,7 +62,7 @@ def run_mock_jira_rovo_sync(db: Session) -> dict[str, object]:
         for worklog in MOCK_WORKLOGS:
             fiscal_year = fiscal_year_for_date(worklog.worked_on)
             fiscal_month = _ensure_month_for_worklog(db, fiscal_year, worklog.worked_on)
-            bucket = db.scalar(select(Bucket).where(Bucket.code == worklog.bucket_code))
+            bucket = _bucket_for_worklog(db, worklog)
             user_mapping = _ensure_user_mapping(db, worklog)
             product_mapping = _ensure_product_mapping(db, worklog)
 
@@ -178,7 +178,7 @@ def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = Non
         current_worklog_ids = {_worklog_id(worklog) for worklog in worklogs if _worklog_id(worklog)}
         for worklog in worklogs:
             fiscal_month = _ensure_month_for_worklog(db, fiscal_year_for_date(worklog.worked_on), worklog.worked_on)
-            bucket = db.scalar(select(Bucket).where(Bucket.code == worklog.bucket_code))
+            bucket = _bucket_for_worklog(db, worklog)
             user_mapping = _ensure_user_mapping(db, worklog)
             product_mapping = _ensure_product_mapping(db, worklog)
             existing = _existing_live_actual(db, worklog)
@@ -663,7 +663,13 @@ def _normalize_jira_worklog(
     )
 
 
-def _bucket_code_from_issue_fields(fields: dict[str, object], work_type_field_ids: list[str]) -> str:
+def _bucket_for_worklog(db: Session, worklog: MockWorklog) -> Bucket | None:
+    if not worklog.bucket_code:
+        return None
+    return db.scalar(select(Bucket).where(Bucket.code == worklog.bucket_code))
+
+
+def _bucket_code_from_issue_fields(fields: dict[str, object], work_type_field_ids: list[str]) -> str | None:
     for field_id in work_type_field_ids:
         value = _jira_field_text(fields.get(field_id))
         if not value:
@@ -671,7 +677,7 @@ def _bucket_code_from_issue_fields(fields: dict[str, object], work_type_field_id
         bucket_code = WORK_TYPE_ALIASES.get(normalize_lookup_value(value))
         if bucket_code:
             return bucket_code
-    return "MAINTENANCE"
+    return None
 
 
 def _jira_field_text(value: object) -> str:

@@ -532,7 +532,7 @@ Normalize values:
 - Net New, New, New Feature, New Development -> NET_NEW
 - Enhance, Enhancement, Enhance Existing -> ENHANCE
 - Maintenance, Maintain, Support, Bug Fix -> MAINTENANCE
-- Defaulting to Maintenance must be auditable.
+- Missing or unrecognized work type must remain unclassified and require review; do not default it to Maintenance or Net New.
 
 ## Estimation Model
 

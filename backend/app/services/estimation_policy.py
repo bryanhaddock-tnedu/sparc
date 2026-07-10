@@ -120,7 +120,7 @@ class ProductMappingDecision:
 
 @dataclass(frozen=True)
 class BucketDecision:
-    bucket_code: str
+    bucket_code: str | None
     bucket_id: int | None
     source_value: str
     reason: str
@@ -342,11 +342,11 @@ def resolve_product_mapping(
 
 def normalize_bucket(db: Session, raw_work_type: str) -> BucketDecision:
     source_value = clean(raw_work_type)
-    bucket_code = WORK_TYPE_ALIASES.get(normalize_lookup_value(source_value), "MAINTENANCE")
+    bucket_code = WORK_TYPE_ALIASES.get(normalize_lookup_value(source_value))
+    if bucket_code is None:
+        return BucketDecision(None, None, source_value, "Unclassified Jira work type requires review", True)
     bucket = db.scalar(select(Bucket).where(Bucket.code == bucket_code))
-    defaulted = bucket_code == "MAINTENANCE" and normalize_lookup_value(source_value) not in WORK_TYPE_ALIASES
-    reason = "Defaulted to Maintenance" if defaulted else "Matched Jira work type"
-    return BucketDecision(bucket_code, bucket.id if bucket else None, source_value, reason, defaulted)
+    return BucketDecision(bucket_code, bucket.id if bucket else None, source_value, "Matched Jira work type", False)
 
 
 def status_activity_decision(
@@ -451,7 +451,8 @@ def build_issue_estimation_windows(
             windows.append(_excluded_window(issue, mapping, bucket, "Unmapped Jira project", effort))
             continue
         if bucket.bucket_id is None:
-            windows.append(_excluded_window(issue, mapping, bucket, "No matching SPARC bucket", effort))
+            reason = "Unclassified Jira work type" if bucket.bucket_code is None else "No matching SPARC bucket"
+            windows.append(_excluded_window(issue, mapping, bucket, reason, effort))
             continue
         if not status.included:
             windows.append(_excluded_window(issue, mapping, bucket, status.reason, effort))
@@ -1071,15 +1072,15 @@ def _estimation_warnings(windows: list[IssueEstimationWindow], issues: list[Esti
     unmapped_keys = sorted({window.product_mapping.jira_project_key for window in windows if window.product_mapping.status == "unmapped"})
     excluded_project_keys = sorted({window.product_mapping.jira_project_key for window in windows if window.product_mapping.status == "excluded"})
     status_excluded = [window for window in windows if window.exclusion_reason and "status" in window.exclusion_reason.casefold()]
-    defaulted_buckets = sorted({window.evidence.issue_key for window in windows if window.bucket.defaulted})
+    unclassified_buckets = sorted({window.evidence.issue_key for window in windows if window.bucket.defaulted})
     if unmapped_keys:
         warnings.append(f"Unmapped Jira project keys require review: {', '.join(unmapped_keys)}.")
     if excluded_project_keys:
         warnings.append(f"Excluded Jira project keys were ignored by policy: {', '.join(excluded_project_keys)}.")
     if status_excluded:
         warnings.append(f"{len(status_excluded)} issue(s) were excluded by status or low-activity status policy.")
-    if defaulted_buckets:
-        warnings.append(f"{len(defaulted_buckets)} issue(s) defaulted to Maintenance because no recognized work type was found.")
+    if unclassified_buckets:
+        warnings.append(f"{len(unclassified_buckets)} issue(s) were excluded because no recognized Jira work type was found.")
     return warnings
 
 
