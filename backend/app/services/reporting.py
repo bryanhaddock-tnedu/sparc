@@ -18,6 +18,7 @@ from app.services.slugs import slugify
 REPORT_DIMENSIONS = {
     "person": "Person",
     "role": "Role",
+    "employment_type": "Employment Type",
     "team": "Team",
     "product": "Product",
     "bucket": "Bucket",
@@ -32,9 +33,14 @@ REPORT_NUMERIC_SORTS = {
 }
 
 
-def normalize_labor_cost_dimensions(lead: str, second: str | None = None, third: str | None = None) -> list[str]:
+def normalize_labor_cost_dimensions(
+    lead: str,
+    second: str | None = None,
+    third: str | None = None,
+    fourth: str | None = None,
+) -> list[str]:
     dimensions: list[str] = []
-    for raw_dimension in (lead, second, third):
+    for raw_dimension in (lead, second, third, fourth):
         dimension = (raw_dimension or "").strip().lower()
         if not dimension or dimension == "none":
             continue
@@ -189,6 +195,9 @@ def _dimension_value(dimension: str, row: dict[str, object], member: TeamMember 
     if dimension == "role":
         role = member.role if member is not None and member.role else "Unassigned"
         return ("role", role, None)
+    if dimension == "employment_type":
+        employment_type = member.employment_type if member is not None and member.employment_type else "Unassigned"
+        return ("employment_type", employment_type, None)
     if dimension == "team":
         team = member.team if member is not None and member.team else "Unassigned"
         return ("team", team, f"/teams/{slugify(team, fallback='unassigned')}")

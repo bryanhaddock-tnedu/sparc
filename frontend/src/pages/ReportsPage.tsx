@@ -23,6 +23,7 @@ import type {
 const DIMENSION_OPTIONS: Array<{ key: LaborCostReportDimension; label: string }> = [
   { key: "person", label: "Person" },
   { key: "role", label: "Role" },
+  { key: "employment_type", label: "Employment Type" },
   { key: "team", label: "Team" },
   { key: "product", label: "Product" },
   { key: "bucket", label: "Bucket" },
@@ -40,9 +41,10 @@ export function ReportsPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const { status } = useAuth();
   const canViewNamedPeople = status?.capabilities.can_view_named_people === true;
-  const [leadDimension, setLeadDimension] = useState<LaborCostReportDimension>(() => (canViewNamedPeople ? "person" : "product"));
-  const [secondDimension, setSecondDimension] = useState<LaborCostReportOptionalDimension>(() => (canViewNamedPeople ? "product" : "bucket"));
-  const [thirdDimension, setThirdDimension] = useState<LaborCostReportOptionalDimension>(() => (canViewNamedPeople ? "bucket" : "none"));
+  const [leadDimension, setLeadDimension] = useState<LaborCostReportDimension>("product");
+  const [secondDimension, setSecondDimension] = useState<LaborCostReportOptionalDimension>("bucket");
+  const [thirdDimension, setThirdDimension] = useState<LaborCostReportOptionalDimension>("role");
+  const [fourthDimension, setFourthDimension] = useState<LaborCostReportOptionalDimension>("employment_type");
   const [sortMetric, setSortMetric] = useState<LaborCostReportSort>("forecast_cost");
   const [report, setReport] = useState<LaborCostReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,13 +57,14 @@ export function ReportsPage() {
       lead: leadDimension,
       second: secondDimension,
       third: thirdDimension,
+      fourth: fourthDimension,
       sort: sortMetric,
     }),
-    [leadDimension, secondDimension, sortMetric, thirdDimension],
+    [fourthDimension, leadDimension, secondDimension, sortMetric, thirdDimension],
   );
   const sortOptions = useMemo(
-    () => [...activeDimensionOptions(leadDimension, secondDimension, thirdDimension), ...METRIC_OPTIONS],
-    [leadDimension, secondDimension, thirdDimension],
+    () => [...activeDimensionOptions(leadDimension, secondDimension, thirdDimension, fourthDimension), ...METRIC_OPTIONS],
+    [fourthDimension, leadDimension, secondDimension, thirdDimension],
   );
   const dimensionOptions = useMemo(
     () => DIMENSION_OPTIONS.filter((option) => canViewNamedPeople || option.key !== "person"),
@@ -77,7 +80,8 @@ export function ReportsPage() {
     if (leadDimension === "person") setLeadDimension("product");
     if (secondDimension === "person") setSecondDimension("bucket");
     if (thirdDimension === "person") setThirdDimension("none");
-  }, [canViewNamedPeople, leadDimension, secondDimension, thirdDimension]);
+    if (fourthDimension === "person") setFourthDimension("none");
+  }, [canViewNamedPeople, fourthDimension, leadDimension, secondDimension, thirdDimension]);
 
   useEffect(() => {
     if (!sortOptions.some((option) => option.key === sortMetric)) {
@@ -136,7 +140,8 @@ export function ReportsPage() {
                 Labor Cost Report
               </CardTitle>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                Pivot forecast and actual cost by Person, Team, Product, and Bucket. Product and Person values link back to their detail pages.
+                Pivot forecast and actual cost by Product, Bucket, Role, Employment Type, Person, and Team. Product and Person values link back to their detail
+                pages.
               </p>
             </div>
             <Button onClick={() => void exportReport()} disabled={exporting || loading || !report}>
@@ -145,7 +150,7 @@ export function ReportsPage() {
             </Button>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <DimensionSelect
               label="Lead Column"
               value={leadDimension}
@@ -163,6 +168,12 @@ export function ReportsPage() {
               value={thirdDimension}
               options={optionalDimensionOptions}
               onChange={(value) => setThirdDimension(value as LaborCostReportOptionalDimension)}
+            />
+            <DimensionSelect
+              label="Then"
+              value={fourthDimension}
+              options={optionalDimensionOptions}
+              onChange={(value) => setFourthDimension(value as LaborCostReportOptionalDimension)}
             />
             <DimensionSelect label="Sort By" value={sortMetric} options={sortOptions} onChange={(value) => setSortMetric(value as LaborCostReportSort)} />
           </div>
@@ -294,8 +305,9 @@ function activeDimensionOptions(
   leadDimension: LaborCostReportDimension,
   secondDimension: LaborCostReportOptionalDimension,
   thirdDimension: LaborCostReportOptionalDimension,
+  fourthDimension: LaborCostReportOptionalDimension,
 ) {
-  const selectedDimensions = [leadDimension, secondDimension, thirdDimension];
+  const selectedDimensions = [leadDimension, secondDimension, thirdDimension, fourthDimension];
   const seen = new Set<string>();
   return selectedDimensions
     .filter((dimension): dimension is LaborCostReportDimension => dimension !== "none")

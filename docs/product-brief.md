@@ -367,6 +367,7 @@ Supported dimensions:
 
 - Person
 - Role
+- Employment Type
 - Team
 - Product
 - Bucket
@@ -374,7 +375,7 @@ Supported dimensions:
 Rules:
 
 - Reports are scoped to the selected Fiscal Year.
-- Users can select which dimension is the lead column and optionally add second and third dimensions.
+- Users can select which dimension is the lead column and optionally add second, third, and fourth dimensions.
 - Cost values are calculated from Forecast or Actual hours multiplied by Team Member bill rate.
 - Product and Person values link to their detail pages.
 - Reports must be viewable in SPARC and exportable as `.xlsx`.

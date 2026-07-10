@@ -695,7 +695,7 @@ export interface DeliveryFlowIssue {
   updated_days_ago: number | null;
 }
 
-export type LaborCostReportDimension = "person" | "role" | "team" | "product" | "bucket";
+export type LaborCostReportDimension = "person" | "role" | "employment_type" | "team" | "product" | "bucket";
 
 export type LaborCostReportOptionalDimension = LaborCostReportDimension | "none";
 

@@ -16,15 +16,16 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 @router.get("/labor-cost")
 def get_labor_cost_report(
     fiscal_year: int = 2027,
-    lead: str = Query(default="person"),
-    second: str | None = Query(default="product"),
-    third: str | None = Query(default="bucket"),
+    lead: str = Query(default="product"),
+    second: str | None = Query(default="bucket"),
+    third: str | None = Query(default="role"),
+    fourth: str | None = Query(default="employment_type"),
     sort: str = Query(default="forecast_cost"),
     db: Session = Depends(get_db),
     user: AuthenticatedUser = Depends(current_user),
 ) -> dict[str, object]:
     try:
-        dimensions = normalize_labor_cost_dimensions(lead, second, third)
+        dimensions = normalize_labor_cost_dimensions(lead, second, third, fourth)
         return build_labor_cost_report(db, fiscal_year, dimensions=dimensions, sort_metric=sort, user=user)
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
@@ -35,15 +36,16 @@ def get_labor_cost_report(
 @router.get("/labor-cost.xlsx")
 def export_labor_cost_report(
     fiscal_year: int = 2027,
-    lead: str = Query(default="person"),
-    second: str | None = Query(default="product"),
-    third: str | None = Query(default="bucket"),
+    lead: str = Query(default="product"),
+    second: str | None = Query(default="bucket"),
+    third: str | None = Query(default="role"),
+    fourth: str | None = Query(default="employment_type"),
     sort: str = Query(default="forecast_cost"),
     db: Session = Depends(get_db),
     user: AuthenticatedUser = Depends(current_user),
 ) -> StreamingResponse:
     try:
-        dimensions = normalize_labor_cost_dimensions(lead, second, third)
+        dimensions = normalize_labor_cost_dimensions(lead, second, third, fourth)
         workbook = build_labor_cost_report_workbook(db, fiscal_year, dimensions=dimensions, sort_metric=sort, user=user)
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc

@@ -84,6 +84,7 @@ type LaborCostReportParams = {
   lead: LaborCostReportDimension;
   second?: LaborCostReportOptionalDimension;
   third?: LaborCostReportOptionalDimension;
+  fourth?: LaborCostReportOptionalDimension;
   sort?: LaborCostReportSort;
 };
 
@@ -105,6 +106,7 @@ function laborCostReportQuery(fiscalYear: number, params: LaborCostReportParams)
     lead: params.lead,
     second: params.second ?? "none",
     third: params.third ?? "none",
+    fourth: params.fourth ?? "none",
     sort: params.sort ?? "forecast_cost",
   });
   return search.toString();

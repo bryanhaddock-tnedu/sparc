@@ -217,6 +217,72 @@ def test_labor_cost_report_rolls_up_by_role_and_bucket():
         assert report["totals"]["forecast_cost"] == 1400
 
 
+def test_labor_cost_report_rolls_up_by_budget_dimensions_with_employment_type():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Accountability", slug="accountability")
+        employee = TeamMember(
+            name="Avery Johnson",
+            slug="avery-johnson",
+            role="Engineer",
+            team="Apps",
+            employment_type="Employee",
+            bill_rate=Decimal("100"),
+        )
+        contractor = TeamMember(
+            name="Jamie Reyes",
+            slug="jamie-reyes",
+            role="Engineer",
+            team="Apps",
+            employment_type="Contractor",
+            bill_rate=Decimal("80"),
+        )
+        db.add_all([product, employee, contractor])
+        db.flush()
+
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=employee.id,
+            bucket_code="NET_NEW",
+            fiscal_year=2027,
+            month_sequence=1,
+            hours=10,
+        )
+        upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=contractor.id,
+            bucket_code="NET_NEW",
+            fiscal_year=2027,
+            month_sequence=1,
+            hours=5,
+        )
+
+        report = build_labor_cost_report(
+            db,
+            2027,
+            dimensions=["product", "bucket", "role", "employment_type"],
+            sort_metric="employment_type",
+        )
+
+        assert report["dimensions"] == [
+            {"key": "product", "label": "Product"},
+            {"key": "bucket", "label": "Bucket"},
+            {"key": "role", "label": "Role"},
+            {"key": "employment_type", "label": "Employment Type"},
+        ]
+        assert [[value["label"] for value in row["dimension_values"]] for row in report["rows"]] == [
+            ["Accountability", "Net New", "Engineer", "Contractor"],
+            ["Accountability", "Net New", "Engineer", "Employee"],
+        ]
+        assert [row["forecast_hours"] for row in report["rows"]] == [5, 10]
+        assert [row["forecast_cost"] for row in report["rows"]] == [400, 1000]
+        assert report["totals"]["forecast_cost"] == 1400
+
+
 def test_labor_cost_report_sorts_by_selected_dimension():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -264,16 +330,25 @@ def test_labor_cost_report_workbook_exports_xlsx():
             hours=4,
         )
 
-        workbook_bytes = build_labor_cost_report_workbook(db, 2027, dimensions=["product", "bucket"], sort_metric="forecast_cost")
+        workbook_bytes = build_labor_cost_report_workbook(
+            db,
+            2027,
+            dimensions=["product", "bucket", "role", "employment_type"],
+            sort_metric="forecast_cost",
+        )
         workbook = load_workbook(BytesIO(workbook_bytes.getvalue()), data_only=True)
         worksheet = workbook["Labor Cost"]
 
         assert worksheet["A1"].value == "SPARC Labor Cost Report"
         assert worksheet["A4"].value == "Product"
         assert worksheet["B4"].value == "Bucket"
+        assert worksheet["C4"].value == "Role"
+        assert worksheet["D4"].value == "Employment Type"
         assert worksheet["A5"].value == "SWORD"
         assert worksheet["B5"].value == "Enhance"
-        assert worksheet["D5"].value == 320
+        assert worksheet["C5"].value == "QA"
+        assert worksheet["D5"].value == "Employee"
+        assert worksheet["F5"].value == 320
 
 
 def test_forecast_upsert_uniqueness():
