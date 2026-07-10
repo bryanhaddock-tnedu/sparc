@@ -18,11 +18,18 @@ export function PageNav({ current }: { current?: PageNavKey }) {
   const { status } = useAuth();
   const canAdmin = status?.capabilities.can_admin === true;
   const canViewNamedPeople = status?.capabilities.can_view_named_people === true;
+  const canViewReports = status?.capabilities.can_view_reports === true;
 
   return (
     <nav aria-label="Page navigation" className="flex flex-nowrap justify-end gap-2">
       {navLinks
-        .filter((link) => link.key !== current && (link.key !== "admin" || canAdmin) && (link.key !== "team" || canViewNamedPeople))
+        .filter(
+          (link) =>
+            link.key !== current &&
+            (link.key !== "admin" || canAdmin) &&
+            (link.key !== "team" || canViewNamedPeople) &&
+            (link.key !== "reports" || canViewReports),
+        )
         .map((link) => {
           const Icon = link.icon;
           if (link.iconOnly) {

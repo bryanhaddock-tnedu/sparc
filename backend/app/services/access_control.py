@@ -56,6 +56,7 @@ def role_capabilities(role: UserRole) -> dict[str, bool]:
             "can_view_costs": True,
             "can_view_hours": True,
             "can_view_named_people": True,
+            "can_view_reports": True,
         }
     if role == UserRole.LEADERSHIP_VIEW_ONLY:
         return {
@@ -66,6 +67,7 @@ def role_capabilities(role: UserRole) -> dict[str, bool]:
             "can_view_costs": True,
             "can_view_hours": True,
             "can_view_named_people": True,
+            "can_view_reports": True,
         }
     return {
         "can_admin": False,
@@ -75,6 +77,7 @@ def role_capabilities(role: UserRole) -> dict[str, bool]:
         "can_view_costs": True,
         "can_view_hours": False,
         "can_view_named_people": False,
+        "can_view_reports": False,
     }
 
 

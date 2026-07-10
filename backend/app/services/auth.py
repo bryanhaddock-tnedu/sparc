@@ -103,6 +103,12 @@ def require_named_people_access(user: AuthenticatedUser = Depends(current_user))
     return user
 
 
+def require_reports_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
+    if not role_capabilities(user.role).get("can_view_reports"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reports access required")
+    return user
+
+
 def current_principal(request: Request, db: Session | None = None) -> AuthenticatedUser | None:
     settings = get_settings()
     if not settings.auth_enabled:

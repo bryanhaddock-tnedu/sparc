@@ -35,6 +35,8 @@ This plan intentionally keeps access control independent from Jira roadmap metad
 - Can be assigned multiple Program Areas.
 - Cannot edit.
 - Cannot see bill rates.
+- Cannot view Enterprise Reports.
+- Cannot see forecast or actual hour quantities on dashboard views; scoped dashboard cost values may remain visible.
 - If assigned no Program Areas, receives no scoped SPARC data and should see a clear "No Program Area assigned" state.
 - Initial implementation should avoid named Team Member detail for this role unless product leadership explicitly approves it.
 

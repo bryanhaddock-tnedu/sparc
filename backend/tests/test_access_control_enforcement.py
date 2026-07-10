@@ -9,14 +9,14 @@ from app.api import forecasts as forecasts_api
 from app.db.seed import _seed_buckets
 from app.models import Base, Bucket, Product, TeamMember
 from app.services.access_control import AuthenticatedUser, UserRole
-from app.services.aggregations import dashboard_products, product_bucket_tables
+from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_summary, dashboard_work_type_breakdown, product_bucket_tables
 from app.services.auth import require_named_people_access
 from app.services.fiscal_year import get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
 from app.services.reporting import build_labor_cost_report
 
 
-def test_program_area_user_sees_only_assigned_product_scope():
+def test_program_area_user_sees_only_assigned_dashboard_scope_without_hours():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
 
@@ -25,14 +25,27 @@ def test_program_area_user_sees_only_assigned_product_scope():
         user = _authenticated_user(UserRole.PROGRAM_AREA_VIEW_ONLY, ("Academics",))
 
         rows = dashboard_products(db, 2027, user=user)
-        report = build_labor_cost_report(db, 2027, dimensions=["product"], user=user)
+        summary = dashboard_summary(db, 2027, user=user)
+        work_types = dashboard_work_type_breakdown(db, 2027, user=user)
+        labor_mix = dashboard_labor_mix(db, 2027, user=user)
 
     assert [row["product"] for row in rows] == ["Academics Product"]
-    assert [value["label"] for row in report["rows"] for value in row["dimension_values"]] == ["Academics Product"]
-    assert report["totals"]["forecast_cost"] == 1000
+    assert rows[0]["forecasted_cost"] == 1000
+    assert rows[0]["forecasted_hours"] is None
+    assert rows[0]["fytd_hours"] is None
+    assert rows[0]["remaining_hours"] is None
+    assert rows[0]["variance_hours"] is None
+    assert rows[0]["forecast_consumed_percent"] is None
+    assert rows[0]["bucket_totals"][0]["forecast_hours"] is None
+    assert rows[0]["bucket_totals"][0]["actual_hours"] is None
+    assert summary["forecasted_hours"] is None
+    assert summary["fytd_hours"] is None
+    assert all(row["forecast_hours"] is None and row["actual_hours"] is None for row in work_types)
+    assert all(row["forecast_hours"] is None and row["actual_hours"] is None for row in labor_mix["hire_types"])
+    assert all(row["forecast_hours"] is None and row["actual_hours"] is None for row in labor_mix["roles"])
 
 
-def test_program_area_user_cannot_request_person_level_labor_report():
+def test_program_area_user_cannot_request_labor_reports():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
 
@@ -41,7 +54,24 @@ def test_program_area_user_cannot_request_person_level_labor_report():
         user = _authenticated_user(UserRole.PROGRAM_AREA_VIEW_ONLY, ("Academics",))
 
         with pytest.raises(PermissionError):
+            build_labor_cost_report(db, 2027, dimensions=["product"], user=user)
+
+        with pytest.raises(PermissionError):
             build_labor_cost_report(db, 2027, dimensions=["person"], user=user)
+
+
+def test_leadership_user_can_request_labor_reports():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        _seed_access_scope_data(db)
+        user = _authenticated_user(UserRole.LEADERSHIP_VIEW_ONLY)
+
+        report = build_labor_cost_report(db, 2027, dimensions=["product"], user=user)
+
+    assert sorted(value["label"] for row in report["rows"] for value in row["dimension_values"]) == ["Academics Product", "Programs Product"]
+    assert report["totals"]["forecast_cost"] == 3000
 
 
 def test_restricted_rate_viewer_gets_named_rows_without_bill_rates():

@@ -8,7 +8,7 @@ from app.api.errors import bad_request
 from app.db.session import get_db
 from app.services.reporting import build_labor_cost_report, build_labor_cost_report_workbook, normalize_labor_cost_dimensions
 from app.services.access_control import AuthenticatedUser
-from app.services.auth import current_user
+from app.services.auth import require_reports_access
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -22,7 +22,7 @@ def get_labor_cost_report(
     fourth: str | None = Query(default="employment_type"),
     sort: str = Query(default="forecast_cost"),
     db: Session = Depends(get_db),
-    user: AuthenticatedUser = Depends(current_user),
+    user: AuthenticatedUser = Depends(require_reports_access),
 ) -> dict[str, object]:
     try:
         dimensions = normalize_labor_cost_dimensions(lead, second, third, fourth)
@@ -42,7 +42,7 @@ def export_labor_cost_report(
     fourth: str | None = Query(default="employment_type"),
     sort: str = Query(default="forecast_cost"),
     db: Session = Depends(get_db),
-    user: AuthenticatedUser = Depends(current_user),
+    user: AuthenticatedUser = Depends(require_reports_access),
 ) -> StreamingResponse:
     try:
         dimensions = normalize_labor_cost_dimensions(lead, second, third, fourth)

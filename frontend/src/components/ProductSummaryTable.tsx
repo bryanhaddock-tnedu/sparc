@@ -7,7 +7,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ChevronsUpDown, RotateCcw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import type { ProductSummaryRow } from "../types/api";
@@ -52,7 +52,11 @@ const numericColumns = new Set<ProductSortId>([
   "fytd_cost",
 ]);
 
-const columns: ColumnDef<ProductSummaryRow>[] = [
+const hourColumnIds = new Set<ProductSortId>(["forecasted_hours", "fytd_hours"]);
+
+type ProductSummaryColumn = ColumnDef<ProductSummaryRow> & { accessorKey: ProductSortId };
+
+const columns: ProductSummaryColumn[] = [
   {
     accessorKey: "product",
     header: "Product",
@@ -107,22 +111,32 @@ const columns: ColumnDef<ProductSummaryRow>[] = [
   },
 ];
 
-export function ProductSummaryTable({ rows }: { rows: ProductSummaryRow[] }) {
+export function ProductSummaryTable({ rows, canViewHours = true }: { rows: ProductSummaryRow[]; canViewHours?: boolean }) {
   const [sorting, setSorting] = useState<SortingState>(defaultSorting);
+  const availableSortOptions = useMemo(() => sortOptions.filter((option) => canViewHours || !hourColumnIds.has(option.id)), [canViewHours]);
+  const visibleColumns = useMemo(() => columns.filter((column) => canViewHours || !hourColumnIds.has(column.accessorKey)), [canViewHours]);
   const activeSortSummary = useMemo(() => {
     return sorting
       .map((sort) => {
-        const option = sortOptions.find((item) => item.id === sort.id);
+        const option = availableSortOptions.find((item) => item.id === sort.id);
         if (!option) return null;
         return `${option.label} ${sort.desc ? "descending" : "ascending"}`;
       })
       .filter(Boolean)
       .join(", then ");
-  }, [sorting]);
+  }, [availableSortOptions, sorting]);
+
+  useEffect(() => {
+    if (canViewHours) return;
+    setSorting((current) => {
+      const filtered = current.filter((sort) => !hourColumnIds.has(sort.id as ProductSortId));
+      return filtered.length ? filtered : defaultSorting;
+    });
+  }, [canViewHours]);
 
   const table = useReactTable({
     data: rows,
-    columns,
+    columns: visibleColumns,
     state: { sorting },
     onSortingChange: setSorting,
     enableMultiSort: true,
@@ -139,7 +153,7 @@ export function ProductSummaryTable({ rows }: { rows: ProductSummaryRow[] }) {
       return;
     }
 
-    const option = sortOptions.find((item) => item.id === nextId);
+    const option = availableSortOptions.find((item) => item.id === nextId);
     const duplicateIndex = next.findIndex((sort, sortIndex) => sort.id === nextId && sortIndex !== index);
     if (duplicateIndex >= 0) next.splice(duplicateIndex, 1);
 
@@ -169,6 +183,7 @@ export function ProductSummaryTable({ rows }: { rows: ProductSummaryRow[] }) {
             value={(sorting[0]?.id as ProductSortId | undefined) ?? ""}
             onChange={(value) => setSortColumn(0, value)}
             disabledIds={sorting[1]?.id ? [sorting[1].id as ProductSortId] : []}
+            options={availableSortOptions}
           />
           <DirectionSelect
             label="Primary direction"
@@ -183,6 +198,7 @@ export function ProductSummaryTable({ rows }: { rows: ProductSummaryRow[] }) {
             onChange={(value) => setSortColumn(1, value)}
             allowNone
             disabledIds={sorting[0]?.id ? [sorting[0].id as ProductSortId] : []}
+            options={availableSortOptions}
           />
           <DirectionSelect
             label="Secondary direction"
@@ -260,12 +276,14 @@ function SortSelect({
   label,
   value,
   onChange,
+  options,
   allowNone = false,
   disabledIds = [],
 }: {
   label: string;
   value: ProductSortId | "";
   onChange: (value: ProductSortId | "") => void;
+  options: Array<{ id: ProductSortId; label: string; defaultDesc: boolean }>;
   allowNone?: boolean;
   disabledIds?: ProductSortId[];
 }) {
@@ -278,7 +296,7 @@ function SortSelect({
         onChange={(event) => onChange(event.target.value as ProductSortId | "")}
       >
         {allowNone ? <option value="">None</option> : null}
-        {sortOptions.map((option) => (
+        {options.map((option) => (
           <option key={option.id} value={option.id} disabled={disabledIds.includes(option.id)}>
             {option.label}
           </option>

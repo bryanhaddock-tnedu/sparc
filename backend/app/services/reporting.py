@@ -69,6 +69,8 @@ def build_labor_cost_report(
     user: AuthenticatedUser | None = None,
 ) -> dict[str, object]:
     normalized_dimensions = normalize_labor_cost_dimensions(*dimensions)
+    if user is not None and not role_capabilities(user.role).get("can_view_reports", False):
+        raise PermissionError("Reports are not available for this role")
     if user is not None and "person" in normalized_dimensions and not role_capabilities(user.role).get("can_view_named_people", False):
         raise PermissionError("Person-level reports are not available for this role")
     normalized_sort_metric = normalize_labor_cost_metric(sort_metric)

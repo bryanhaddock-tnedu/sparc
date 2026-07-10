@@ -8,6 +8,7 @@ import { ProductSummaryTable } from "../components/ProductSummaryTable";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { Button } from "../components/ui/button";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { productDetailPath } from "../lib/routes";
 import { cn, formatCurrency, formatHours } from "../lib/utils";
@@ -35,6 +36,8 @@ const FISCAL_MONTHS = [
 
 export function DashboardPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
+  const { status } = useAuth();
+  const canViewHours = status?.capabilities.can_view_hours === true;
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [products, setProducts] = useState<ProductSummaryRow[]>([]);
   const [workTypes, setWorkTypes] = useState<DashboardWorkTypeRow[]>([]);
@@ -45,6 +48,10 @@ export function DashboardPage() {
   const [scopeLoading, setScopeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const loadedFiscalYearRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!canViewHours && rankedMetric === "hours") setRankedMetric("cost");
+  }, [canViewHours, rankedMetric]);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,7 +99,14 @@ export function DashboardPage() {
   if (error) return <ErrorBlock message={error} />;
   if (!summary) return null;
 
-  const productRows = products.filter((product) => product.forecasted_hours > 0 || product.fytd_hours > 0 || product.budget_amount > 0);
+  const productRows = products.filter(
+    (product) =>
+      numericValue(product.forecasted_hours) > 0 ||
+      numericValue(product.fytd_hours) > 0 ||
+      product.forecasted_cost > 0 ||
+      product.fytd_cost > 0 ||
+      product.budget_amount > 0,
+  );
   const selectedScopeLabel = dashboardScopeLabel(selectedScope);
   const selectedMonthState = selectedScope === ENTIRE_FY_SCOPE ? undefined : fiscalMonthPeriodState(fiscalYear, selectedScope);
   const showActualBars = selectedScope === ENTIRE_FY_SCOPE || selectedMonthState !== "future";
@@ -116,12 +130,12 @@ export function DashboardPage() {
           actualSpend={summary.fytd_cost}
           contextLabel="All products budget, forecast, and actuals"
         />
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className={cn("grid gap-3 md:grid-cols-3", canViewHours ? "xl:grid-cols-6" : "xl:grid-cols-4")}>
           <MetricCard density="compact" label="Forecast $" value={formatCurrency(summary.forecasted_cost)} />
           <MetricCard density="compact" label="Actual $" value={formatCurrency(summary.fytd_cost)} />
           <MetricCard density="compact" label="Remaining $" value={formatCurrency(summary.remaining_cost)} tone="good" />
-          <MetricCard density="compact" label="Actual Hrs" value={formatHours(summary.fytd_hours)} />
-          <MetricCard density="compact" label="Forecast Hrs" value={formatHours(summary.forecasted_hours)} />
+          {canViewHours ? <MetricCard density="compact" label="Actual Hrs" value={formatHours(numericValue(summary.fytd_hours))} /> : null}
+          {canViewHours ? <MetricCard density="compact" label="Forecast Hrs" value={formatHours(numericValue(summary.forecasted_hours))} /> : null}
           <MetricCard
             density="compact"
             label="Variance $"
@@ -134,8 +148,8 @@ export function DashboardPage() {
 
       <div className={cn("space-y-6 transition-opacity", scopeLoading && "opacity-70")} aria-busy={scopeLoading}>
         <section className="grid gap-4 xl:grid-cols-2">
-          <WorkTypeMixCard rows={workTypes} scope={selectedScope} scopeLabel={selectedScopeLabel} showActuals={showActualBars} />
-          <LaborMixCard data={laborMix} scopeLabel={selectedScopeLabel} />
+          <WorkTypeMixCard rows={workTypes} scope={selectedScope} scopeLabel={selectedScopeLabel} showActuals={showActualBars} canViewHours={canViewHours} />
+          <LaborMixCard data={laborMix} scopeLabel={selectedScopeLabel} canViewHours={canViewHours} />
         </section>
 
         <TopProductsCard
@@ -145,6 +159,7 @@ export function DashboardPage() {
           showActuals={showActualBars}
           scopeLabel={selectedScopeLabel}
           onMetricChange={setRankedMetric}
+          canViewHours={canViewHours}
         />
 
         <section className="space-y-3">
@@ -152,7 +167,7 @@ export function DashboardPage() {
             <h2 className="text-lg font-semibold">Product Summary</h2>
             <p className="mt-1 text-sm text-muted-foreground">{selectedScopeLabel} product totals.</p>
           </div>
-          <ProductSummaryTable rows={productRows} />
+          <ProductSummaryTable rows={productRows} canViewHours={canViewHours} />
         </section>
       </div>
     </div>
@@ -231,16 +246,21 @@ function WorkTypeMixCard({
   scope,
   scopeLabel,
   showActuals,
+  canViewHours,
 }: {
   rows: DashboardWorkTypeRow[];
   scope: DashboardScope;
   scopeLabel: string;
   showActuals: boolean;
+  canViewHours: boolean;
 }) {
-  const forecastTotal = rows.reduce((total, row) => total + row.forecast_hours, 0);
-  const actualTotal = rows.reduce((total, row) => total + row.actual_hours, 0);
-  const forecastLabel = scope === ENTIRE_FY_SCOPE ? "Forecast FY" : `Forecast ${scopeLabel}`;
-  const actualLabel = scope === ENTIRE_FY_SCOPE ? "Actual FYTD" : `Actual ${scopeLabel}`;
+  const metric = canViewHours ? "hours" : "cost";
+  const forecastValueKey = canViewHours ? "forecast_hours" : "forecast_cost";
+  const actualValueKey = canViewHours ? "actual_hours" : "actual_cost";
+  const forecastTotal = rows.reduce((total, row) => total + numericValue(row[forecastValueKey]), 0);
+  const actualTotal = rows.reduce((total, row) => total + numericValue(row[actualValueKey]), 0);
+  const forecastLabel = scope === ENTIRE_FY_SCOPE ? (canViewHours ? "Forecast FY" : "Forecast FY $") : `Forecast ${scopeLabel}${canViewHours ? "" : " $"}`;
+  const actualLabel = scope === ENTIRE_FY_SCOPE ? (canViewHours ? "Actual FYTD" : "Actual FYTD $") : `Actual ${scopeLabel}${canViewHours ? "" : " $"}`;
 
   return (
     <section className="rounded-lg border bg-card p-4">
@@ -251,8 +271,8 @@ function WorkTypeMixCard({
         </div>
       </div>
       <div className="space-y-4">
-        <StackedBar label={forecastLabel} rows={rows} total={forecastTotal} valueKey="forecast_hours" />
-        {showActuals ? <StackedBar label={actualLabel} rows={rows} total={actualTotal} valueKey="actual_hours" /> : null}
+        <StackedBar label={forecastLabel} rows={rows} total={forecastTotal} valueKey={forecastValueKey} metric={metric} />
+        {showActuals ? <StackedBar label={actualLabel} rows={rows} total={actualTotal} valueKey={actualValueKey} metric={metric} /> : null}
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         {rows.map((row) => (
@@ -261,7 +281,9 @@ function WorkTypeMixCard({
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: bucketColor(row.bucket_code) }} />
               {row.bucket}
             </div>
-            <div className="numeric-cell mt-1 text-lg font-semibold text-primary">{formatHours(row.forecast_hours)}</div>
+            <div className="numeric-cell mt-1 text-lg font-semibold text-primary">
+              {canViewHours ? formatHours(numericValue(row.forecast_hours)) : formatCurrency(row.forecast_cost)}
+            </div>
           </div>
         ))}
       </div>
@@ -276,6 +298,7 @@ function TopProductsCard({
   showActuals,
   scopeLabel,
   onMetricChange,
+  canViewHours,
 }: {
   rows: ProductSummaryRow[];
   fiscalYear: number;
@@ -283,6 +306,7 @@ function TopProductsCard({
   showActuals: boolean;
   scopeLabel: string;
   onMetricChange: (metric: RankedMetric) => void;
+  canViewHours: boolean;
 }) {
   const ranked = useMemo(() => {
     return [...rows].sort(
@@ -309,9 +333,11 @@ function TopProductsCard({
           </p>
         </div>
         <div className="flex rounded-md border bg-background p-1">
-          <ToggleButton active={metric === "hours"} onClick={() => onMetricChange("hours")}>
-            Hours
-          </ToggleButton>
+          {canViewHours ? (
+            <ToggleButton active={metric === "hours"} onClick={() => onMetricChange("hours")}>
+              Hours
+            </ToggleButton>
+          ) : null}
           <ToggleButton active={metric === "cost"} onClick={() => onMetricChange("cost")}>
             Cost
           </ToggleButton>
@@ -411,11 +437,12 @@ function ProductBucketRankingBar({
   );
 }
 
-function LaborMixCard({ data, scopeLabel }: { data: DashboardLaborMix | null; scopeLabel: string }) {
+function LaborMixCard({ data, scopeLabel, canViewHours }: { data: DashboardLaborMix | null; scopeLabel: string; canViewHours: boolean }) {
   const hireTypes = data?.hire_types ?? [];
   const roles = data?.roles ?? [];
-  const hireTotal = hireTypes.reduce((total, row) => total + row.forecast_hours, 0);
+  const hireTotal = hireTypes.reduce((total, row) => total + laborMixValue(row, canViewHours), 0);
   const resourceTotal = hireTypes.reduce((total, row) => total + row.forecast_resource_count, 0);
+  const valueLabel = canViewHours ? "hrs" : "cost";
 
   return (
     <section className="rounded-lg border bg-card p-4">
@@ -434,19 +461,21 @@ function LaborMixCard({ data, scopeLabel }: { data: DashboardLaborMix | null; sc
                   <span className="font-medium">{row.employment_type}</span>
                   <span className="numeric-cell text-right text-muted-foreground">
                     {formatResourceCount(row.forecast_resource_count)}
-                    <span className="ml-2">{hireTotal ? Math.round((row.forecast_hours / hireTotal) * 100) : 0}% hrs</span>
+                    <span className="ml-2">{hireTotal ? Math.round((laborMixValue(row, canViewHours) / hireTotal) * 100) : 0}% {valueLabel}</span>
                   </span>
                 </div>
                 <div className="h-3 overflow-hidden rounded-full bg-muted">
                   <div
                     className="h-full rounded-full transition-[width]"
                     style={{
-                      width: `${hireTotal ? Math.max((row.forecast_hours / hireTotal) * 100, 3) : 0}%`,
+                      width: `${hireTotal ? Math.max((laborMixValue(row, canViewHours) / hireTotal) * 100, 3) : 0}%`,
                       backgroundColor: index === 0 ? "var(--spark-navy)" : "var(--spark-cyan)",
                     }}
                   />
                 </div>
-                <div className="numeric-cell mt-1 text-xs text-muted-foreground">{formatHours(row.forecast_hours)} forecast hrs</div>
+                <div className="numeric-cell mt-1 text-xs text-muted-foreground">
+                  {canViewHours ? `${formatHours(numericValue(row.forecast_hours))} forecast hrs` : `${formatCurrency(row.forecast_cost)} forecast`}
+                </div>
               </div>
             ))
           ) : (
@@ -463,7 +492,9 @@ function LaborMixCard({ data, scopeLabel }: { data: DashboardLaborMix | null; sc
             <div key={row.role} className="rounded-md bg-secondary/50 px-3 py-2">
               <div className="truncate text-xs font-semibold uppercase text-muted-foreground">{row.role}</div>
               <div className="numeric-cell mt-1 text-lg font-semibold text-primary">{formatResourceCount(row.forecast_resource_count)}</div>
-              <div className="numeric-cell mt-1 text-xs text-muted-foreground">{formatHours(row.forecast_hours)} forecast hrs</div>
+              <div className="numeric-cell mt-1 text-xs text-muted-foreground">
+                {canViewHours ? `${formatHours(numericValue(row.forecast_hours))} forecast hrs` : `${formatCurrency(row.forecast_cost)} forecast`}
+              </div>
             </div>
           ))}
         </div>
@@ -481,25 +512,27 @@ function StackedBar({
   rows,
   total,
   valueKey,
+  metric,
 }: {
   label: string;
   rows: DashboardWorkTypeRow[];
   total: number;
-  valueKey: "forecast_hours" | "actual_hours";
+  valueKey: "forecast_hours" | "actual_hours" | "forecast_cost" | "actual_cost";
+  metric: RankedMetric;
 }) {
   return (
     <div>
       <div className="mb-1 flex justify-between gap-3 text-sm">
         <span className="font-medium">{label}</span>
-        <span className="numeric-cell text-muted-foreground">{formatHours(total)}</span>
+        <span className="numeric-cell text-muted-foreground">{metric === "hours" ? formatHours(total) : formatCurrency(total)}</span>
       </div>
       <div className="flex h-4 overflow-hidden rounded-full bg-muted">
         {rows.map((row) => {
-          const value = row[valueKey];
+          const value = numericValue(row[valueKey]);
           return (
             <div
               key={`${label}-${row.bucket_id}`}
-              aria-label={`${row.bucket} ${formatHours(value)}`}
+              aria-label={`${row.bucket} ${metric === "hours" ? formatHours(value) : formatCurrency(value)}`}
               className="h-full transition-[width]"
               style={{
                 width: `${total > 0 ? (value / total) * 100 : 0}%`,
@@ -591,8 +624,8 @@ function scopeButtonStyle(active: boolean, periodState?: MonthPeriodState): CSSP
 }
 
 function productMetricValue(row: ProductSummaryRow, valueType: "forecast" | "actual", metric: RankedMetric) {
-  if (valueType === "forecast") return metric === "hours" ? row.forecasted_hours : row.forecasted_cost;
-  return metric === "hours" ? row.fytd_hours : row.fytd_cost;
+  if (valueType === "forecast") return metric === "hours" ? numericValue(row.forecasted_hours) : row.forecasted_cost;
+  return metric === "hours" ? numericValue(row.fytd_hours) : row.fytd_cost;
 }
 
 function bucketMetricValue(
@@ -600,6 +633,14 @@ function bucketMetricValue(
   valueType: "forecast" | "actual",
   metric: RankedMetric,
 ) {
-  if (valueType === "forecast") return metric === "hours" ? bucket.forecast_hours : bucket.forecast_cost;
-  return metric === "hours" ? bucket.actual_hours : bucket.actual_cost;
+  if (valueType === "forecast") return metric === "hours" ? numericValue(bucket.forecast_hours) : bucket.forecast_cost;
+  return metric === "hours" ? numericValue(bucket.actual_hours) : bucket.actual_cost;
+}
+
+function laborMixValue(row: { forecast_hours: number | null; forecast_cost: number }, canViewHours: boolean) {
+  return canViewHours ? numericValue(row.forecast_hours) : row.forecast_cost;
+}
+
+function numericValue(value: number | null | undefined) {
+  return value ?? 0;
 }

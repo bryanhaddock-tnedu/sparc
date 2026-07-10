@@ -162,7 +162,14 @@ def _budget_metrics(budget_amount: Decimal | float, projected_spend: Decimal | f
     }
 
 
-def dashboard_products(db: Session, fiscal_year: int, month_sequence: int | None = None, user: AuthenticatedUser | None = None) -> list[dict[str, object]]:
+def dashboard_products(
+    db: Session,
+    fiscal_year: int,
+    month_sequence: int | None = None,
+    user: AuthenticatedUser | None = None,
+    *,
+    redact_for_user: bool = True,
+) -> list[dict[str, object]]:
     product_scope = _product_scope_ids(db, user)
     product_statement = select(Product).order_by(Product.name)
     if product_scope is not None:
@@ -219,11 +226,11 @@ def dashboard_products(db: Session, fiscal_year: int, month_sequence: int | None
                 ),
             }
         )
-    return rows
+    return _redact_dashboard_product_hours(rows, user) if redact_for_user else rows
 
 
-def dashboard_summary(db: Session, fiscal_year: int, user: AuthenticatedUser | None = None) -> dict[str, float | int]:
-    rows = dashboard_products(db, fiscal_year, user=user)
+def dashboard_summary(db: Session, fiscal_year: int, user: AuthenticatedUser | None = None) -> dict[str, object]:
+    rows = dashboard_products(db, fiscal_year, user=user, redact_for_user=False)
     summary = {
         "fiscal_year": fiscal_year,
         "product_count": len(rows),
@@ -247,7 +254,7 @@ def dashboard_summary(db: Session, fiscal_year: int, user: AuthenticatedUser | N
         (summary["projected_spend"] / summary["budget_amount"] * 100) if summary["budget_amount"] else 0,
         1,
     )
-    return summary
+    return _redact_dashboard_summary_hours(summary, user)
 
 
 def dashboard_work_type_breakdown(
@@ -271,7 +278,7 @@ def dashboard_work_type_breakdown(
         by_bucket[entry.bucket_id]["actual_hours"] += entry.hours
         by_bucket[entry.bucket_id]["actual_cost"] += calculate_cost(entry.hours, entry.team_member.bill_rate)
 
-    return [
+    rows = [
         {
             "bucket_id": bucket.id,
             "bucket": bucket.name,
@@ -283,6 +290,7 @@ def dashboard_work_type_breakdown(
         }
         for bucket in buckets
     ]
+    return _redact_dashboard_work_type_hours(rows, user)
 
 
 def dashboard_labor_mix(
@@ -338,10 +346,54 @@ def dashboard_labor_mix(
             hire_types[employment_type]["actual_member_ids"].add(entry.team_member_id)
             roles[role]["actual_member_ids"].add(entry.team_member_id)
 
-    return {
+    labor_mix = {
         "hire_types": _labor_mix_rows(hire_types, "employment_type"),
         "roles": _labor_mix_rows(roles, "role")[:5],
     }
+    return _redact_dashboard_labor_mix_hours(labor_mix, user)
+
+
+def _can_view_dashboard_hours(user: AuthenticatedUser | None) -> bool:
+    return True if user is None else role_capabilities(user.role).get("can_view_hours", False)
+
+
+def _redact_dashboard_summary_hours(summary: dict[str, object], user: AuthenticatedUser | None) -> dict[str, object]:
+    if _can_view_dashboard_hours(user):
+        return summary
+    for key in ("forecasted_hours", "fytd_hours", "remaining_hours", "variance_hours"):
+        summary[key] = None
+    return summary
+
+
+def _redact_dashboard_product_hours(rows: list[dict[str, object]], user: AuthenticatedUser | None) -> list[dict[str, object]]:
+    if _can_view_dashboard_hours(user):
+        return rows
+    for row in rows:
+        for key in ("forecasted_hours", "fytd_hours", "remaining_hours", "variance_hours", "forecast_consumed_percent"):
+            row[key] = None
+        bucket_totals = row.get("bucket_totals")
+        if isinstance(bucket_totals, list):
+            _redact_dashboard_work_type_hours(bucket_totals, user)
+    return rows
+
+
+def _redact_dashboard_work_type_hours(rows: list[dict[str, object]], user: AuthenticatedUser | None) -> list[dict[str, object]]:
+    if _can_view_dashboard_hours(user):
+        return rows
+    for row in rows:
+        row["forecast_hours"] = None
+        row["actual_hours"] = None
+    return rows
+
+
+def _redact_dashboard_labor_mix_hours(labor_mix: dict[str, list[dict[str, object]]], user: AuthenticatedUser | None) -> dict[str, list[dict[str, object]]]:
+    if _can_view_dashboard_hours(user):
+        return labor_mix
+    for rows in labor_mix.values():
+        for row in rows:
+            row["forecast_hours"] = None
+            row["actual_hours"] = None
+    return labor_mix
 
 
 def product_summary(db: Session, product_id: int, fiscal_year: int) -> dict[str, object]:

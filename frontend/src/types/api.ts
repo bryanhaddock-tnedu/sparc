@@ -6,13 +6,13 @@ export interface DashboardSummary {
   projected_spend: number;
   budget_remaining: number;
   budget_utilization_percent: number;
-  forecasted_hours: number;
+  forecasted_hours: number | null;
   forecasted_cost: number;
-  fytd_hours: number;
+  fytd_hours: number | null;
   fytd_cost: number;
-  remaining_hours: number;
+  remaining_hours: number | null;
   remaining_cost: number;
-  variance_hours: number;
+  variance_hours: number | null;
   variance_cost: number;
 }
 
@@ -46,6 +46,7 @@ export interface AuthCapabilities {
   can_view_costs?: boolean;
   can_view_hours?: boolean;
   can_view_named_people?: boolean;
+  can_view_reports?: boolean;
 }
 
 export interface AppUser {
@@ -118,8 +119,8 @@ export interface DashboardWorkTypeRow {
   bucket_id: number;
   bucket: string;
   bucket_code: string;
-  forecast_hours: number;
-  actual_hours: number;
+  forecast_hours: number | null;
+  actual_hours: number | null;
   forecast_cost: number;
   actual_cost: number;
 }
@@ -129,8 +130,8 @@ export type DashboardProductBucketTotal = DashboardWorkTypeRow;
 export interface DashboardLaborMixRow {
   employment_type?: string;
   role?: string;
-  forecast_hours: number;
-  actual_hours: number;
+  forecast_hours: number | null;
+  actual_hours: number | null;
   forecast_cost: number;
   actual_cost: number;
   forecast_resource_count: number;
@@ -140,8 +141,8 @@ export interface DashboardLaborMixRow {
 export interface DashboardLaborMix {
   hire_types: Array<{
     employment_type: string;
-    forecast_hours: number;
-    actual_hours: number;
+    forecast_hours: number | null;
+    actual_hours: number | null;
     forecast_cost: number;
     actual_cost: number;
     forecast_resource_count: number;
@@ -149,8 +150,8 @@ export interface DashboardLaborMix {
   }>;
   roles: Array<{
     role: string;
-    forecast_hours: number;
-    actual_hours: number;
+    forecast_hours: number | null;
+    actual_hours: number | null;
     forecast_cost: number;
     actual_cost: number;
     forecast_resource_count: number;
@@ -174,16 +175,16 @@ export interface ProductSummaryRow {
   projected_spend: number;
   budget_remaining: number;
   budget_utilization_percent: number;
-  forecasted_hours: number;
+  forecasted_hours: number | null;
   forecasted_cost: number;
-  fytd_hours: number;
+  fytd_hours: number | null;
   fytd_cost: number;
-  remaining_hours: number;
+  remaining_hours: number | null;
   remaining_cost: number;
-  variance_hours: number;
+  variance_hours: number | null;
   variance_cost: number;
   bucket_totals: DashboardProductBucketTotal[];
-  forecast_consumed_percent: number;
+  forecast_consumed_percent: number | null;
 }
 
 export interface Product {

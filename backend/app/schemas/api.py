@@ -563,13 +563,13 @@ class DashboardSummaryResponse(BaseModel):
     projected_spend: float
     budget_remaining: float
     budget_utilization_percent: float
-    forecasted_hours: float
+    forecasted_hours: float | None
     forecasted_cost: float
-    fytd_hours: float
+    fytd_hours: float | None
     fytd_cost: float
-    remaining_hours: float
+    remaining_hours: float | None
     remaining_cost: float
-    variance_hours: float
+    variance_hours: float | None
     variance_cost: float
 
 
@@ -577,8 +577,8 @@ class DashboardWorkTypeRowResponse(BaseModel):
     bucket_id: int
     bucket: str
     bucket_code: str
-    forecast_hours: float
-    actual_hours: float
+    forecast_hours: float | None
+    actual_hours: float | None
     forecast_cost: float
     actual_cost: float
 
@@ -589,8 +589,8 @@ class DashboardProductBucketTotalResponse(DashboardWorkTypeRowResponse):
 
 class DashboardLaborMixHireTypeRowResponse(BaseModel):
     employment_type: str
-    forecast_hours: float
-    actual_hours: float
+    forecast_hours: float | None
+    actual_hours: float | None
     forecast_cost: float
     actual_cost: float
     forecast_resource_count: int
@@ -599,8 +599,8 @@ class DashboardLaborMixHireTypeRowResponse(BaseModel):
 
 class DashboardLaborMixRoleRowResponse(BaseModel):
     role: str
-    forecast_hours: float
-    actual_hours: float
+    forecast_hours: float | None
+    actual_hours: float | None
     forecast_cost: float
     actual_cost: float
     forecast_resource_count: int
@@ -628,16 +628,16 @@ class ProductSummaryRowResponse(BaseModel):
     projected_spend: float
     budget_remaining: float
     budget_utilization_percent: float
-    forecasted_hours: float
+    forecasted_hours: float | None
     forecasted_cost: float
-    fytd_hours: float
+    fytd_hours: float | None
     fytd_cost: float
-    remaining_hours: float
+    remaining_hours: float | None
     remaining_cost: float
-    variance_hours: float
+    variance_hours: float | None
     variance_cost: float
     bucket_totals: list[DashboardProductBucketTotalResponse]
-    forecast_consumed_percent: float
+    forecast_consumed_percent: float | None
 
 
 class ProductSummaryResponse(BaseModel):

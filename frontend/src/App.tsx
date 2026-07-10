@@ -51,7 +51,14 @@ export default function App() {
                   </RequireCapability>
                 }
               />
-              <Route path="/reports" element={<ReportsPage />} />
+              <Route
+                path="/reports"
+                element={
+                  <RequireCapability capability="can_view_reports" message="Reports are not available for your role.">
+                    <ReportsPage />
+                  </RequireCapability>
+                }
+              />
               <Route
                 path="/admin"
                 element={
