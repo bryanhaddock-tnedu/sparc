@@ -120,6 +120,7 @@ export function AdminUsersPage() {
   }
 
   function updateDraft(userId: number, updates: Partial<UserDraft>) {
+    setMessage(null);
     setDrafts((current) => ({ ...current, [userId]: { ...current[userId], ...updates } }));
   }
 
@@ -156,14 +157,17 @@ export function AdminUsersPage() {
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">Users</h2>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Users</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Change a row, then use Save changes on the right to apply role or Program Area updates.</p>
+          </div>
           <Button variant="outline" onClick={loadUsers} disabled={loading}>
             Refresh
           </Button>
         </div>
-        <div className="overflow-hidden rounded-md border">
-          <Table>
+        <div className="overflow-x-auto rounded-md border">
+          <Table className="min-w-[84rem]">
             <TableHeader>
               <TableRow>
                 <TableHead>User</TableHead>
@@ -184,6 +188,7 @@ export function AdminUsersPage() {
               ) : sortedUsers.length ? (
                 sortedUsers.map((user) => {
                   const draft = drafts[user.id] ?? draftFromUser(user);
+                  const dirty = hasDraftChanges(user, draft);
                   return (
                     <TableRow key={user.id}>
                       <TableCell className="min-w-[16rem]">
@@ -197,6 +202,7 @@ export function AdminUsersPage() {
                           <div className="flex flex-wrap gap-1">
                             {user.sso_linked ? <Badge>SSO linked</Badge> : <Badge className="bg-muted text-muted-foreground">SSO pending</Badge>}
                             {user.has_local_password ? <Badge className="bg-muted text-muted-foreground">Local password</Badge> : null}
+                            {dirty ? <Badge className="border-amber-400 bg-amber-100 text-amber-800">Unsaved changes</Badge> : null}
                           </div>
                         </div>
                       </TableCell>
@@ -230,8 +236,8 @@ export function AdminUsersPage() {
                         />
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button disabled={savingUserId === user.id} onClick={() => saveUser(user)}>
-                          Save
+                        <Button disabled={savingUserId === user.id || !dirty} onClick={() => saveUser(user)}>
+                          {savingUserId === user.id ? "Saving" : dirty ? "Save changes" : "Saved"}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -300,4 +306,22 @@ function draftFromUser(user: AppUser): UserDraft {
     local_login_enabled: user.local_login_enabled,
     temporary_password: "",
   };
+}
+
+function hasDraftChanges(user: AppUser, draft: UserDraft) {
+  return (
+    draft.email !== user.email ||
+    draft.display_name !== user.display_name ||
+    draft.role !== user.role ||
+    draft.active !== user.active ||
+    draft.local_login_enabled !== user.local_login_enabled ||
+    draft.temporary_password.length > 0 ||
+    !sameStringSet(draft.program_areas, user.program_areas)
+  );
+}
+
+function sameStringSet(left: string[], right: string[]) {
+  if (left.length !== right.length) return false;
+  const normalizedRight = new Set(right);
+  return left.every((value) => normalizedRight.has(value));
 }

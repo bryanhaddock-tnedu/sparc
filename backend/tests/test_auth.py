@@ -11,7 +11,7 @@ from app.models import Base
 from app.services import auth
 from app.services import entra_auth
 from app.services.entra_auth import ENTRA_STATE_COOKIE_NAME, EntraIdentity
-from app.services.access_control import authenticate_entra_user, authenticated_user_from_app_user, create_app_user
+from app.services.access_control import authenticate_entra_user, authenticated_user_from_app_user, create_app_user, update_app_user
 
 
 def test_login_sets_signed_cookie_and_authenticates_request(monkeypatch):
@@ -59,6 +59,31 @@ def test_email_user_login_returns_role_and_program_area_scope(monkeypatch):
     assert status["capabilities"]["can_admin"] is False
     assert status["capabilities"]["can_view_rates"] is False
     assert status["capabilities"]["can_view_named_people"] is False
+
+
+def test_update_app_user_changes_role_and_program_area_scope():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        user = create_app_user(
+            db,
+            email="florie@example.org",
+            display_name="Florie",
+            role="PROGRAM_AREA_VIEW_ONLY",
+            program_areas=["Academics"],
+            temporary_password="temporary-secret",
+        )
+        db.commit()
+
+        updated = update_app_user(db, user, role="LEADERSHIP_VIEW_ONLY", program_areas=[])
+        db.commit()
+        principal = authenticated_user_from_app_user(updated)
+
+    assert updated.role == "LEADERSHIP_VIEW_ONLY"
+    assert [assignment.program_area for assignment in updated.program_area_assignments] == []
+    assert principal.role == "LEADERSHIP_VIEW_ONLY"
+    assert principal.program_areas == ()
 
 
 def test_login_rejects_invalid_password(monkeypatch):
