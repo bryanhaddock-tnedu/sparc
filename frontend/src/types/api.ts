@@ -243,8 +243,10 @@ export interface RoadmapItem {
   product_id: number | null;
   product: string | null;
   product_slug: string | null;
+  product_mapping_source: "manual" | "sync";
   bucket_id: number | null;
   bucket: string | null;
+  bucket_mapping_source: "manual" | "sync";
   jira_issue_id: string;
   jira_issue_key: string;
   title: string;
@@ -260,19 +262,9 @@ export interface RoadmapItem {
   source_url: string | null;
   linked_issue_count: number;
   linked_issues: RoadmapItemLinkedIssue[];
-  forecast_hours: number;
-  forecast_months: RoadmapItemForecastMonth[];
-  forecast_team_member_count: number;
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
-}
-
-export interface RoadmapItemForecastMonth {
-  month_sequence: number;
-  month_label: string;
-  forecast_hours: number;
-  team_member_count: number;
 }
 
 export interface RoadmapItemLinkedIssue {
@@ -296,9 +288,8 @@ export interface RoadmapItemLinkedIssue {
 }
 
 export interface RoadmapItemMapPayload {
-  product_id: number | null;
-  bucket_id: number | null;
-  program_area?: string | null;
+  product_id?: number | null;
+  bucket_id?: number | null;
 }
 
 export interface RoadmapTicketMapPayload {
@@ -743,13 +734,13 @@ export interface ProductSummary {
   projected_spend: number;
   budget_remaining: number;
   budget_utilization_percent: number;
-  forecasted_hours: number;
+  forecasted_hours: number | null;
   forecasted_cost: number;
-  fytd_hours: number;
+  fytd_hours: number | null;
   fytd_cost: number;
-  remaining_hours: number;
+  remaining_hours: number | null;
   remaining_cost: number;
-  variance_hours: number;
+  variance_hours: number | null;
   variance_cost: number;
 }
 

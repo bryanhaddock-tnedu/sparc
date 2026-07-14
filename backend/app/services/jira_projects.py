@@ -153,6 +153,10 @@ def update_product_jira_space(
     if "scope_jql" in updates:
         scope_jql = updates["scope_jql"]
         space.scope_jql = _clean_optional(str(scope_jql)) if scope_jql is not None else None
+    if space.is_active:
+        _sync_legacy_product_mapping(db, space)
+    else:
+        _clear_legacy_product_mapping(db, space)
     db.flush()
     return space
 

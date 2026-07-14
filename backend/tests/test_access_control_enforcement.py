@@ -5,12 +5,12 @@ from fastapi.routing import APIRoute
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api import forecasts as forecasts_api
+from app.api import forecasts as forecasts_api, products as products_api
 from app.db.seed import _seed_buckets
 from app.models import Base, Bucket, Product, TeamMember
 from app.services.access_control import AuthenticatedUser, UserRole
-from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_summary, dashboard_work_type_breakdown, product_bucket_tables
-from app.services.auth import require_named_people_access
+from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_summary, dashboard_work_type_breakdown, product_bucket_tables, product_summary
+from app.services.auth import require_hours_access, require_labor_detail_access, require_named_people_access
 from app.services.fiscal_year import get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
 from app.services.reporting import build_labor_cost_report
@@ -60,6 +60,23 @@ def test_program_area_user_cannot_request_labor_reports():
             build_labor_cost_report(db, 2027, dimensions=["person"], user=user)
 
 
+def test_program_area_product_summary_redacts_hours_but_retains_costs():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        product = _seed_access_scope_data(db)
+        user = _authenticated_user(UserRole.PROGRAM_AREA_VIEW_ONLY, ("Academics",))
+
+        summary = product_summary(db, product.id, 2027, user=user)
+
+    assert summary["forecasted_cost"] == 1000
+    assert summary["forecasted_hours"] is None
+    assert summary["fytd_hours"] is None
+    assert summary["remaining_hours"] is None
+    assert summary["variance_hours"] is None
+
+
 def test_leadership_user_can_request_labor_reports():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -98,6 +115,23 @@ def test_forecast_detail_route_requires_named_people_access():
     )
 
     assert any(dependency.call is require_named_people_access for dependency in route.dependant.dependencies)
+
+
+@pytest.mark.parametrize(
+    ("path", "method", "required_dependency"),
+    [
+        ("/products/{product_ref}/bucket-distribution", "GET", require_hours_access),
+        ("/products/{product_ref}/roadmap-actuals", "GET", require_labor_detail_access),
+    ],
+)
+def test_product_labor_detail_routes_require_explicit_capabilities(path, method, required_dependency):
+    route = next(
+        route
+        for route in products_api.router.routes
+        if isinstance(route, APIRoute) and route.path == path and method in route.methods
+    )
+
+    assert any(dependency.call is required_dependency for dependency in route.dependant.dependencies)
 
 
 def _authenticated_user(role: UserRole, program_areas: tuple[str, ...] = ()) -> AuthenticatedUser:

@@ -35,14 +35,6 @@ DEFAULT_ACTUAL_COMPLETENESS_THRESHOLD = Decimal("0.7500")
 DEFAULT_STALE_TICKET_WINDOW_DAYS = 10
 DEFAULT_FUTURE_MONTH_AVERAGE_WINDOW = 2
 
-EXPLICIT_PROJECT_PRODUCT_MAP = {
-    "CCTE": "CCTE",
-    "TISA": "TISA",
-    "RC": "RC",
-    "GOV": "Core Infrastructure",
-    "RPA": "Core Infrastructure",
-}
-
 EXCLUDED_PROJECT_KEYS = {
     "APPDEV",
     "ATO",
@@ -302,18 +294,13 @@ def resolve_product_mapping(
     if key in EXCLUDED_PROJECT_KEYS:
         return ProductMappingDecision(key, None, None, "excluded", "Excluded by Jira project policy")
 
-    explicit_product_name = EXPLICIT_PROJECT_PRODUCT_MAP.get(key)
-    if explicit_product_name:
-        product = db.scalar(select(Product).where(Product.name == explicit_product_name))
-        if product is not None:
-            return ProductMappingDecision(key, product.id, product.name, "mapped", "Explicit Jira project policy")
-        return ProductMappingDecision(key, None, explicit_product_name, "unmapped", "Configured product does not exist")
-
     product_space = db.scalar(
         select(ProductJiraSpace)
+        .join(ProductJiraSpace.product)
         .where(
             ProductJiraSpace.jira_project_key == key,
             ProductJiraSpace.is_active.is_(True),
+            Product.is_active.is_(True),
         )
     )
     if product_space is not None and product_space.product_id is not None:
@@ -323,16 +310,6 @@ def resolve_product_mapping(
             product_space.product.name if product_space.product else None,
             "mapped",
             "Product Jira space mapping",
-        )
-
-    legacy_mapping = db.scalar(select(JiraProductMapping).where(JiraProductMapping.jira_project_key == key))
-    if legacy_mapping is not None and legacy_mapping.product_id is not None:
-        return ProductMappingDecision(
-            key,
-            legacy_mapping.product_id,
-            legacy_mapping.product.name if legacy_mapping.product else None,
-            "mapped",
-            "Legacy Jira product mapping",
         )
 
     if record_unmapped:

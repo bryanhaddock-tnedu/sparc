@@ -418,6 +418,13 @@ Implement:
 - EstimationRun
 - EstimatedEntry
 - EstimatedIssueAllocation
+- AppUser
+- UserProgramAreaAssignment
+- ProductBudget
+- ProductTeamMember
+- ForecastRecommendationDecision
+
+`JiraProductMapping` is a discovery/review cache, not a Product attribution authority. `ProductJiraSpace` is the only persisted Jira project-to-Product authority. The former `RoadmapForecastAllocation` persistence model is retired; all planning hours use canonical `ForecastEntry` rows.
 
 Seed the three buckets:
 
@@ -515,13 +522,26 @@ Live Jira Actuals sync must run automatically once every morning before 8am Cent
 
 Jira project/product mapping policy:
 
-- CCTE maps to Product `CCTE`.
-- TISA maps to Product `TISA`.
-- RC maps to Product `RC`.
-- GOV and RPA map to Product `Core Infrastructure`.
+- Product Settings owns Jira project-to-Product mapping through `ProductJiraSpace`.
+- Expected assignments such as CCTE to `CCTE`, TISA to `TISA`, RC to `RC`, and GOV/RPA to `Core Infrastructure` must be configured there; they are not hard-coded fallbacks.
 - ROADMAP, PRJ, UI, APPDEV, DYNINTAKE, HB, ATO, QA, and CIS are excluded.
 - Unknown Jira project keys become unmapped references requiring review.
 - Unknown Jira projects must not silently map to Core Infrastructure.
+
+Inactive Product policy:
+
+- Inactive Products and their historical Forecast, Actual, Estimate, and audit rows remain readable for reporting.
+- Inactive Products cannot receive new Forecast entries.
+- Jira Actual sync, estimation, and Roadmap Product inference ignore inactive Products.
+- Products with planning, labor, Roadmap, Jira, estimate, or recommendation history cannot be deleted through the API; mark them inactive instead.
+
+Roadmap mapping ownership:
+
+- Jira Agency Office is synchronized descriptive Roadmap metadata and is not editable in SPARC.
+- Product and Bucket mappings carry `manual` or `sync` provenance.
+- Manual Product/Bucket overrides survive Jira refresh.
+- Clearing an override returns that field to Jira-derived inference.
+- Roadmap Item Agency Office is not the Program Area authorization boundary; Product Program Area remains `Product.office`.
 
 Work bucket normalization should inspect configurable Jira fields such as:
 

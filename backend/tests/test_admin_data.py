@@ -6,8 +6,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db.seed import _seed_buckets
-from app.models import ActualEntry, Base, Bucket, ForecastEntry, JiraUserMapping, Product, ProductBudget, ProductJiraSpace, ProductTeamMember, TeamMember
+from app.models import ActualEntry, Base, Bucket, EstimationProfile, ForecastEntry, JiraUserMapping, Product, ProductBudget, ProductJiraSpace, ProductTeamMember, TeamMember
 from app.services.admin_data import build_admin_data_archive, import_admin_data_content
+from app.services.estimation_policy import ensure_default_estimation_profile
 from app.services.forecasting import upsert_forecast_entry
 
 
@@ -17,6 +18,7 @@ def test_admin_data_export_imports_owned_data_and_excludes_jira_refresh_data():
 
     with Session(source_engine) as source_db:
         _seed_buckets(source_db)
+        ensure_default_estimation_profile(source_db)
         product = Product(
             name="SWORD",
             jira_space_key="SWRD",
@@ -72,6 +74,7 @@ def test_admin_data_export_imports_owned_data_and_excludes_jira_refresh_data():
         assert "manifest.json" in file_names
         assert "team_members.csv" in file_names
         assert "forecast_entries.csv" in file_names
+        assert "estimation_profiles.csv" in file_names
         assert "actual_entries.csv" not in file_names
         assert "sync_runs.csv" not in file_names
         assert "jira_project_catalog.csv" not in file_names
@@ -97,4 +100,5 @@ def test_admin_data_export_imports_owned_data_and_excludes_jira_refresh_data():
         assert target_db.scalar(select(JiraUserMapping).where(JiraUserMapping.jira_account_id == "abc-123")).team_member_id == imported_member.id
         assert imported_forecast is not None
         assert imported_forecast.hours == Decimal("42.00")
+        assert target_db.scalar(select(EstimationProfile).where(EstimationProfile.is_active.is_(True))) is not None
         assert target_db.scalar(select(ActualEntry)) is None

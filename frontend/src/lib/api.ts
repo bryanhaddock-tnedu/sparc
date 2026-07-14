@@ -383,11 +383,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ team_member_id: teamMemberId }),
     }),
-  updateProductMapping: (mappingId: number, productId: number | null) =>
-    request<JiraProductMapping>(`/api/integrations/jira-rovo/product-mappings/${mappingId}`, {
-      method: "PUT",
-      body: JSON.stringify({ product_id: productId }),
-    }),
   syncRuns: () => request<SyncRun[]>("/api/integrations/jira-rovo/sync-runs"),
   estimationProfiles: () => request<EstimationProfile[]>("/api/estimations/profiles"),
   updateEstimationProfile: (profileId: number, payload: EstimationProfileUpdatePayload) =>

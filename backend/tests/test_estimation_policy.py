@@ -16,6 +16,7 @@ from app.models import (
     ForecastEntry,
     JiraProductMapping,
     Product,
+    ProductJiraSpace,
     TeamMember,
 )
 from app.services.estimation_policy import (
@@ -214,7 +215,10 @@ def test_unknown_jira_projects_are_unmapped_not_core_infrastructure():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        db.add(Product(name="Core Infrastructure"))
+        core_product = Product(name="Core Infrastructure")
+        db.add(core_product)
+        db.flush()
+        db.add(ProductJiraSpace(product_id=core_product.id, jira_project_key="GOV", is_active=True))
         db.flush()
 
         unknown = resolve_product_mapping(db, "ZZZ", "Mystery Project")
@@ -398,6 +402,8 @@ def _foundation(db: Session):
     member = TeamMember(name="Avery Johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
     db.add_all([product, member])
     db.flush()
+    db.add(ProductJiraSpace(product_id=product.id, jira_project_key="CCTE", is_active=True))
+    db.flush()
     bucket = db.scalar(select(Bucket).where(Bucket.code == "NET_NEW"))
     month = next(month for month in months if month.sequence == 11)
     return product, member, bucket, month
@@ -406,8 +412,11 @@ def _foundation(db: Session):
 def _policy_foundation(db: Session):
     _seed_buckets(db)
     ensure_fiscal_months(db, 2026)
-    for name in ["CCTE", "TISA", "RC", "Core Infrastructure"]:
-        db.add(Product(name=name, budget_amount=Decimal("1000.00")))
+    products = {
+        name: Product(name=name, budget_amount=Decimal("1000.00"))
+        for name in ["CCTE", "TISA", "RC", "Core Infrastructure"]
+    }
+    db.add_all(products.values())
     for index, name in enumerate(["Avery Johnson", "Morgan Lee", "Sam Patel", "Riley Chen", "Jordan Smith"], start=1):
         db.add(
             TeamMember(
@@ -418,6 +427,15 @@ def _policy_foundation(db: Session):
                 bill_rate=Decimal("100"),
             )
         )
+    db.flush()
+    for jira_project_key, product_name in {
+        "CCTE": "CCTE",
+        "TISA": "TISA",
+        "RC": "RC",
+        "GOV": "Core Infrastructure",
+        "RPA": "Core Infrastructure",
+    }.items():
+        db.add(ProductJiraSpace(product_id=products[product_name].id, jira_project_key=jira_project_key, is_active=True))
     db.flush()
     ensure_default_estimation_profile(db)
 

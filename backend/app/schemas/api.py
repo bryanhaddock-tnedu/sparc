@@ -647,13 +647,13 @@ class ProductSummaryResponse(BaseModel):
     projected_spend: float
     budget_remaining: float
     budget_utilization_percent: float
-    forecasted_hours: float
+    forecasted_hours: float | None
     forecasted_cost: float
-    fytd_hours: float
+    fytd_hours: float | None
     fytd_cost: float
-    remaining_hours: float
+    remaining_hours: float | None
     remaining_cost: float
-    variance_hours: float
+    variance_hours: float | None
     variance_cost: float
 
 
@@ -810,10 +810,6 @@ class JiraUserMapRequest(BaseModel):
     team_member_id: int | None
 
 
-class JiraProductMapRequest(BaseModel):
-    product_id: int | None
-
-
 class SyncRunResponse(BaseModel):
     id: int
     source: str
@@ -846,13 +842,6 @@ class RoadmapItemLinkedIssueResponse(BaseModel):
     last_synced_at: datetime | None
 
 
-class RoadmapItemForecastMonthResponse(BaseModel):
-    month_sequence: int
-    month_label: str
-    forecast_hours: float
-    team_member_count: int
-
-
 class RoadmapItemResponse(BaseModel):
     id: int
     source: str
@@ -860,8 +849,10 @@ class RoadmapItemResponse(BaseModel):
     product_id: int | None
     product: str | None
     product_slug: str | None
+    product_mapping_source: str
     bucket_id: int | None
     bucket: str | None
+    bucket_mapping_source: str
     jira_issue_id: str
     jira_issue_key: str
     title: str
@@ -877,18 +868,14 @@ class RoadmapItemResponse(BaseModel):
     source_url: str | None
     linked_issue_count: int
     linked_issues: list[RoadmapItemLinkedIssueResponse] = Field(default_factory=list)
-    forecast_hours: float = 0
-    forecast_months: list[RoadmapItemForecastMonthResponse] = Field(default_factory=list)
-    forecast_team_member_count: int = 0
     last_synced_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
 
 class RoadmapItemMapRequest(BaseModel):
-    product_id: int | None
-    bucket_id: int | None
-    program_area: str | None = None
+    product_id: int | None = None
+    bucket_id: int | None = None
 
 
 class RoadmapTicketMapRequest(BaseModel):

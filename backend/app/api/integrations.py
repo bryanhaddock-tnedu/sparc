@@ -6,7 +6,6 @@ from app.db.session import get_db
 from app.schemas import (
     ForecastRecommendationDecisionRequest,
     ForecastRecommendationDecisionResponse,
-    JiraProductMapRequest,
     JiraProductMappingResponse,
     JiraIntegrationStatusResponse,
     JiraLiveSyncRequest,
@@ -33,7 +32,6 @@ from app.services.jira_rovo import (
     list_unmapped_products,
     list_unmapped_users,
     list_user_mappings,
-    map_jira_product,
     map_jira_user,
     run_live_jira_rovo_sync,
     run_mock_jira_rovo_sync,
@@ -121,9 +119,7 @@ def update_roadmap_item_mapping_endpoint(
         result = update_roadmap_item_mapping(
             db,
             item_id,
-            product_id=payload.product_id,
-            bucket_id=payload.bucket_id,
-            program_area=payload.program_area,
+            updates=payload.model_dump(exclude_unset=True),
         )
         db.commit()
         return result
@@ -240,21 +236,6 @@ def update_user_mapping(mapping_id: int, payload: JiraUserMapRequest, db: Sessio
 @router.get("/product-mappings", response_model=list[JiraProductMappingResponse])
 def get_product_mappings(db: Session = Depends(get_db)) -> list[dict[str, object]]:
     return list_product_mappings(db)
-
-
-@router.put("/product-mappings/{mapping_id}", response_model=JiraProductMappingResponse)
-def update_product_mapping(
-    mapping_id: int,
-    payload: JiraProductMapRequest,
-    db: Session = Depends(get_db),
-) -> dict[str, object]:
-    try:
-        result = map_jira_product(db, mapping_id, payload.product_id)
-        db.commit()
-        return result
-    except ValueError as exc:
-        db.rollback()
-        raise bad_request(str(exc)) from exc
 
 
 @router.get("/sync-runs", response_model=list[SyncRunResponse])

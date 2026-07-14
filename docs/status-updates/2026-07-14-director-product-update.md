@@ -236,11 +236,26 @@ Still pending:
 
 ### Product Detail For Program Area Users
 
-Dashboard behavior has been adjusted for Program Area users. Product Detail should be reviewed next to decide whether Program Area users should:
+Product Detail now has the same backend-enforced restrictions as the Dashboard:
 
-- be blocked from Product Detail,
-- see a cost-only Product Detail view, or
-- see Product Detail with additional hour redaction.
+- Program Area viewers receive only cost totals for Products in their assigned Program Area(s).
+- Aggregate forecast/actual/remaining hours are redacted in the API.
+- The actual-hours bucket chart and hour snapshot are not requested or rendered.
+- Named Roadmap worklog rows require both named-person and hour access.
+- Direct API requests cannot bypass these restrictions.
+
+### Data Integrity And Mapping Hardening
+
+- Product Settings is now the single authority for Jira project-to-Product mapping.
+- The old Integrations mapping control is read-only discovery/status and can no longer create a conflicting Product assignment.
+- Hard-coded and legacy Product mapping fallbacks were removed from estimation and Actual sync.
+- Existing legacy rows are reconciled to active Product Settings mappings during migration.
+- Manual Roadmap Product/Bucket overrides now survive Jira sync; Jira Agency Office remains read-only metadata.
+- The retired Roadmap forecast allocation table was removed. The Roadmap planner continues to save canonical Product forecasts.
+- Removing a Product Team member no longer deletes Forecast history; assignments with history become inactive.
+- Products with planning or labor history cannot be deleted and should be marked inactive.
+- Inactive Products remain visible historically but cannot receive new Forecast or Jira-attributed labor.
+- Admin Data now clearly identifies itself as a portable setup package rather than a database backup and includes estimation rules while excluding credentials, generated caches, and audit history.
 
 ### Employment Type Labeling
 

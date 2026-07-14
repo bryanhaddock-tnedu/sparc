@@ -51,6 +51,7 @@ export function ProductDetailPage() {
   const { status } = useAuth();
   const canAdmin = status?.capabilities.can_admin === true;
   const canEditForecast = status?.capabilities.can_edit_forecast === true;
+  const canViewHours = status?.capabilities.can_view_hours === true;
   const canViewNamedPeople = status?.capabilities.can_view_named_people === true;
   const [summary, setSummary] = useState<ProductSummary | null>(null);
   const [tables, setTables] = useState<ProductBucketTables | null>(null);
@@ -72,7 +73,7 @@ export function ProductDetailPage() {
   async function loadData() {
     const summaryResult = await api.productSummary(productRef, fiscalYear);
     const resolvedProductId = summaryResult.product.id;
-    const distributionResult = await api.bucketDistribution(resolvedProductId, fiscalYear);
+    const distributionResult = canViewHours ? await api.bucketDistribution(resolvedProductId, fiscalYear) : [];
     const [tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = canViewNamedPeople
       ? await Promise.all([
           api.productBucketTables(resolvedProductId, fiscalYear),
@@ -101,7 +102,7 @@ export function ProductDetailPage() {
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load product"))
       .finally(() => setLoading(false));
-  }, [productRef, fiscalYear, canAdmin, canViewNamedPeople]);
+  }, [productRef, fiscalYear, canAdmin, canViewHours, canViewNamedPeople]);
 
   useEffect(() => {
     if (!forecastLineBucketId && tables?.buckets[0]) {
@@ -285,8 +286,8 @@ export function ProductDetailPage() {
           contextLabel={`${summary.product.name} budget, forecast, and actuals`}
         />
         {canViewNamedPeople ? <ProductRoleCostCard summary={roleCostSummary} /> : null}
-        <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
-          <div className="rounded-lg border bg-card p-4">
+        <div className={canViewHours ? "grid gap-4 xl:grid-cols-[360px_1fr]" : "grid gap-4"}>
+          {canViewHours ? <div className="rounded-lg border bg-card p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase text-muted-foreground">FYTD Actualized Hours</h2>
             <div className="relative h-64">
               <ResponsiveContainer width="100%" height="100%">
@@ -314,8 +315,8 @@ export function ProductDetailPage() {
                 </div>
               ) : null}
             </div>
-          </div>
-          <ProductSnapshotPanel summary={summary} />
+          </div> : null}
+          <ProductSnapshotPanel showHours={canViewHours} summary={summary} />
         </div>
       </section>
 
@@ -418,17 +419,17 @@ function ProductRoleCostCard({ summary }: { summary: ProductRoleCostSummary }) {
   );
 }
 
-function ProductSnapshotPanel({ summary }: { summary: ProductSummary }) {
+function ProductSnapshotPanel({ showHours, summary }: { showHours: boolean; summary: ProductSummary }) {
   return (
     <section className="rounded-lg border bg-card p-4">
       <h2 className="text-sm font-semibold uppercase text-muted-foreground">FY Snapshot</h2>
-      <div className="mt-3 grid gap-4 lg:grid-cols-2">
-        <div className="space-y-2">
+      <div className={showHours ? "mt-3 grid gap-4 lg:grid-cols-2" : "mt-3 grid gap-4"}>
+        {showHours ? <div className="space-y-2">
           <div className="text-xs font-semibold uppercase text-muted-foreground">Hours</div>
-          <SnapshotRow label="Actualized FYTD" value={formatHours(summary.fytd_hours)} />
-          <SnapshotRow label="Forecasted FY" value={formatHours(summary.forecasted_hours)} />
-          <SnapshotRow label="Remaining" value={formatHours(summary.remaining_hours)} />
-        </div>
+          <SnapshotRow label="Actualized FYTD" value={formatHours(summary.fytd_hours ?? 0)} />
+          <SnapshotRow label="Forecasted FY" value={formatHours(summary.forecasted_hours ?? 0)} />
+          <SnapshotRow label="Remaining" value={formatHours(summary.remaining_hours ?? 0)} />
+        </div> : null}
         <div className="space-y-2">
           <div className="text-xs font-semibold uppercase text-muted-foreground">Cost</div>
           <SnapshotRow label="Actualized FYTD" value={formatCurrency(summary.fytd_cost)} />
@@ -585,9 +586,9 @@ function ProductTeamSection({
                         </td>
                         <td className="px-3 py-3 text-muted-foreground">
                           {assignment.has_forecast_entries
-                            ? "Forecast lines clear on remove"
+                            ? "Forecast history retained"
                             : assignment.has_actual_entries
-                              ? "Actuals retained"
+                              ? "Labor history retained"
                               : "No hours yet"}
                         </td>
                         {canEdit ? (
@@ -597,7 +598,7 @@ function ProductTeamSection({
                               size="sm"
                               onClick={() => {
                                 const confirmed = window.confirm(
-                                  `Remove ${assignment.team_member} from this product? Forecast lines for this product will be deleted. Jira actuals will stay for historical reporting.`,
+                                  `Remove ${assignment.team_member} from this product? If labor or forecast history exists, the assignment will be marked inactive and all history will be retained.`,
                                 );
                                 if (confirmed) void onRemove(assignment.id);
                               }}

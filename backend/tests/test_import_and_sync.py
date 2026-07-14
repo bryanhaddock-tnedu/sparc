@@ -12,7 +12,6 @@ from app.services.fiscal_year import get_fiscal_month
 from app.services.jira_rovo import (
     MockWorklog,
     _bucket_code_from_issue_fields,
-    map_jira_product,
     map_jira_user,
     run_live_jira_rovo_sync,
     run_mock_jira_rovo_sync,
@@ -98,14 +97,42 @@ def test_mock_sync_imports_after_mapping_unmapped_references():
         products, members = _add_mock_sync_mappings(db)
         first = run_mock_jira_rovo_sync(db)
         unmapped_user = first["unmapped_users"][0]
-        unmapped_product = first["unmapped_products"][0]
-
         map_jira_user(db, unmapped_user["id"], members["Avery Johnson"].id)
-        map_jira_product(db, unmapped_product["id"], products["Student Information"].id)
+        db.add(
+            ProductJiraSpace(
+                product_id=products["Student Information"].id,
+                jira_project_key="GRN",
+                jira_project_name="Grants Portal",
+                is_active=True,
+            )
+        )
         second = run_mock_jira_rovo_sync(db)
 
         assert second["skipped_unmapped_worklogs"] == 0
         assert len(db.scalars(select(ActualEntry)).all()) == 7
+
+
+def test_mock_sync_canonical_product_space_overrides_conflicting_legacy_mapping():
+    with session() as db:
+        _seed_buckets(db)
+        products, _members = _add_mock_sync_mappings(db)
+        wrong_product = Product(name="Wrong Product")
+        db.add(wrong_product)
+        db.flush()
+        legacy = JiraProductMapping(
+            jira_project_key="SIS",
+            jira_project_name="Student Information",
+            product_id=wrong_product.id,
+        )
+        db.add(legacy)
+        db.flush()
+
+        run_mock_jira_rovo_sync(db)
+
+        sis_actuals = db.scalars(select(ActualEntry).where(ActualEntry.source_project_key == "SIS")).all()
+        assert sis_actuals
+        assert {entry.product_id for entry in sis_actuals} == {products["Student Information"].id}
+        assert legacy.product_id == products["Student Information"].id
 
 
 def test_live_sync_uses_product_jira_space_mapping(monkeypatch):
@@ -331,7 +358,7 @@ def test_jira_work_type_bucket_classifier_does_not_default_to_maintenance():
     assert _bucket_code_from_issue_fields({}, ["customfield_1"]) is None
 
 
-def test_live_sync_deletes_stale_jira_actuals_even_when_project_mapping_changed(monkeypatch):
+def test_live_sync_retains_actual_history_after_project_mapping_changes(monkeypatch):
     with session() as db:
         _seed_buckets(db)
         product = Product(name="Live Product")
@@ -374,8 +401,8 @@ def test_live_sync_deletes_stale_jira_actuals_even_when_project_mapping_changed(
         result = run_live_jira_rovo_sync(db, 2027)
         remaining = db.scalars(select(ActualEntry).where(ActualEntry.source == "jira")).all()
 
-        assert result["deleted_worklogs"] == 1
-        assert remaining == []
+        assert result["deleted_worklogs"] == 0
+        assert len(remaining) == 1
 
 
 def _add_mock_sync_mappings(db: Session) -> tuple[dict[str, Product], dict[str, TeamMember]]:
@@ -396,7 +423,7 @@ def _add_mock_sync_mappings(db: Session) -> tuple[dict[str, Product], dict[str, 
 
     for jira_key, product_name in {"SIS": "Student Information", "EDL": "Educator Licensing", "DWH": "Data Warehouse"}.items():
         db.add(
-            JiraProductMapping(
+            ProductJiraSpace(
                 jira_project_key=jira_key,
                 jira_project_name=product_name,
                 product_id=products[product_name].id,

@@ -271,23 +271,14 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     await loadData();
   }
 
-  async function updateProductMapping(mappingId: number, productId: number | null) {
-    await api.updateProductMapping(mappingId, productId);
-    await loadData();
-  }
-
   async function updateRoadmapItemMapping(
     item: RoadmapItem,
-    updates: Partial<Pick<RoadmapItem, "product_id" | "bucket_id" | "program_area">>,
+    updates: Partial<Pick<RoadmapItem, "product_id" | "bucket_id">>,
   ) {
     setError(null);
     setNotice(null);
     try {
-      const updatedItem = await api.updateRoadmapItemMapping(item.id, {
-        product_id: updates.product_id !== undefined ? updates.product_id : item.product_id,
-        bucket_id: updates.bucket_id !== undefined ? updates.bucket_id : item.bucket_id,
-        program_area: updates.program_area !== undefined ? updates.program_area : item.program_area,
-      });
+      const updatedItem = await api.updateRoadmapItemMapping(item.id, updates);
       setRoadmapItems((current) => current.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
       await loadData();
     } catch (err) {
@@ -533,7 +524,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         </Table>
       </MappingTable>
 
-      <MappingTable title="Jira Products" unmapped={unmappedProductCount}>
+      <MappingTable title="Discovered Jira Projects" unmapped={unmappedProductCount}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -547,20 +538,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
               <TableRow key={mapping.id}>
                 <TableCell>{mapping.jira_project_name}</TableCell>
                 <TableCell>{mapping.jira_project_key}</TableCell>
-                <TableCell>
-                  <select
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                    value={mapping.product_id ?? ""}
-                    onChange={(event) => void updateProductMapping(mapping.id, event.target.value ? Number(event.target.value) : null)}
-                  >
-                    <option value="">Unmapped</option>
-                    {products.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.name}
-                      </option>
-                    ))}
-                  </select>
-                </TableCell>
+                <TableCell>{mapping.product ?? "Unmapped - assign in Product Settings"}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -1301,7 +1279,7 @@ function RoadmapItemMappingWorkbench({
   summary: RoadmapItemMappingSummary;
   onChange: (
     item: RoadmapItem,
-    updates: Partial<Pick<RoadmapItem, "product_id" | "bucket_id" | "program_area">>,
+    updates: Partial<Pick<RoadmapItem, "product_id" | "bucket_id">>,
   ) => void;
 }) {
   return (
@@ -1363,7 +1341,7 @@ function RoadmapItemMappingTable({
   title: string;
   onChange: (
     item: RoadmapItem,
-    updates: Partial<Pick<RoadmapItem, "product_id" | "bucket_id" | "program_area">>,
+    updates: Partial<Pick<RoadmapItem, "product_id" | "bucket_id">>,
   ) => void;
 }) {
   return (
@@ -1379,7 +1357,7 @@ function RoadmapItemMappingTable({
               <TableHead className="text-right">Tickets</TableHead>
               <TableHead>Product</TableHead>
               <TableHead>Bucket</TableHead>
-              <TableHead>Program Area</TableHead>
+              <TableHead>Jira Agency Office</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -1400,7 +1378,7 @@ function RoadmapItemMappingTable({
                       value={item.product_id ?? ""}
                       onChange={(event) => onChange(item, { product_id: event.target.value ? Number(event.target.value) : null })}
                     >
-                      <option value="">Unmapped</option>
+                      <option value="">Use Jira links / unmapped</option>
                       {products.map((product) => (
                         <option key={product.id} value={product.id}>
                           {product.name}
@@ -1414,7 +1392,7 @@ function RoadmapItemMappingTable({
                       value={item.bucket_id ?? ""}
                       onChange={(event) => onChange(item, { bucket_id: event.target.value ? Number(event.target.value) : null })}
                     >
-                      <option value="">Unmapped</option>
+                      <option value="">Use Jira category / unmapped</option>
                       {buckets.map((bucket) => (
                         <option key={bucket.id} value={bucket.id}>
                           {bucket.name}
@@ -1422,20 +1400,7 @@ function RoadmapItemMappingTable({
                       ))}
                     </select>
                   </TableCell>
-                  <TableCell>
-                    <input
-                      className="h-9 w-full min-w-44 rounded-md border border-input bg-background px-2 text-sm"
-                      defaultValue={item.program_area ?? ""}
-                      key={`${item.id}-${item.program_area ?? ""}`}
-                      onBlur={(event) => {
-                        const nextProgramArea = event.currentTarget.value.trim() || null;
-                        if (nextProgramArea !== (item.program_area ?? null)) {
-                          onChange(item, { program_area: nextProgramArea });
-                        }
-                      }}
-                      placeholder="Program area"
-                    />
-                  </TableCell>
+                  <TableCell>{item.program_area ?? "Not set in Jira"}</TableCell>
                 </TableRow>
               ))
             ) : (
@@ -1462,7 +1427,7 @@ function RoadmapItemCoverageTable({ rows }: { rows: RoadmapItemCoverageRow[] }) 
             <TableRow>
               <TableHead>Product</TableHead>
               <TableHead>Bucket</TableHead>
-              <TableHead>Program Areas</TableHead>
+              <TableHead>Jira Agency Offices</TableHead>
               <TableHead className="text-right">Items</TableHead>
               <TableHead className="text-right">Tickets</TableHead>
             </TableRow>

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
     Bucket,
+    EstimationProfile,
     FiscalMonth,
     ForecastEntry,
     JiraProductMapping,
@@ -28,6 +29,7 @@ from app.models import (
 )
 from app.services.fiscal_year import ensure_fiscal_months
 from app.services.forecasting import upsert_forecast_entry
+from app.services.product_org import product_org_pair_error
 from app.services.slugs import unique_team_member_slug
 
 
@@ -46,23 +48,28 @@ class AdminDataSet:
 
 EXPORT_DATASETS: tuple[AdminDataSet, ...] = (
     AdminDataSet("buckets", "Buckets", "Buckets", "Reference work buckets used by forecast and actual records."),
+    AdminDataSet("estimation_profiles", "Estimation Profiles", "EstimationProfiles", "SPARC-owned estimation methods and policy rules."),
     AdminDataSet("team_members", "Team Members", "TeamMembers", "Roster, rates, employment type, and status."),
     AdminDataSet("products", "Products", "Products", "SPARC products and product-level details."),
     AdminDataSet("product_budgets", "Product Budgets", "ProductBudgets", "Fiscal-year-specific product budgets."),
     AdminDataSet("product_team_members", "Product Team Members", "ProductTeamMembers", "Manual product team assignments."),
     AdminDataSet("product_jira_spaces", "Product Jira Spaces", "ProductJiraSpaces", "Manual SPARC product-to-Jira project mappings."),
     AdminDataSet("jira_user_mappings", "Jira User Mappings", "JiraUserMappings", "Manual Jira user-to-roster mappings."),
-    AdminDataSet("jira_product_mappings", "Jira Product Mappings", "JiraProductMappings", "Legacy Jira project-to-product mappings."),
     AdminDataSet("forecast_entries", "Forecast Entries", "ForecastEntries", "Manager-entered planning hours by product, person, bucket, and month."),
 )
 
-EXCLUDED_JIRA_REFRESH_DATA = (
+EXCLUDED_PACKAGE_DATA = (
     "ActualEntry Jira worklogs",
     "SyncRun history",
     "JiraProjectCatalog refresh snapshots",
+    "RoadmapItem Jira refresh rows",
     "EstimatedEntry generated estimates",
     "EstimationRun history",
     "EstimatedIssueAllocation audit rows",
+    "AppUser credentials and Entra identity links",
+    "UserProgramAreaAssignment access grants",
+    "ForecastRecommendationDecision audit history",
+    "JiraProductMapping discovery cache",
 )
 
 _DATASET_BY_KEY = {dataset.key: dataset for dataset in EXPORT_DATASETS}
@@ -101,13 +108,13 @@ def build_admin_data_export(db: Session, dataset_keys: Iterable[str] | None = No
 
     writers = {
         "buckets": _write_buckets,
+        "estimation_profiles": _write_estimation_profiles,
         "team_members": _write_team_members,
         "products": _write_products,
         "product_budgets": _write_product_budgets,
         "product_team_members": _write_product_team_members,
         "product_jira_spaces": _write_product_jira_spaces,
         "jira_user_mappings": _write_jira_user_mappings,
-        "jira_product_mappings": _write_jira_product_mappings,
         "forecast_entries": _write_forecast_entries,
     }
 
@@ -133,7 +140,7 @@ def build_admin_data_archive(db: Session, dataset_keys: Iterable[str] | None = N
             "format": "zip-csv",
             "generated_at": generated_at,
             "included_datasets": selected_keys,
-            "excluded_jira_refresh_data": list(EXCLUDED_JIRA_REFRESH_DATA),
+            "excluded_package_data": list(EXCLUDED_PACKAGE_DATA),
             "files": {key: _DATASET_BY_KEY[key].csv_file_name for key in selected_keys},
         }
         archive.writestr("manifest.json", json.dumps(manifest, indent=2))
@@ -175,7 +182,7 @@ def build_admin_data_json_package(db: Session, dataset_keys: Iterable[str] | Non
         "version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "included_datasets": selected_keys,
-        "excluded_jira_refresh_data": list(EXCLUDED_JIRA_REFRESH_DATA),
+        "excluded_package_data": list(EXCLUDED_PACKAGE_DATA),
         "data": data,
     }
 
@@ -191,13 +198,13 @@ def import_admin_data_package(db: Session, content: bytes, dataset_keys: Iterabl
 
     importers = {
         "buckets": _import_buckets,
+        "estimation_profiles": _import_estimation_profiles,
         "team_members": _import_team_members,
         "products": _import_products,
         "product_budgets": _import_product_budgets,
         "product_team_members": _import_product_team_members,
         "product_jira_spaces": _import_product_jira_spaces,
         "jira_user_mappings": _import_jira_user_mappings,
-        "jira_product_mappings": _import_jira_product_mappings,
         "forecast_entries": _import_forecast_entries,
     }
 
@@ -209,7 +216,7 @@ def import_admin_data_package(db: Session, content: bytes, dataset_keys: Iterabl
     return {
         "datasets": list(results.values()),
         "errors": errors,
-        "excluded_jira_refresh_data": list(EXCLUDED_JIRA_REFRESH_DATA),
+        "excluded_jira_refresh_data": list(EXCLUDED_PACKAGE_DATA),
     }
 
 
@@ -221,7 +228,7 @@ def import_admin_data_archive(db: Session, content: bytes, dataset_keys: Iterabl
 
     with archive:
         manifest = _read_archive_manifest(archive)
-        selected_keys = normalize_dataset_keys(dataset_keys or manifest.get("included_datasets"))
+        selected_keys = normalize_dataset_keys(dataset_keys) if dataset_keys is not None else _known_package_dataset_keys(manifest.get("included_datasets"))
         workbook = Workbook()
         workbook.active.title = "Manifest"
 
@@ -246,7 +253,7 @@ def import_admin_data_json_package(db: Session, content: bytes, dataset_keys: It
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("JSON admin data package could not be parsed") from exc
 
-    selected_keys = normalize_dataset_keys(dataset_keys or package.get("included_datasets"))
+    selected_keys = normalize_dataset_keys(dataset_keys) if dataset_keys is not None else _known_package_dataset_keys(package.get("included_datasets"))
     data = package.get("data")
     if not isinstance(data, dict):
         raise ValueError("JSON admin data package is missing data")
@@ -308,12 +315,17 @@ def _read_archive_manifest(archive: ZipFile) -> dict[str, object]:
         raise ValueError("Admin data package manifest could not be parsed") from exc
 
 
+def _known_package_dataset_keys(raw_keys: object) -> list[str]:
+    keys = set(raw_keys) if isinstance(raw_keys, list) else set()
+    return [dataset.key for dataset in EXPORT_DATASETS if dataset.key in keys]
+
+
 def _write_manifest(sheet, selected_keys: list[str]) -> None:
     rows = [
         ("Export Type", "SPARC admin data package"),
         ("Generated At", datetime.now(timezone.utc).isoformat()),
         ("Included Data Sets", ", ".join(_DATASET_BY_KEY[key].label for key in selected_keys)),
-        ("Excluded Jira Refresh Data", ", ".join(EXCLUDED_JIRA_REFRESH_DATA)),
+        ("Excluded Package Data", ", ".join(EXCLUDED_PACKAGE_DATA)),
         ("Import Rule", "Rows are importable by natural keys like product name, team member name, Jira key, bucket code, fiscal year, and month sequence."),
         ("Note", "Use Jira Sync in SPARC to repopulate actual worklogs and Jira refresh data after importing this package."),
     ]
@@ -325,6 +337,60 @@ def _write_manifest(sheet, selected_keys: list[str]) -> None:
 def _write_buckets(workbook: Workbook, db: Session) -> None:
     rows = ((bucket.id, bucket.code, bucket.name) for bucket in db.scalars(select(Bucket).order_by(Bucket.id)).all())
     _append_sheet(workbook, "Buckets", ("source_bucket_id", "code", "name"), rows)
+
+
+def _write_estimation_profiles(workbook: Workbook, db: Session) -> None:
+    profiles = db.scalars(select(EstimationProfile).order_by(EstimationProfile.name)).all()
+    rows = (
+        (
+            profile.id,
+            profile.name,
+            profile.description,
+            profile.is_active,
+            profile.method_version,
+            _number(profile.monthly_capacity_hours),
+            _number(profile.actual_completeness_threshold),
+            profile.stale_ticket_window_days,
+            profile.forecast_future_months,
+            profile.future_month_average_window,
+            profile.excluded_statuses,
+            profile.low_activity_statuses,
+            profile.excluded_jira_project_keys,
+            profile.project_pause_dates,
+            profile.work_type_field_priority,
+            profile.story_point_weighting_enabled,
+            profile.notes,
+            _iso(profile.created_at),
+            _iso(profile.updated_at),
+        )
+        for profile in profiles
+    )
+    _append_sheet(
+        workbook,
+        "EstimationProfiles",
+        (
+            "source_estimation_profile_id",
+            "name",
+            "description",
+            "is_active",
+            "method_version",
+            "monthly_capacity_hours",
+            "actual_completeness_threshold",
+            "stale_ticket_window_days",
+            "forecast_future_months",
+            "future_month_average_window",
+            "excluded_statuses",
+            "low_activity_statuses",
+            "excluded_jira_project_keys",
+            "project_pause_dates",
+            "work_type_field_priority",
+            "story_point_weighting_enabled",
+            "notes",
+            "created_at",
+            "updated_at",
+        ),
+        rows,
+    )
 
 
 def _write_team_members(workbook: Workbook, db: Session) -> None:
@@ -662,6 +728,36 @@ def _import_buckets(db: Session, workbook, result: dict[str, int | str], errors:
             result["updated"] += 1
 
 
+def _import_estimation_profiles(db: Session, workbook, result: dict[str, int | str], errors: list[dict[str, object]]) -> None:
+    for row_number, row in _rows(workbook, "EstimationProfiles"):
+        name = _text(row, "name")
+        method_version = _text(row, "method_version")
+        if not name or not method_version:
+            _fail(result, errors, "EstimationProfiles", row_number, "Profile name and method version are required")
+            continue
+        profile = db.scalar(select(EstimationProfile).where(EstimationProfile.name == name))
+        created = profile is None
+        if profile is None:
+            profile = EstimationProfile(name=name, method_version=method_version)
+            db.add(profile)
+        profile.description = _text(row, "description")
+        profile.is_active = _bool(row.get("is_active"), default=False)
+        profile.method_version = method_version
+        profile.monthly_capacity_hours = _decimal(row, "monthly_capacity_hours")
+        profile.actual_completeness_threshold = _decimal(row, "actual_completeness_threshold")
+        profile.stale_ticket_window_days = _int(row, "stale_ticket_window_days") or 10
+        profile.forecast_future_months = _bool(row.get("forecast_future_months"), default=True)
+        profile.future_month_average_window = _int(row, "future_month_average_window") or 2
+        profile.excluded_statuses = _text(row, "excluded_statuses")
+        profile.low_activity_statuses = _text(row, "low_activity_statuses")
+        profile.excluded_jira_project_keys = _text(row, "excluded_jira_project_keys")
+        profile.project_pause_dates = _text(row, "project_pause_dates")
+        profile.work_type_field_priority = _text(row, "work_type_field_priority")
+        profile.story_point_weighting_enabled = _bool(row.get("story_point_weighting_enabled"), default=True)
+        profile.notes = _text(row, "notes")
+        result["created" if created else "updated"] += 1
+
+
 def _import_team_members(db: Session, workbook, result: dict[str, int | str], errors: list[dict[str, object]]) -> None:
     for row_number, row in _rows(workbook, "TeamMembers"):
         name = _text(row, "name")
@@ -693,6 +789,11 @@ def _import_products(db: Session, workbook, result: dict[str, int | str], errors
         if not name:
             _fail(result, errors, "Products", row_number, "Product name is required")
             continue
+        office = _text(row, "office")
+        division = _text(row, "division")
+        if error := product_org_pair_error(office, division):
+            _fail(result, errors, "Products", row_number, error)
+            continue
         product = _find_product(db, row)
         created = product is None
         if product is None:
@@ -701,8 +802,8 @@ def _import_products(db: Session, workbook, result: dict[str, int | str], errors
         product.name = name
         product.jira_space_key = _text(row, "jira_space_key")
         product.description = _text(row, "description")
-        product.office = _text(row, "office")
-        product.division = _text(row, "division")
+        product.office = office
+        product.division = division
         product.budget_amount = _decimal(row, "legacy_budget_amount")
         product.is_active = _bool(row.get("is_active"), default=True)
         result["created" if created else "updated"] += 1
@@ -761,6 +862,15 @@ def _import_product_jira_spaces(db: Session, workbook, result: dict[str, int | s
         space.scope_jql = _text(row, "scope_jql")
         space.validation_status = _text(row, "validation_status") or "unknown"
         space.validation_message = _text(row, "validation_message")
+        legacy_mapping = db.scalar(select(JiraProductMapping).where(JiraProductMapping.jira_project_key == jira_project_key))
+        if legacy_mapping is None:
+            legacy_mapping = JiraProductMapping(
+                jira_project_key=jira_project_key,
+                jira_project_name=space.jira_project_name or jira_project_key,
+            )
+            db.add(legacy_mapping)
+        legacy_mapping.jira_project_name = space.jira_project_name or legacy_mapping.jira_project_name
+        legacy_mapping.product_id = product.id if space.is_active else None
         result["created" if created else "updated"] += 1
 
 

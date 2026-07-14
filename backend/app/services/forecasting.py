@@ -3,7 +3,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Bucket, FiscalMonth, ForecastEntry, ProductTeamMember
+from app.models import Bucket, FiscalMonth, ForecastEntry, Product, ProductTeamMember
 from app.services.fiscal_year import get_fiscal_month
 
 
@@ -48,6 +48,11 @@ def upsert_forecast_entry(
     fiscal_year: int | None = None,
     month_sequence: int | None = None,
 ) -> ForecastEntry:
+    product = db.get(Product, product_id)
+    if product is None:
+        raise ValueError("Product not found")
+    if not product.is_active:
+        raise ValueError("Inactive products cannot receive new forecast entries")
     ensure_product_team_member(db, product_id=product_id, team_member_id=team_member_id)
     month = resolve_fiscal_month(
         db,

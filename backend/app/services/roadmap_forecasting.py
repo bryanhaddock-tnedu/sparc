@@ -9,7 +9,6 @@ from app.models import (
     ForecastEntry,
     Product,
     ProductTeamMember,
-    RoadmapForecastAllocation,
     RoadmapItem,
     RoadmapItemIssueLink,
     TeamMember,
@@ -56,13 +55,6 @@ def upsert_team_roadmap_forecast_allocations(
         affected_contexts.add((product_id, team_member_id, bucket_id))
 
     for product_id, team_member_id, bucket_id in sorted(affected_contexts):
-        _delete_legacy_roadmap_allocations(
-            db,
-            fiscal_year=fiscal_year,
-            product_id=product_id,
-            team_member_id=team_member_id,
-            bucket_id=bucket_id,
-        )
         for month in months:
             upsert_forecast_entry(
                 db,
@@ -126,29 +118,6 @@ def _validate_forecast_entry(
 
     month = get_fiscal_month(db, fiscal_year, month_sequence)
     return product.id, member.id, bucket.id, month.id, hours
-
-
-def _delete_legacy_roadmap_allocations(
-    db: Session,
-    *,
-    fiscal_year: int,
-    product_id: int,
-    team_member_id: int,
-    bucket_id: int,
-) -> None:
-    allocations = db.scalars(
-        select(RoadmapForecastAllocation)
-        .join(RoadmapForecastAllocation.fiscal_month)
-        .where(
-            FiscalMonth.fiscal_year == fiscal_year,
-            RoadmapForecastAllocation.product_id == product_id,
-            RoadmapForecastAllocation.team_member_id == team_member_id,
-            RoadmapForecastAllocation.bucket_id == bucket_id,
-        )
-    ).all()
-    for allocation in allocations:
-        db.delete(allocation)
-    db.flush()
 
 
 def _planner_rows(db: Session, team_name: str, fiscal_year: int) -> dict[tuple[int | None, int | None, int | None], dict[str, object]]:
@@ -423,21 +392,6 @@ def _serialize_deliverable_link(link: RoadmapItemIssueLink, item: RoadmapItem) -
     }
 
 
-def _serialize_allocation(allocation: RoadmapForecastAllocation) -> dict[str, object]:
-    return {
-        "id": allocation.id,
-        "roadmap_item_id": allocation.roadmap_item_id,
-        "product_id": allocation.product_id,
-        "team_member_id": allocation.team_member_id,
-        "team_member": allocation.team_member.name,
-        "team_member_slug": team_member_url_slug(allocation.team_member),
-        "bucket_id": allocation.bucket_id,
-        "fiscal_month_id": allocation.fiscal_month_id,
-        "month_sequence": allocation.fiscal_month.sequence,
-        "hours": round_hours(allocation.hours),
-    }
-
-
 def _serialize_forecast_entry_as_allocation(entry: ForecastEntry, roadmap_item_id: int | None) -> dict[str, object]:
     return {
         "id": entry.id,
@@ -462,10 +416,6 @@ def _serialize_month(month: FiscalMonth) -> dict[str, object]:
         "calendar_year": month.calendar_year,
         "calendar_month": month.calendar_month,
     }
-
-
-def _forecast_cell_key(allocation: RoadmapForecastAllocation) -> tuple[int, int, int, int]:
-    return (allocation.product_id, allocation.team_member_id, allocation.bucket_id, allocation.fiscal_month_id)
 
 
 def _planner_row_sort_key(row: dict[str, object]) -> tuple[str, str, str]:

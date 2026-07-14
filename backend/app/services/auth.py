@@ -103,6 +103,19 @@ def require_named_people_access(user: AuthenticatedUser = Depends(current_user))
     return user
 
 
+def require_hours_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
+    if not role_capabilities(user.role).get("can_view_hours"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Labor hours access required")
+    return user
+
+
+def require_labor_detail_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
+    capabilities = role_capabilities(user.role)
+    if not capabilities.get("can_view_hours") or not capabilities.get("can_view_named_people"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Detailed labor access required")
+    return user
+
+
 def require_reports_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
     if not role_capabilities(user.role).get("can_view_reports"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reports access required")

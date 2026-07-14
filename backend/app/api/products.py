@@ -6,7 +6,22 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.errors import bad_request, conflict, not_found
 from app.db.session import get_db
-from app.models import ActualEntry, Bucket, ForecastEntry, Product, ProductBudget, ProductJiraSpace, ProductTeamMember, TeamMember
+from app.models import (
+    ActualEntry,
+    Bucket,
+    EstimatedEntry,
+    EstimatedIssueAllocation,
+    ForecastEntry,
+    ForecastRecommendationDecision,
+    JiraProductMapping,
+    Product,
+    ProductBudget,
+    ProductJiraSpace,
+    ProductTeamMember,
+    RoadmapItem,
+    RoadmapItemIssueLink,
+    TeamMember,
+)
 from app.schemas import (
     BucketDistributionResponse,
     BucketResponse,
@@ -26,7 +41,13 @@ from app.schemas import (
 )
 from app.services.aggregations import bucket_distribution, product_budget_amount, product_budget_map, product_bucket_tables, product_summary, serialize_product
 from app.services.access_control import AuthenticatedUser, can_view_product_office, role_capabilities
-from app.services.auth import current_user, require_admin, require_named_people_access
+from app.services.auth import (
+    current_user,
+    require_admin,
+    require_hours_access,
+    require_labor_detail_access,
+    require_named_people_access,
+)
 from app.services.jira_projects import (
     add_product_jira_space,
     list_product_jira_spaces,
@@ -140,11 +161,21 @@ def update_product(
 def delete_product(product_ref: str, db: Session = Depends(get_db), _admin=Depends(require_admin)) -> dict[str, str]:
     product = _resolve_product_or_404(db, product_ref)
     product_id = product.id
-    jira_space_count = db.scalar(
-        select(func.count()).select_from(ProductJiraSpace).where(ProductJiraSpace.product_id == product_id)
+    protected_references = (
+        ("mapped Jira projects", ProductJiraSpace),
+        ("forecast entries", ForecastEntry),
+        ("actual entries", ActualEntry),
+        ("estimated entries", EstimatedEntry),
+        ("estimated issue allocations", EstimatedIssueAllocation),
+        ("forecast recommendation decisions", ForecastRecommendationDecision),
+        ("Roadmap Items", RoadmapItem),
+        ("Roadmap issue links", RoadmapItemIssueLink),
+        ("legacy Jira references", JiraProductMapping),
     )
-    if jira_space_count:
-        raise conflict("Remove mapped Jira projects before deleting this product")
+    for label, model in protected_references:
+        reference_count = db.scalar(select(func.count()).select_from(model).where(model.product_id == product_id))
+        if reference_count:
+            raise conflict(f"Product has {label}. Mark it inactive instead of deleting it so history is retained.")
     db.delete(product)
     db.commit()
     return {"message": "Product deleted"}
@@ -244,17 +275,23 @@ def remove_product_team_member(
     assignment = db.get(ProductTeamMember, assignment_id)
     if assignment is None or assignment.product_id != product_id:
         raise not_found("Product team member")
-    forecast_entries = db.scalars(
-        select(ForecastEntry).where(
-            ForecastEntry.product_id == assignment.product_id,
-            ForecastEntry.team_member_id == assignment.team_member_id,
+    historical_models = (ForecastEntry, ActualEntry, EstimatedEntry, EstimatedIssueAllocation)
+    has_labor_history = any(
+        db.scalar(
+            select(func.count())
+            .select_from(model)
+            .where(model.product_id == assignment.product_id, model.team_member_id == assignment.team_member_id)
         )
-    ).all()
-    for entry in forecast_entries:
-        db.delete(entry)
+        for model in historical_models
+    )
+    if has_labor_history:
+        assignment.status = "inactive"
+        assignment.default_bucket_id = None
+        db.commit()
+        return {"message": "Team member marked inactive; forecast and labor history retained"}
     db.delete(assignment)
     db.commit()
-    return {"message": "Team member removed from product and forecast lines cleared"}
+    return {"message": "Team member removed from product"}
 
 
 @router.get("/{product_ref}/jira-spaces", response_model=list[ProductJiraSpaceResponse])
@@ -348,7 +385,7 @@ def get_product_summary(
     product = _resolve_product_or_404(db, product_ref)
     _require_product_visible(product, user)
     try:
-        return product_summary(db, product.id, fiscal_year)
+        return product_summary(db, product.id, fiscal_year, user=user)
     except ValueError as exc:
         raise not_found(str(exc).replace(" not found", "")) from exc
 
@@ -358,7 +395,7 @@ def get_bucket_distribution(
     product_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
-    user: AuthenticatedUser = Depends(current_user),
+    user: AuthenticatedUser = Depends(require_hours_access),
 ) -> list[dict[str, object]]:
     product = _resolve_product_or_404(db, product_ref)
     _require_product_visible(product, user)
@@ -388,7 +425,7 @@ def get_product_roadmap_actuals(
     product_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
-    user: AuthenticatedUser = Depends(current_user),
+    user: AuthenticatedUser = Depends(require_labor_detail_access),
 ) -> list[dict[str, object]]:
     product = _resolve_product_or_404(db, product_ref)
     _require_product_visible(product, user)

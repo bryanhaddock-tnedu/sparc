@@ -226,7 +226,7 @@ def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = Non
                 existing.worked_on = worklog.worked_on
             imported += 1
 
-        deleted += _delete_stale_live_actuals(db, fiscal_year, current_worklog_ids)
+        deleted += _delete_stale_live_actuals(db, fiscal_year, current_worklog_ids, _active_jira_project_keys(db))
         sync_run.status = "completed"
         sync_run.imported_count = imported
         sync_run.skipped_count = skipped_unmapped
@@ -259,7 +259,8 @@ def fetch_live_jira_worklogs(db: Session, fiscal_year: int) -> list[MockWorklog]
     _require_jira_settings(settings.jira_site_url, settings.jira_api_email, settings.jira_api_token)
     spaces = db.scalars(
         select(ProductJiraSpace)
-        .where(ProductJiraSpace.is_active.is_(True))
+        .join(ProductJiraSpace.product)
+        .where(ProductJiraSpace.is_active.is_(True), Product.is_active.is_(True))
         .order_by(ProductJiraSpace.jira_project_key)
     ).all()
     if not spaces:
@@ -291,13 +292,19 @@ def _existing_live_actual(db: Session, worklog: MockWorklog) -> ActualEntry | No
     )
 
 
-def _delete_stale_live_actuals(db: Session, fiscal_year: int, current_worklog_ids: set[str]) -> int:
+def _delete_stale_live_actuals(
+    db: Session,
+    fiscal_year: int,
+    current_worklog_ids: set[str],
+    active_project_keys: set[str],
+) -> int:
     entries = db.scalars(
         select(ActualEntry)
         .join(ActualEntry.fiscal_month)
         .where(
             ActualEntry.source == "jira",
             FiscalMonth.fiscal_year == fiscal_year,
+            ActualEntry.source_project_key.in_(active_project_keys),
         )
     ).all()
     deleted = 0
@@ -307,6 +314,16 @@ def _delete_stale_live_actuals(db: Session, fiscal_year: int, current_worklog_id
         db.delete(entry)
         deleted += 1
     return deleted
+
+
+def _active_jira_project_keys(db: Session) -> set[str]:
+    return set(
+        db.scalars(
+            select(ProductJiraSpace.jira_project_key)
+            .join(ProductJiraSpace.product)
+            .where(ProductJiraSpace.is_active.is_(True), Product.is_active.is_(True))
+        ).all()
+    )
 
 
 def _worklog_id(worklog: MockWorklog) -> str:
@@ -399,23 +416,6 @@ def map_jira_user(db: Session, mapping_id: int, team_member_id: int | None) -> d
     }
 
 
-def map_jira_product(db: Session, mapping_id: int, product_id: int | None) -> dict[str, object]:
-    mapping = db.get(JiraProductMapping, mapping_id)
-    if mapping is None:
-        raise ValueError("Jira product mapping not found")
-    if product_id is not None and db.get(Product, product_id) is None:
-        raise ValueError("Product not found")
-    mapping.product_id = product_id
-    db.flush()
-    return {
-        "id": mapping.id,
-        "jira_project_key": mapping.jira_project_key,
-        "jira_project_name": mapping.jira_project_name,
-        "product_id": mapping.product_id,
-        "product": mapping.product.name if mapping.product else None,
-    }
-
-
 def list_sync_runs(db: Session, limit: int = 20) -> list[dict[str, object]]:
     runs = db.scalars(select(SyncRun).order_by(SyncRun.started_at.desc()).limit(limit)).all()
     return [serialize_sync_run(run) for run in runs]
@@ -467,6 +467,7 @@ def _ensure_product_mapping(db: Session, worklog: MockWorklog) -> JiraProductMap
         select(ProductJiraSpace).where(
             ProductJiraSpace.jira_project_key == worklog.jira_project_key,
             ProductJiraSpace.is_active.is_(True),
+            ProductJiraSpace.product.has(Product.is_active.is_(True)),
         )
     )
     if mapping is None:
@@ -477,8 +478,9 @@ def _ensure_product_mapping(db: Session, worklog: MockWorklog) -> JiraProductMap
         )
         db.add(mapping)
         db.flush()
-    elif mapping.product_id is None and product_space is not None:
-        mapping.product_id = product_space.product_id
+    else:
+        mapping.jira_project_name = worklog.jira_project_name
+        mapping.product_id = product_space.product_id if product_space is not None else None
         db.flush()
     return mapping
 

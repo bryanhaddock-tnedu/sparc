@@ -150,7 +150,7 @@ export function ProductSettingsPage() {
         setError("Remove mapped Jira projects before deleting this product");
         return;
       }
-      if (!window.confirm(`Delete ${product.name}? This will remove the product from SPARC.`)) return;
+      if (!window.confirm(`Delete empty product ${product.name}? Products with planning or labor history must be marked inactive.`)) return;
       setDeletingIds((current) => new Set(current).add(product.id));
       setError(null);
       setNotice(null);

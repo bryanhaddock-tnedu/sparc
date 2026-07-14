@@ -26,7 +26,6 @@ from app.models import (
     ProductBudget,
     ProductJiraSpace,
     ProductTeamMember,
-    RoadmapForecastAllocation,
     RoadmapItem,
     RoadmapItemIssueLink,
     SyncRun,
@@ -478,7 +477,6 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
         )
 
         forecast = db.scalar(select(ForecastEntry))
-        assert db.scalar(select(RoadmapForecastAllocation)) is None
         assert forecast is not None
         assert forecast.product_id == product.id
         assert forecast.team_member_id == member.id
@@ -510,7 +508,6 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
         )
 
         assert db.scalar(select(ForecastEntry)).hours == Decimal("0")
-        assert db.scalar(select(RoadmapForecastAllocation)) is None
         assert cleared["rows"][0]["forecast_hours"] == Decimal("0")
 
 
@@ -844,17 +841,15 @@ def test_team_roadmap_forecast_plan_scopes_linked_components_to_row_product():
         assert [deliverable["jira_issue_key"] for deliverable in rows_by_product["SWORD"]["deliverables"]] == ["SWORD-974"]
 
 
-def test_product_roadmap_items_include_forecast_months():
+def test_product_roadmap_items_do_not_create_noncanonical_forecast_attribution():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         _seed_buckets(db)
         product = Product(name="Core Infrastructure", slug="core-infrastructure")
-        member = TeamMember(name="Akhil Musani", slug="akhil-musani", role="QA", team="Product Maintenance", bill_rate=Decimal("70"))
-        db.add_all([product, member])
+        db.add(product)
         db.flush()
         bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
-        month = get_fiscal_month(db, 2027, 1)
         assert bucket is not None
         roadmap_item = RoadmapItem(
             source="jira_product_discovery",
@@ -868,26 +863,12 @@ def test_product_roadmap_items_include_forecast_months():
         )
         db.add(roadmap_item)
         db.flush()
-        db.add(
-            RoadmapForecastAllocation(
-                roadmap_item_id=roadmap_item.id,
-                product_id=product.id,
-                team_member_id=member.id,
-                bucket_id=bucket.id,
-                fiscal_month_id=month.id,
-                hours=Decimal("12.50"),
-            )
-        )
-        db.flush()
 
         rows = product_roadmap_items(db, product.id, 2027)
 
         assert len(rows) == 1
-        assert rows[0]["forecast_hours"] == 12.5
-        assert rows[0]["forecast_team_member_count"] == 1
-        assert rows[0]["forecast_months"] == [
-            {"month_sequence": 1, "month_label": "Jul", "forecast_hours": 12.5, "team_member_count": 1}
-        ]
+        assert "forecast_hours" not in rows[0]
+        assert "forecast_months" not in rows[0]
 
 
 def test_product_summary_includes_budget_tracker_metrics():
@@ -1041,19 +1022,24 @@ def test_roadmap_item_mapping_updates_product_and_bucket():
         db.add_all([product, item])
         db.flush()
 
-        mapped = update_roadmap_item_mapping(db, item.id, product_id=product.id, bucket_id=bucket.id, program_area="Programs")
+        item.program_area = "Programs"
+        mapped = update_roadmap_item_mapping(db, item.id, updates={"product_id": product.id, "bucket_id": bucket.id})
         assert mapped["product_id"] == product.id
         assert mapped["product"] == "Student Information"
         assert mapped["bucket_id"] == bucket.id
         assert mapped["bucket"] == "Maintenance"
         assert mapped["program_area"] == "Programs"
+        assert mapped["product_mapping_source"] == "manual"
+        assert mapped["bucket_mapping_source"] == "manual"
 
-        cleared = update_roadmap_item_mapping(db, item.id, product_id=None, bucket_id=None)
+        cleared = update_roadmap_item_mapping(db, item.id, updates={"product_id": None, "bucket_id": None})
         assert cleared["product_id"] is None
         assert cleared["product"] is None
         assert cleared["bucket_id"] is None
         assert cleared["bucket"] is None
-        assert cleared["program_area"] is None
+        assert cleared["program_area"] == "Programs"
+        assert cleared["product_mapping_source"] == "sync"
+        assert cleared["bucket_mapping_source"] == "sync"
 
 
 def test_roadmap_issue_normalization_uses_fiscal_year_label_and_agency_office():
@@ -1344,6 +1330,77 @@ def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
         assert item.roadmap_start_date == date(2026, 9, 1)
         assert item.roadmap_end_date == date(2026, 11, 30)
         assert item.roadmap_schedule_months == [3, 4, 5]
+
+
+def test_roadmap_sync_preserves_manual_mapping_and_refreshes_jira_metadata():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        maintenance = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        payload = RoadmapIssuePayload(
+            issue_id="10001",
+            issue_key="ROADMAP-1",
+            title="Program billing feature",
+            status="In Progress",
+            status_category="In Progress",
+            issue_type="Idea",
+            labels=("FY27",),
+            program_area="Academics",
+            category="Enhancements",
+            source_team="Product Maintenance",
+            source_url=None,
+            links=tuple(),
+        )
+        item = _upsert_roadmap_item(db, payload, 2027)
+        update_roadmap_item_mapping(db, item.id, updates={"bucket_id": maintenance.id})
+
+        refreshed = _upsert_roadmap_item(
+            db,
+            RoadmapIssuePayload(
+                **{**payload.__dict__, "program_area": None, "category": "Net New"},
+            ),
+            2027,
+        )
+
+        assert refreshed.bucket_id == maintenance.id
+        assert refreshed.bucket_mapping_source == "manual"
+        assert refreshed.program_area is None
+
+
+def test_inactive_product_rejects_new_forecast_but_keeps_existing_history():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Historical Product")
+        member = TeamMember(name="Avery Johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        existing = upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_code="MAINTENANCE",
+            fiscal_year=2027,
+            month_sequence=1,
+            hours=10,
+        )
+        product.is_active = False
+        db.flush()
+
+        with pytest.raises(ValueError, match="Inactive products"):
+            upsert_forecast_entry(
+                db,
+                product_id=product.id,
+                team_member_id=member.id,
+                bucket_code="MAINTENANCE",
+                fiscal_year=2027,
+                month_sequence=2,
+                hours=5,
+            )
+
+        assert db.get(ForecastEntry, existing.id).hours == Decimal("10")
 
 
 def test_roadmap_sync_discovers_epic_and_story_descendants(monkeypatch: pytest.MonkeyPatch):
@@ -2287,7 +2344,7 @@ def test_product_bucket_tables_use_explicit_forecast_lines_for_bucket_rows():
         assert buckets_with_rows[0]["rows"][0]["totals"]["forecast_hours"] == 0
 
 
-def test_removing_product_team_member_clears_product_forecast_lines():
+def test_removing_product_team_member_with_forecast_marks_assignment_inactive_and_retains_history():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
@@ -2315,9 +2372,9 @@ def test_removing_product_team_member_clears_product_forecast_lines():
 
         remove_product_team_member_endpoint(product.id, assignment.id, db)
 
-        assert db.scalar(select(ForecastEntry)) is None
-        assert db.scalar(select(ProductTeamMember)) is None
-        assert all(bucket["rows"] == [] for bucket in product_bucket_tables(db, product.id, 2026)["buckets"])
+        assert db.scalar(select(ForecastEntry)) is not None
+        assert db.scalar(select(ProductTeamMember)).status == "inactive"
+        assert any(bucket["rows"] for bucket in product_bucket_tables(db, product.id, 2026)["buckets"])
 
 
 def test_product_jira_space_mapping_uses_catalog_and_prevents_double_mapping():

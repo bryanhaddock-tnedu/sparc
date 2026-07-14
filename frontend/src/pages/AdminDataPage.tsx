@@ -10,7 +10,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { api } from "../lib/api";
 import type { AdminDataExportOption, AdminDataImportResult } from "../types/api";
 
-const EXCLUDED_REFRESH_DATA = ["Actual Jira worklogs", "Sync history", "Jira project catalog snapshots", "Generated estimates"];
+const EXCLUDED_PACKAGE_DATA = [
+  "Actual Jira worklogs and sync history",
+  "Jira catalog, Roadmap, and generated estimate caches",
+  "SPARC user credentials and Program Area access grants",
+  "Forecast recommendation audit history",
+];
 
 export function AdminDataPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [options, setOptions] = useState<AdminDataExportOption[]>([]);
@@ -92,7 +97,7 @@ export function AdminDataPage({ embedded = false }: { embedded?: boolean } = {})
       <section className="flex flex-col justify-between gap-4 border-b pb-5 sm:flex-row sm:items-end">
         <div>
           {embedded ? <h2 className="text-xl font-semibold">Admin Data</h2> : <h1 className="text-2xl font-semibold">Admin Data</h1>}
-          <p className="mt-1 text-sm text-muted-foreground">Move SPARC-owned setup, mapping, and forecast data between environments.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Move portable SPARC setup, mapping, rules, and forecast data between environments. This is not a database backup.</p>
         </div>
         {embedded ? null : <PageNav current="admin" />}
       </section>
@@ -166,7 +171,7 @@ export function AdminDataPage({ embedded = false }: { embedded?: boolean } = {})
       <section className="rounded-lg border bg-muted/20 p-4">
         <div className="mb-3 text-sm font-semibold uppercase text-muted-foreground">Always excluded from this package</div>
         <div className="flex flex-wrap gap-2">
-          {EXCLUDED_REFRESH_DATA.map((item) => (
+          {EXCLUDED_PACKAGE_DATA.map((item) => (
             <Badge key={item}>{item}</Badge>
           ))}
         </div>

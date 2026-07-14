@@ -396,7 +396,13 @@ def _redact_dashboard_labor_mix_hours(labor_mix: dict[str, list[dict[str, object
     return labor_mix
 
 
-def product_summary(db: Session, product_id: int, fiscal_year: int) -> dict[str, object]:
+def product_summary(
+    db: Session,
+    product_id: int,
+    fiscal_year: int,
+    *,
+    user: AuthenticatedUser | None = None,
+) -> dict[str, object]:
     product = db.get(Product, product_id)
     if product is None:
         raise ValueError("Product not found")
@@ -404,12 +410,16 @@ def product_summary(db: Session, product_id: int, fiscal_year: int) -> dict[str,
     actuals = _actual_entries(db, fiscal_year, product_id)
     metrics = _metric_totals(forecasts, actuals)
     budget = product_budget_amount(db, product_id, fiscal_year)
-    return {
+    summary = {
         "product": serialize_product(product, budget),
         "fiscal_year": fiscal_year,
         **_budget_metrics(budget, metrics["forecasted_cost"]),
         **metrics,
     }
+    if not _can_view_dashboard_hours(user):
+        for key in ("forecasted_hours", "fytd_hours", "remaining_hours", "variance_hours"):
+            summary[key] = None
+    return summary
 
 
 def bucket_distribution(db: Session, product_id: int, fiscal_year: int) -> list[dict[str, object]]:

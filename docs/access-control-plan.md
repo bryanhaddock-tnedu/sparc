@@ -182,3 +182,7 @@ It must not scope by `RoadmapItem.program_area`.
 - Add focused regression tests for restricted person-level report access.
 - Add focused regression tests for bill-rate redaction in named rows.
 - Ensure forecast detail rows require named Team Member visibility because they include Team Member names.
+- Redact aggregate Product Detail hours for roles without `can_view_hours`.
+- Require hour capability for Product bucket distributions.
+- Require both hour and named-person capability for Product Roadmap actual rows.
+- Keep cost-only Product Detail available to scoped Program Area viewers.
