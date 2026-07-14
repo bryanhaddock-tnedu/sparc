@@ -8,6 +8,7 @@ Goal: make actual worklogs auditable by Roadmap Item on Product Detail and Team 
 
 - Keep Jira worklog sync as the source of actual hours.
 - Add read-only Roadmap Item and Roadmap Item Issue Link records from Jira.
+- Follow Jira parent relationships from each direct delivery link through descendant Epics, Stories, Tasks, and subtasks.
 - Join `ActualEntry.source_ticket_key` to Roadmap Item Issue Links for reporting.
 - Show mapped, unmapped, and ambiguous roadmap actuals on Product and Team Member detail pages.
 - Do not mutate Forecast entries.

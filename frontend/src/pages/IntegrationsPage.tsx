@@ -257,7 +257,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         ? ` ${result.removed_from_fiscal_year} stale items moved out of ${result.fiscal_year_label ?? fiscalYearLabel}.`
         : "";
       setNotice(
-        `Roadmap synced for ${result.fiscal_year_label ?? fiscalYearLabel}: ${result.roadmap_items} items and ${result.linked_issues} linked delivery tickets.${removedCopy}`,
+        `Roadmap synced for ${result.fiscal_year_label ?? fiscalYearLabel}: ${result.roadmap_items} items and ${result.linked_issues} linked Jira work items.${removedCopy}`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sync Jira roadmap");

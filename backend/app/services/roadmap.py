@@ -34,6 +34,7 @@ MANUAL_ROADMAP_LINK_SOURCE = "manual"
 DEFAULT_ROADMAP_PROJECT_KEY = "ROADMAP"
 ROADMAP_ITEM_ISSUE_TYPES = {"idea"}
 ROADMAP_DELIVERABLE_ISSUE_TYPES = {"deliverable"}
+ROADMAP_HIERARCHY_MAX_DEPTH = 6
 AGENCY_OFFICE_FIELD_NAMES = {"agency office"}
 CATEGORY_FIELD_NAMES = {"category"}
 TEAM_FIELD_NAMES = {"team"}
@@ -911,17 +912,17 @@ def _enrich_roadmap_payload_links(
     if not linked_issue_keys:
         return payloads
 
-    issue_details: dict[str, RoadmapIssueLinkPayload] = {}
-    fields = ["summary", "status", "issuetype", "project", *category_field_ids]
-    for key_chunk in _chunks(linked_issue_keys, 50):
-        jql = f"issuekey in ({', '.join(key_chunk)})"
-        for issue in _search_jira_issues(client, site_url, jql, fields):
-            detail = _roadmap_issue_link_payload_from_issue(issue, category_field_ids=category_field_ids)
-            issue_details[detail.issue_key] = detail
+    issue_details = _fetch_roadmap_issue_details(client, site_url, linked_issue_keys, category_field_ids)
+    descendants_by_root = _fetch_roadmap_descendant_links(client, site_url, linked_issue_keys, category_field_ids)
 
     enriched_payloads: list[RoadmapIssuePayload] = []
     for payload in payloads:
-        enriched_links = tuple(_merge_link_details(link, issue_details.get(link.issue_key)) for link in payload.links)
+        enriched_links_by_key: dict[str, RoadmapIssueLinkPayload] = {}
+        for link in payload.links:
+            enriched_link = _merge_link_details(link, issue_details.get(link.issue_key))
+            enriched_links_by_key[enriched_link.issue_key] = enriched_link
+            for descendant in descendants_by_root.get(enriched_link.issue_key, {}).values():
+                enriched_links_by_key.setdefault(descendant.issue_key, descendant)
         enriched_payloads.append(
             RoadmapIssuePayload(
                 issue_id=payload.issue_id,
@@ -938,10 +939,71 @@ def _enrich_roadmap_payload_links(
                 roadmap_end_date=payload.roadmap_end_date,
                 roadmap_schedule_months=payload.roadmap_schedule_months,
                 source_url=payload.source_url,
-                links=enriched_links,
+                links=tuple(sorted(enriched_links_by_key.values(), key=lambda link: link.issue_key)),
             )
         )
     return enriched_payloads
+
+
+def _fetch_roadmap_issue_details(
+    client: httpx.Client,
+    site_url: str,
+    issue_keys: list[str],
+    category_field_ids: list[str],
+) -> dict[str, RoadmapIssueLinkPayload]:
+    issue_details: dict[str, RoadmapIssueLinkPayload] = {}
+    fields = ["summary", "status", "issuetype", "project", "parent", *category_field_ids]
+    for key_chunk in _chunks(issue_keys, 50):
+        jql = f"issuekey in ({_jql_issue_keys(key_chunk)})"
+        for issue in _search_jira_issues(client, site_url, jql, fields):
+            detail = _roadmap_issue_link_payload_from_issue(issue, category_field_ids=category_field_ids)
+            issue_details[detail.issue_key] = detail
+    return issue_details
+
+
+def _fetch_roadmap_descendant_links(
+    client: httpx.Client,
+    site_url: str,
+    root_issue_keys: list[str],
+    category_field_ids: list[str],
+) -> dict[str, dict[str, RoadmapIssueLinkPayload]]:
+    descendants_by_root: dict[str, dict[str, RoadmapIssueLinkPayload]] = {key: {} for key in root_issue_keys}
+    roots_by_parent = {key: {key} for key in root_issue_keys}
+    frontier = set(root_issue_keys)
+    queried_parents: set[str] = set()
+    fields = ["summary", "status", "issuetype", "project", "parent", *category_field_ids]
+
+    for _depth in range(ROADMAP_HIERARCHY_MAX_DEPTH):
+        parent_keys = sorted(frontier - queried_parents)
+        if not parent_keys:
+            break
+        queried_parents.update(parent_keys)
+        next_frontier: set[str] = set()
+
+        for key_chunk in _chunks(parent_keys, 50):
+            jql = f"parent in ({_jql_issue_keys(key_chunk)})"
+            for issue in _search_jira_issues(client, site_url, jql, fields):
+                child_key = _normalize_issue_key(str(issue.get("key") or ""))
+                parent_key = _parent_issue_key(issue)
+                if not child_key or not parent_key:
+                    continue
+                root_keys = roots_by_parent.get(parent_key, set())
+                if not root_keys:
+                    continue
+                child = _roadmap_issue_link_payload_from_issue(
+                    issue,
+                    category_field_ids=category_field_ids,
+                    relationship_type=f"Child of {parent_key}",
+                )
+                for root_key in root_keys:
+                    if child_key != root_key:
+                        descendants_by_root[root_key][child_key] = child
+                roots_by_parent.setdefault(child_key, set()).update(root_keys)
+                next_frontier.add(child_key)
+
+        frontier = next_frontier
+
+    return descendants_by_root
 
 
 def _roadmap_issue_link_payload_from_issue(
@@ -983,6 +1045,16 @@ def _merge_link_details(base: RoadmapIssueLinkPayload, enriched: RoadmapIssueLin
         status_category=enriched.status_category or base.status_category,
         category=enriched.category or base.category,
     )
+
+
+def _parent_issue_key(issue: dict[str, object]) -> str:
+    fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
+    parent = fields.get("parent") if isinstance(fields.get("parent"), dict) else {}
+    return _normalize_issue_key(str(parent.get("key") or ""))
+
+
+def _jql_issue_keys(issue_keys: list[str]) -> str:
+    return ", ".join(f'"{issue_key}"' for issue_key in issue_keys)
 
 
 def _chunks(values: list[str], size: int) -> list[list[str]]:

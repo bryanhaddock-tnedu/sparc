@@ -58,6 +58,7 @@ from app.services.roadmap import (
     RoadmapIssueLinkPayload,
     RoadmapIssuePayload,
     UNSCOPED_ROADMAP_FISCAL_YEAR,
+    _enrich_roadmap_payload_links,
     _has_fiscal_year_label,
     _jira_date_field_ids_by_name,
     _normalize_roadmap_issue,
@@ -1345,6 +1346,73 @@ def test_roadmap_category_maps_to_sparc_bucket_on_upsert():
         assert item.roadmap_schedule_months == [3, 4, 5]
 
 
+def test_roadmap_sync_discovers_epic_and_story_descendants(monkeypatch: pytest.MonkeyPatch):
+    payload = RoadmapIssuePayload(
+        issue_id="10001",
+        issue_key="ROADMAP-1",
+        title="Program billing feature",
+        status="In Progress",
+        status_category="In Progress",
+        issue_type="Idea",
+        labels=("FY27",),
+        program_area="Academics",
+        category="Net New",
+        source_team="Applications",
+        source_url="https://tndoe.atlassian.net/browse/ROADMAP-1",
+        links=(
+            RoadmapIssueLinkPayload(
+                issue_id="20010",
+                issue_key="APP-10",
+                issue_summary="Delivery root",
+                jira_project_key="APP",
+                relationship_type="Delivery",
+            ),
+        ),
+    )
+    queries: list[str] = []
+
+    def fake_search(_client, _site_url, jql, _fields, expand=None):
+        queries.append(jql)
+        if jql.startswith("issuekey in"):
+            return [_jira_hierarchy_issue("APP-10", "Deliverable", "Delivery root")]
+        if jql == 'parent in ("APP-10")':
+            return [_jira_hierarchy_issue("APP-20", "Epic", "Delivery epic", parent_key="APP-10")]
+        if jql == 'parent in ("APP-20")':
+            return [_jira_hierarchy_issue("APP-30", "Story", "Delivery story", parent_key="APP-20")]
+        if jql == 'parent in ("APP-30")':
+            return []
+        raise AssertionError(f"Unexpected JQL: {jql}")
+
+    monkeypatch.setattr("app.services.roadmap._search_jira_issues", fake_search)
+
+    enriched = _enrich_roadmap_payload_links(object(), "https://tndoe.atlassian.net", [payload], [])
+
+    links = {link.issue_key: link for link in enriched[0].links}
+    assert list(links) == ["APP-10", "APP-20", "APP-30"]
+    assert links["APP-10"].issue_type == "Deliverable"
+    assert links["APP-10"].relationship_type == "Delivery"
+    assert links["APP-20"].relationship_type == "Child of APP-10"
+    assert links["APP-30"].relationship_type == "Child of APP-20"
+    assert queries == [
+        'issuekey in ("APP-10")',
+        'parent in ("APP-10")',
+        'parent in ("APP-20")',
+        'parent in ("APP-30")',
+    ]
+
+
+def _jira_hierarchy_issue(key: str, issue_type: str, summary: str, *, parent_key: str | None = None) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "summary": summary,
+        "status": {"name": "In Progress", "statusCategory": {"name": "In Progress"}},
+        "issuetype": {"name": issue_type},
+        "project": {"key": "APP"},
+    }
+    if parent_key is not None:
+        fields["parent"] = {"key": parent_key}
+    return {"id": key.replace("APP-", "200"), "key": key, "fields": fields}
+
+
 def test_stale_roadmap_items_move_out_of_selected_fiscal_year():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -1542,7 +1610,7 @@ def test_product_roadmap_items_include_parent_ideas_through_product_deliverables
         assert [link["jira_issue_key"] for link in urs_rows[0]["linked_issues"]] == ["SCREEN-346", "SCREEN-470"]
 
 
-def test_deliverable_actuals_roll_up_to_parent_idea_for_product():
+def test_story_actuals_roll_up_through_delivery_hierarchy_to_parent_idea():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
@@ -1575,6 +1643,26 @@ def test_deliverable_actuals_roll_up_to_parent_idea_for_product():
                     jira_project_key="ECEDS",
                     issue_type="Deliverable",
                 ),
+                RoadmapItemIssueLink(
+                    roadmap_item_id=parent.id,
+                    product_id=product.id,
+                    bucket_id=bucket.id,
+                    jira_issue_key="ECEDS-170",
+                    jira_issue_summary="ECEDS maintenance epic",
+                    jira_project_key="ECEDS",
+                    issue_type="Epic",
+                    relationship_type="Child of ECEDS-169",
+                ),
+                RoadmapItemIssueLink(
+                    roadmap_item_id=parent.id,
+                    product_id=product.id,
+                    bucket_id=bucket.id,
+                    jira_issue_key="ECEDS-171",
+                    jira_issue_summary="Apply maintenance update",
+                    jira_project_key="ECEDS",
+                    issue_type="Story",
+                    relationship_type="Child of ECEDS-170",
+                ),
                 ActualEntry(
                     product_id=product.id,
                     team_member_id=member.id,
@@ -1582,7 +1670,7 @@ def test_deliverable_actuals_roll_up_to_parent_idea_for_product():
                     fiscal_month_id=month.id,
                     hours=Decimal("4"),
                     source="jira",
-                    source_ticket_key="ECEDS-169",
+                    source_ticket_key="ECEDS-171",
                     source_worklog_id="1",
                 ),
             ]
@@ -1595,7 +1683,7 @@ def test_deliverable_actuals_roll_up_to_parent_idea_for_product():
         assert rows[0]["mapping_status"] == "mapped"
         assert rows[0]["roadmap_item_key"] == "ROADMAP-180"
         assert rows[0]["product"] == "ECEDS"
-        assert rows[0]["ticket_keys"] == ["ECEDS-169"]
+        assert rows[0]["ticket_keys"] == ["ECEDS-171"]
         assert rows[0]["actual_hours"] == 4
 
 
