@@ -566,42 +566,45 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
           </TableHeader>
           <TableBody>
             {roadmapGapTickets.length ? (
-              roadmapGapTickets.map((gap) => (
-                <TableRow key={gap.key}>
-                  <TableCell>
-                    <div className="font-medium text-primary">{gap.ticketKey}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatHours(gap.row.actual_hours)} / {formatCurrency(gap.row.actual_cost)}
-                    </div>
-                  </TableCell>
-                  <TableCell>{gap.row.product}</TableCell>
-                  <TableCell>
-                    <TeamMemberNameLink className="font-medium text-primary hover:underline" member={gap.row}>
-                      {gap.row.team_member}
-                    </TeamMemberNameLink>
-                  </TableCell>
-                  <TableCell>{gap.row.bucket}</TableCell>
-                  <TableCell>
-                    <Badge className={gap.row.mapping_status === "ambiguous" ? "border-warning/50 text-warning" : "border-muted text-muted-foreground"}>
-                      {gap.row.mapping_status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <select
-                      className="h-9 w-full min-w-64 rounded-md border border-input bg-background px-2 text-sm"
-                      defaultValue=""
-                      onChange={(event) => void updateRoadmapTicketMapping(gap.ticketKey, event.target.value ? Number(event.target.value) : null)}
-                    >
-                      <option value="">Map to Roadmap Item</option>
-                      {sortedRoadmapItems.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.jira_issue_key} - {item.title}
-                        </option>
-                      ))}
-                    </select>
-                  </TableCell>
-                </TableRow>
-              ))
+              roadmapGapTickets.map((gap) => {
+                const roadmapItemOptions = gap.row.mapping_status === "ambiguous" ? gap.mappingCandidates : sortedRoadmapItems;
+                return (
+                  <TableRow key={gap.key}>
+                    <TableCell>
+                      <div className="font-medium text-primary">{gap.ticketKey}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatHours(gap.row.actual_hours)} / {formatCurrency(gap.row.actual_cost)}
+                      </div>
+                    </TableCell>
+                    <TableCell>{gap.row.product}</TableCell>
+                    <TableCell>
+                      <TeamMemberNameLink className="font-medium text-primary hover:underline" member={gap.row}>
+                        {gap.row.team_member}
+                      </TeamMemberNameLink>
+                    </TableCell>
+                    <TableCell>{gap.row.bucket}</TableCell>
+                    <TableCell>
+                      <Badge className={gap.row.mapping_status === "ambiguous" ? "border-warning/50 text-warning" : "border-muted text-muted-foreground"}>
+                        {gap.row.mapping_status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <select
+                        className="h-9 w-full min-w-64 rounded-md border border-input bg-background px-2 text-sm"
+                        defaultValue=""
+                        onChange={(event) => void updateRoadmapTicketMapping(gap.ticketKey, event.target.value ? Number(event.target.value) : null)}
+                      >
+                        <option value="">{gap.row.mapping_status === "ambiguous" ? "Choose competing Roadmap Item" : "Map to Roadmap Item"}</option>
+                        {roadmapItemOptions.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.jira_issue_key} - {item.title}
+                          </option>
+                        ))}
+                      </select>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             ) : (
               <TableRow>
                 <TableCell className="py-6 text-sm text-muted-foreground" colSpan={6}>
@@ -1577,6 +1580,7 @@ function expandRoadmapGapTickets(rows: RoadmapActualRow[]) {
       key: `${row.mapping_status}:${row.product_id}:${row.team_member_id}:${row.bucket_id}:${ticketKey}`,
       ticketKey,
       row,
+      mappingCandidates: row.mapping_candidates?.[ticketKey] ?? [],
     })),
   );
 }

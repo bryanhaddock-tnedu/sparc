@@ -999,10 +999,15 @@ def test_roadmap_actual_rows_join_worklogs_without_double_counting_ambiguous_lin
         assert mapped["actual_hours"] == 4
         assert mapped["actual_cost"] == 400
         assert mapped["ticket_keys"] == ["SIS-1"]
+        assert [candidate["jira_issue_key"] for candidate in mapped["mapping_candidates"]["SIS-1"]] == ["ROADMAP-1"]
         assert ambiguous["roadmap_item_key"] is None
         assert ambiguous["actual_hours"] == 2
         assert ambiguous["actual_cost"] == 200
         assert ambiguous["ticket_keys"] == ["SIS-2"]
+        assert [candidate["jira_issue_key"] for candidate in ambiguous["mapping_candidates"]["SIS-2"]] == [
+            "ROADMAP-2",
+            "ROADMAP-3",
+        ]
 
 
 def test_roadmap_item_mapping_updates_product_and_bucket():

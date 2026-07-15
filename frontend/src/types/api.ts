@@ -303,6 +303,12 @@ export interface RoadmapTicketMapResult {
   roadmap_item_title: string | null;
 }
 
+export interface RoadmapItemCandidate {
+  id: number;
+  jira_issue_key: string;
+  title: string;
+}
+
 export interface RoadmapActualRow {
   roadmap_item_id: number | null;
   roadmap_item_key: string | null;
@@ -325,6 +331,7 @@ export interface RoadmapActualRow {
   ticket_count: number;
   ticket_keys: string[];
   mapping_status: string;
+  mapping_candidates: Record<string, RoadmapItemCandidate[]>;
 }
 
 export interface RoadmapForecastAllocation {

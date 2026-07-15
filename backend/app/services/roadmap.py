@@ -477,6 +477,14 @@ def roadmap_actual_rows(
             mapping_status = "mapped"
         elif len(ticket_links) > 1:
             mapping_status = "ambiguous"
+        mapping_candidates = [
+            {
+                "id": link.roadmap_item.id,
+                "jira_issue_key": link.roadmap_item.jira_issue_key,
+                "title": link.roadmap_item.title,
+            }
+            for link in sorted(ticket_links, key=lambda link: link.roadmap_item.jira_issue_key)
+        ]
 
         key = (roadmap_item.id if roadmap_item else None, entry.product_id, entry.team_member_id, entry.bucket_id, mapping_status)
         row = grouped.setdefault(
@@ -502,6 +510,7 @@ def roadmap_actual_rows(
                 "worklog_count": 0,
                 "ticket_keys": set(),
                 "mapping_status": mapping_status,
+                "mapping_candidates": {},
             },
         )
         row["actual_hours"] += entry.hours
@@ -509,6 +518,7 @@ def roadmap_actual_rows(
         row["worklog_count"] += 1
         if ticket_key:
             row["ticket_keys"].add(ticket_key)
+            row["mapping_candidates"][ticket_key] = mapping_candidates
 
     rows = []
     for row in grouped.values():

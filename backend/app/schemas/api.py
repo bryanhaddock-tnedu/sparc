@@ -889,6 +889,12 @@ class RoadmapTicketMapResponse(BaseModel):
     roadmap_item_title: str | None
 
 
+class RoadmapItemCandidateResponse(BaseModel):
+    id: int
+    jira_issue_key: str
+    title: str
+
+
 class RoadmapActualRowResponse(BaseModel):
     roadmap_item_id: int | None
     roadmap_item_key: str | None
@@ -911,6 +917,7 @@ class RoadmapActualRowResponse(BaseModel):
     ticket_count: int
     ticket_keys: list[str]
     mapping_status: str
+    mapping_candidates: dict[str, list[RoadmapItemCandidateResponse]] = Field(default_factory=dict)
 
 
 class RoadmapForecastAllocationResponse(BaseModel):

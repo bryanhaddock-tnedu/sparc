@@ -87,6 +87,7 @@ Use a monorepo:
 - Team Member detail URLs use lowercase dash slugs derived from Team Member names, for example `/team-members/avery-johnson`; numeric Team Member IDs remain accepted only as backwards-compatible references.
 - Roadmap sync and worklog sync are separate pipelines. Worklog sync owns actual hours; roadmap sync owns Roadmap Items and ticket relationships; SPARC reporting joins them by Jira ticket key.
 - Roadmap sync must follow the Jira parent hierarchy beneath each directly linked delivery work item so work logged on descendant Epics, Stories, Tasks, or subtasks can roll up to the Roadmap Item. The original Actual ticket key remains unchanged and auditable.
+- Roadmap Actual Gaps must show only the competing Roadmap Items when a ticket is ambiguous. A truly unmapped ticket may show all fiscal-year Roadmap Items because it has no inferred candidates.
 - Created date and last updated date are required.
 
 ## Access Model
