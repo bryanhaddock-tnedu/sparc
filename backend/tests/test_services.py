@@ -17,6 +17,7 @@ from app.api.team_members import get_team_member as get_team_member_endpoint
 from app.db.seed import _seed_buckets
 from app.models import (
     ActualEntry,
+    AttributionChange,
     Base,
     Bucket,
     ForecastEntry,
@@ -47,6 +48,7 @@ from app.services.jira_projects import (
     JiraProjectPayload,
     add_product_jira_space,
     list_product_jira_spaces,
+    move_product_jira_space,
     remove_product_jira_space,
     update_jira_project_catalog_visibility,
     update_product_jira_space,
@@ -999,11 +1001,23 @@ def test_roadmap_actual_rows_join_worklogs_without_double_counting_ambiguous_lin
         assert mapped["actual_hours"] == 4
         assert mapped["actual_cost"] == 400
         assert mapped["ticket_keys"] == ["SIS-1"]
+        assert mapped["ticket_attributions"] == [
+            {
+                "ticket_key": "SIS-1",
+                "actual_hours": 4.0,
+                "actual_cost": 400.0,
+                "worklog_count": 1,
+                "mapping_candidates": mapped["mapping_candidates"]["SIS-1"],
+            }
+        ]
         assert [candidate["jira_issue_key"] for candidate in mapped["mapping_candidates"]["SIS-1"]] == ["ROADMAP-1"]
         assert ambiguous["roadmap_item_key"] is None
         assert ambiguous["actual_hours"] == 2
         assert ambiguous["actual_cost"] == 200
         assert ambiguous["ticket_keys"] == ["SIS-2"]
+        assert ambiguous["ticket_attributions"][0]["actual_hours"] == 2.0
+        assert ambiguous["ticket_attributions"][0]["actual_cost"] == 200.0
+        assert ambiguous["ticket_attributions"][0]["worklog_count"] == 1
         assert [candidate["jira_issue_key"] for candidate in ambiguous["mapping_candidates"]["SIS-2"]] == [
             "ROADMAP-2",
             "ROADMAP-3",
@@ -1906,28 +1920,50 @@ def test_manual_roadmap_ticket_mapping_replaces_existing_links():
     with Session(engine) as db:
         first_item = RoadmapItem(
             source="jira_product_discovery",
+            fiscal_year=2027,
             jira_issue_id="10001",
             jira_issue_key="ROADMAP-1",
             title="First feature",
         )
         second_item = RoadmapItem(
             source="jira_product_discovery",
+            fiscal_year=2027,
             jira_issue_id="10002",
             jira_issue_key="ROADMAP-2",
             title="Second feature",
         )
-        db.add_all([first_item, second_item])
+        prior_year_item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2026,
+            jira_issue_id="10003",
+            jira_issue_key="ROADMAP-0",
+            title="Prior year feature",
+        )
+        db.add_all([first_item, second_item, prior_year_item])
         db.flush()
-        db.add(RoadmapItemIssueLink(roadmap_item_id=first_item.id, jira_issue_key="SIS-1", source="jira_issue_link"))
+        db.add_all(
+            [
+                RoadmapItemIssueLink(roadmap_item_id=first_item.id, jira_issue_key="SIS-1", source="jira_issue_link"),
+                RoadmapItemIssueLink(roadmap_item_id=prior_year_item.id, jira_issue_key="SIS-1", source="jira_issue_link"),
+            ]
+        )
         db.flush()
 
-        mapped = map_roadmap_ticket(db, "sis-1", second_item.id)
+        mapped = map_roadmap_ticket(db, "sis-1", second_item.id, fiscal_year=2027, actor=local_disabled_admin(), reason="Correction")
 
         links = db.scalars(select(RoadmapItemIssueLink).where(RoadmapItemIssueLink.jira_issue_key == "SIS-1")).all()
         assert mapped["roadmap_item_key"] == "ROADMAP-2"
-        assert len(links) == 1
-        assert links[0].roadmap_item_id == second_item.id
-        assert links[0].source == "manual"
+        assert len(links) == 2
+        current_link = next(link for link in links if link.roadmap_item_id == second_item.id)
+        assert current_link.source == "manual"
+        assert any(link.roadmap_item_id == prior_year_item.id for link in links)
+        change = db.scalar(select(AttributionChange))
+        assert change is not None
+        assert change.source_key == "SIS-1"
+        assert change.from_value == "ROADMAP-1 - First feature"
+        assert change.to_value == "ROADMAP-2 - Second feature"
+        assert change.changed_by_display_name == "Local Admin"
+        assert change.reason == "Correction"
 
 
 def test_forecast_recommendation_apply_adds_hours_to_explicit_forecast_line():
@@ -2071,6 +2107,55 @@ def test_roadmap_sync_preserves_manual_ticket_links():
         links = db.scalars(select(RoadmapItemIssueLink).where(RoadmapItemIssueLink.jira_issue_key == "SIS-1")).all()
         assert linked == 0
         assert len(links) == 1
+        assert links[0].source == "manual"
+
+
+def test_roadmap_sync_does_not_recreate_a_competing_link_after_manual_remap():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        original_item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="Original feature",
+        )
+        corrected_item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            jira_issue_id="10002",
+            jira_issue_key="ROADMAP-2",
+            title="Correct feature",
+        )
+        db.add_all([original_item, corrected_item])
+        db.flush()
+        db.add_all(
+            [
+                RoadmapItemIssueLink(roadmap_item_id=original_item.id, jira_issue_key="SIS-1", source="jira_issue_link"),
+                RoadmapItemIssueLink(roadmap_item_id=corrected_item.id, jira_issue_key="SIS-1", source="manual"),
+            ]
+        )
+        db.flush()
+
+        linked = _replace_roadmap_issue_links(
+            db,
+            original_item,
+            (
+                RoadmapIssueLinkPayload(
+                    issue_id="20001",
+                    issue_key="SIS-1",
+                    issue_summary="Synced ticket",
+                    jira_project_key="SIS",
+                    relationship_type="Delivery",
+                ),
+            ),
+        )
+
+        links = db.scalars(select(RoadmapItemIssueLink).where(RoadmapItemIssueLink.jira_issue_key == "SIS-1")).all()
+        assert linked == 0
+        assert len(links) == 1
+        assert links[0].roadmap_item_id == corrected_item.id
         assert links[0].source == "manual"
 
 
@@ -2485,6 +2570,122 @@ def test_product_jira_space_move_and_remove_keep_legacy_mapping_aligned():
         db.flush()
 
         assert legacy_mapping.product_id is None
+
+
+def test_product_jira_space_move_reattributes_jira_actuals_and_records_impact():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        source_product = Product(name="Original Product")
+        target_product = Product(name="Leadership Product")
+        member = TeamMember(name="Pankaj Shah", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([source_product, target_product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "NET_NEW"))
+        month_2026 = get_fiscal_month(db, 2026, 12)
+        month_2027 = get_fiscal_month(db, 2027, 1)
+        space = ProductJiraSpace(product_id=source_product.id, jira_project_key="PANK", jira_project_name="Pankaj Project")
+        legacy_mapping = JiraProductMapping(jira_project_key="PANK", jira_project_name="Pankaj Project", product_id=source_product.id)
+        roadmap_item = RoadmapItem(
+            source="jira_product_discovery",
+            fiscal_year=2027,
+            jira_issue_id="10001",
+            jira_issue_key="ROADMAP-1",
+            title="Leadership initiative",
+        )
+        db.add_all([space, legacy_mapping, roadmap_item])
+        db.flush()
+        roadmap_link = RoadmapItemIssueLink(
+            roadmap_item_id=roadmap_item.id,
+            product_id=source_product.id,
+            jira_issue_key="PANK-1",
+            jira_project_key="PANK",
+        )
+        jira_actuals = [
+            ActualEntry(
+                product_id=source_product.id,
+                team_member_id=member.id,
+                bucket_id=bucket.id,
+                fiscal_month_id=month_2026.id,
+                hours=Decimal("4"),
+                source="jira",
+                source_ticket_key="PANK-1",
+                source_worklog_id="1",
+                source_project_key="PANK",
+            ),
+            ActualEntry(
+                product_id=source_product.id,
+                team_member_id=member.id,
+                bucket_id=bucket.id,
+                fiscal_month_id=month_2026.id,
+                hours=Decimal("2"),
+                source="jira",
+                source_ticket_key="PANK-OLD",
+                source_worklog_id="legacy",
+                source_project_key=None,
+            ),
+            ActualEntry(
+                product_id=source_product.id,
+                team_member_id=member.id,
+                bucket_id=bucket.id,
+                fiscal_month_id=month_2027.id,
+                hours=Decimal("6"),
+                source="mock_jira_rovo",
+                source_ticket_key="PANK-2",
+                source_worklog_id="2",
+                source_project_key="PANK",
+            ),
+        ]
+        manual_actual = ActualEntry(
+            product_id=source_product.id,
+            team_member_id=member.id,
+            bucket_id=bucket.id,
+            fiscal_month_id=month_2027.id,
+            hours=Decimal("3"),
+            source="manual",
+            source_ticket_key="PANK-MANUAL",
+            source_worklog_id="3",
+            source_project_key="PANK",
+        )
+        forecast = ForecastEntry(
+            product_id=source_product.id,
+            team_member_id=member.id,
+            bucket_id=bucket.id,
+            fiscal_month_id=month_2027.id,
+            hours=Decimal("20"),
+        )
+        db.add_all([roadmap_link, *jira_actuals, manual_actual, forecast])
+        db.flush()
+
+        result = move_product_jira_space(
+            db,
+            source_product.id,
+            space.id,
+            target_product.id,
+            actor=local_disabled_admin(),
+            reason="Leadership changed project ownership",
+        )
+
+        assert space.product_id == target_product.id
+        assert legacy_mapping.product_id == target_product.id
+        assert all(entry.product_id == target_product.id for entry in jira_actuals)
+        assert manual_actual.product_id == source_product.id
+        assert forecast.product_id == source_product.id
+        assert roadmap_link.product_id == target_product.id
+        assert result["actual_entries_moved"] == 3
+        assert result["actual_hours_moved"] == 12.0
+        assert result["actual_cost_moved"] == 1200.0
+        assert result["roadmap_links_updated"] == 1
+        change = db.scalar(select(AttributionChange))
+        assert change is not None
+        assert change.change_type == "jira_project_product"
+        assert change.source_key == "PANK"
+        assert change.from_value == "Original Product"
+        assert change.to_value == "Leadership Product"
+        assert change.affected_actual_count == 3
+        assert change.affected_hours == Decimal("12.00")
+        assert change.affected_cost == Decimal("1200.00")
 
 
 def test_product_jira_space_mapping_allows_multiple_projects_and_clears_scope():

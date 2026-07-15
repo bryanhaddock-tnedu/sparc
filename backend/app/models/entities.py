@@ -85,6 +85,29 @@ class UserProgramAreaAssignment(TimestampMixin, Base):
     user: Mapped[AppUser] = relationship(back_populates="program_area_assignments")
 
 
+class AttributionChange(Base):
+    __tablename__ = "attribution_changes"
+    __table_args__ = (
+        Index("ix_attribution_changes_change_type", "change_type"),
+        Index("ix_attribution_changes_source_key", "source_key"),
+        Index("ix_attribution_changes_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    change_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    source_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    from_value: Mapped[str | None] = mapped_column(Text)
+    to_value: Mapped[str | None] = mapped_column(Text)
+    affected_actual_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    affected_hours: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
+    affected_cost: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"), nullable=False)
+    changed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_users.id", ondelete="SET NULL"))
+    changed_by_display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    changed_by_email: Mapped[str | None] = mapped_column(String(320))
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
 class ProductBudget(TimestampMixin, Base):
     __tablename__ = "product_budgets"
     __table_args__ = (UniqueConstraint("product_id", "fiscal_year", name="uq_product_budget_product_fiscal_year"),)

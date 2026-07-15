@@ -1,6 +1,7 @@
 from app.schemas.api import (
     AdminDataExportOptionResponse,
     AdminDataImportResult,
+    AttributionChangeResponse,
     ApiMessage,
     AppUserCreate,
     AppUserResponse,
@@ -49,6 +50,8 @@ from app.schemas.api import (
     ProductBucketTablesResponse,
     ProductResponse,
     ProductJiraSpaceCreate,
+    ProductJiraSpaceMoveRequest,
+    ProductJiraSpaceMoveResponse,
     ProductJiraSpaceResponse,
     ProductJiraSpaceUpdate,
     ProductSummaryResponse,
@@ -73,6 +76,7 @@ from app.schemas.api import (
 __all__ = [
     "AdminDataExportOptionResponse",
     "AdminDataImportResult",
+    "AttributionChangeResponse",
     "ApiMessage",
     "AppUserCreate",
     "AppUserResponse",
@@ -120,6 +124,8 @@ __all__ = [
     "ProductBucketTablesResponse",
     "ProductCreate",
     "ProductJiraSpaceCreate",
+    "ProductJiraSpaceMoveRequest",
+    "ProductJiraSpaceMoveResponse",
     "ProductJiraSpaceResponse",
     "ProductJiraSpaceUpdate",
     "ProductResponse",

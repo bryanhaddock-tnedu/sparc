@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.config import get_settings
-from app.models import JiraProductMapping, JiraProjectCatalog, Product, ProductJiraSpace
+from app.models import ActualEntry, JiraProductMapping, JiraProjectCatalog, Product, ProductJiraSpace, RoadmapItemIssueLink
 from app.models.entities import utcnow
+from app.services.access_control import AuthenticatedUser
+from app.services.attribution_changes import record_attribution_change
+from app.services.costs import calculate_cost, round_hours
 
 
 @dataclass(frozen=True)
@@ -159,6 +163,86 @@ def update_product_jira_space(
         _clear_legacy_product_mapping(db, space)
     db.flush()
     return space
+
+
+def move_product_jira_space(
+    db: Session,
+    product_id: int,
+    space_id: int,
+    target_product_id: int,
+    *,
+    actor: AuthenticatedUser | None = None,
+    reason: str | None = None,
+) -> dict[str, object]:
+    space = _get_product_jira_space(db, product_id, space_id)
+    source_product = db.get(Product, product_id)
+    target_product = db.get(Product, target_product_id)
+    if source_product is None:
+        raise ValueError("Source Product not found")
+    if target_product is None:
+        raise ValueError("Target Product not found")
+    if not target_product.is_active:
+        raise ValueError("Jira projects can only be moved to an active Product")
+    if target_product.id == source_product.id:
+        raise ValueError("Choose a different target Product")
+
+    actual_entries = db.scalars(
+        select(ActualEntry)
+        .options(joinedload(ActualEntry.team_member))
+        .where(
+            ActualEntry.source.in_(("jira", "mock_jira_rovo")),
+            or_(
+                ActualEntry.source_project_key == space.jira_project_key,
+                ActualEntry.source_ticket_key.like(f"{space.jira_project_key}-%"),
+            ),
+        )
+    ).all()
+    actual_hours = sum((entry.hours for entry in actual_entries), Decimal("0"))
+    actual_cost = sum(
+        (Decimal(str(calculate_cost(entry.hours, entry.team_member.bill_rate))) for entry in actual_entries),
+        Decimal("0"),
+    )
+    for entry in actual_entries:
+        entry.product_id = target_product.id
+
+    roadmap_links = db.scalars(
+        select(RoadmapItemIssueLink).where(
+            or_(
+                RoadmapItemIssueLink.jira_project_key == space.jira_project_key,
+                RoadmapItemIssueLink.jira_issue_key.like(f"{space.jira_project_key}-%"),
+            )
+        )
+    ).all()
+    for link in roadmap_links:
+        link.product_id = target_product.id
+
+    space.product_id = target_product.id
+    _sync_legacy_product_mapping(db, space)
+    record_attribution_change(
+        db,
+        change_type="jira_project_product",
+        source_key=space.jira_project_key,
+        from_value=source_product.name,
+        to_value=target_product.name,
+        affected_actual_count=len(actual_entries),
+        affected_hours=actual_hours,
+        affected_cost=actual_cost,
+        actor=actor,
+        reason=reason,
+    )
+    db.flush()
+    return {
+        "jira_project_key": space.jira_project_key,
+        "from_product_id": source_product.id,
+        "from_product": source_product.name,
+        "to_product_id": target_product.id,
+        "to_product": target_product.name,
+        "actual_entries_moved": len(actual_entries),
+        "actual_hours_moved": round_hours(actual_hours),
+        "actual_cost_moved": round(float(actual_cost), 2),
+        "roadmap_links_updated": len(roadmap_links),
+        "space": serialize_product_jira_space(space),
+    }
 
 
 def remove_product_jira_space(db: Session, product_id: int, space_id: int) -> None:

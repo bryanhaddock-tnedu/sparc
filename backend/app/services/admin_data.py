@@ -69,6 +69,7 @@ EXCLUDED_PACKAGE_DATA = (
     "AppUser credentials and Entra identity links",
     "UserProgramAreaAssignment access grants",
     "ForecastRecommendationDecision audit history",
+    "AttributionChange correction audit history",
     "JiraProductMapping discovery cache",
 )
 

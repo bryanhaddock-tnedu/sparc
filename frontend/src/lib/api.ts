@@ -1,6 +1,7 @@
 import type {
   AdminDataExportOption,
   AdminDataImportResult,
+  AttributionChange,
   AppUser,
   AppUserCreatePayload,
   AppUserUpdatePayload,
@@ -37,6 +38,7 @@ import type {
   ProductBucketTables,
   ProductCreatePayload,
   ProductJiraSpace,
+  ProductJiraSpaceMoveResult,
   ProductJiraSpacePayload,
   ProductJiraSpaceUpdatePayload,
   ProductSummary,
@@ -278,6 +280,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
+  moveProductJiraSpace: (productId: ProductRef, spaceId: number, targetProductId: number, reason?: string) =>
+    request<ProductJiraSpaceMoveResult>(`/api/products/${encodeURIComponent(String(productId))}/jira-spaces/${spaceId}/move`, {
+      method: "POST",
+      body: JSON.stringify({ target_product_id: targetProductId, reason }),
+    }),
   removeProductJiraSpace: (productId: ProductRef, spaceId: number) =>
     request<{ message: string }>(`/api/products/${encodeURIComponent(String(productId))}/jira-spaces/${spaceId}`, {
       method: "DELETE",
@@ -363,6 +370,8 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
+  attributionChanges: (limit = 50) =>
+    request<AttributionChange[]>(`/api/integrations/jira-rovo/attribution-changes?limit=${limit}`),
   jiraIntegrationStatus: () => request<JiraIntegrationStatus>("/api/integrations/jira-rovo/status"),
   unmappedUsers: () => request<UnmappedUser[]>("/api/integrations/jira-rovo/unmapped-users"),
   unmappedProducts: () => request<UnmappedProduct[]>("/api/integrations/jira-rovo/unmapped-products"),

@@ -294,6 +294,8 @@ export interface RoadmapItemMapPayload {
 
 export interface RoadmapTicketMapPayload {
   roadmap_item_id: number | null;
+  fiscal_year?: number | null;
+  reason?: string | null;
 }
 
 export interface RoadmapTicketMapResult {
@@ -307,6 +309,14 @@ export interface RoadmapItemCandidate {
   id: number;
   jira_issue_key: string;
   title: string;
+}
+
+export interface RoadmapTicketAttributionDetail {
+  ticket_key: string;
+  actual_hours: number;
+  actual_cost: number;
+  worklog_count: number;
+  mapping_candidates: RoadmapItemCandidate[];
 }
 
 export interface RoadmapActualRow {
@@ -332,6 +342,7 @@ export interface RoadmapActualRow {
   ticket_keys: string[];
   mapping_status: string;
   mapping_candidates: Record<string, RoadmapItemCandidate[]>;
+  ticket_attributions: RoadmapTicketAttributionDetail[];
 }
 
 export interface RoadmapForecastAllocation {
@@ -520,6 +531,35 @@ export interface ProductJiraSpacePayload {
 export interface ProductJiraSpaceUpdatePayload {
   is_active?: boolean;
   scope_jql?: string | null;
+}
+
+export interface ProductJiraSpaceMoveResult {
+  jira_project_key: string;
+  from_product_id: number;
+  from_product: string;
+  to_product_id: number;
+  to_product: string;
+  actual_entries_moved: number;
+  actual_hours_moved: number;
+  actual_cost_moved: number;
+  roadmap_links_updated: number;
+  space: ProductJiraSpace;
+}
+
+export interface AttributionChange {
+  id: number;
+  change_type: string;
+  source_key: string;
+  from_value: string | null;
+  to_value: string | null;
+  affected_actual_count: number;
+  affected_hours: number;
+  affected_cost: number;
+  changed_by_user_id: number | null;
+  changed_by_display_name: string;
+  changed_by_email: string | null;
+  reason: string | null;
+  created_at: string;
 }
 
 export interface EstimationProfile {

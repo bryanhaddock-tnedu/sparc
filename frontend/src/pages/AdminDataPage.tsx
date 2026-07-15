@@ -15,6 +15,7 @@ const EXCLUDED_PACKAGE_DATA = [
   "Jira catalog, Roadmap, and generated estimate caches",
   "SPARC user credentials and Program Area access grants",
   "Forecast recommendation audit history",
+  "Attribution correction audit history",
 ];
 
 export function AdminDataPage({ embedded = false }: { embedded?: boolean } = {}) {

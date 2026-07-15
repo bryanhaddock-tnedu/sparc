@@ -20,6 +20,8 @@ from app.models import (
     RoadmapItemIssueLink,
     SyncRun,
 )
+from app.services.access_control import AuthenticatedUser
+from app.services.attribution_changes import record_attribution_change
 from app.services.costs import calculate_cost, round_hours
 from app.services.estimation_policy import WORK_TYPE_ALIASES, normalize_lookup_value
 from app.services.jira_projects import _raise_for_jira_response
@@ -292,27 +294,62 @@ def roadmap_actual_gap_rows(db: Session, fiscal_year: int, *, month_sequence: in
     ]
 
 
-def map_roadmap_ticket(db: Session, ticket_key: str, roadmap_item_id: int | None) -> dict[str, object]:
+def map_roadmap_ticket(
+    db: Session,
+    ticket_key: str,
+    roadmap_item_id: int | None,
+    *,
+    fiscal_year: int | None = None,
+    actor: AuthenticatedUser | None = None,
+    reason: str | None = None,
+) -> dict[str, object]:
     normalized_ticket_key = _normalize_issue_key(ticket_key)
     if not normalized_ticket_key:
         raise ValueError("Ticket key is required")
 
-    existing_links = db.scalars(select(RoadmapItemIssueLink).where(RoadmapItemIssueLink.jira_issue_key == normalized_ticket_key)).all()
+    item = db.get(RoadmapItem, roadmap_item_id) if roadmap_item_id is not None else None
+    if roadmap_item_id is not None and item is None:
+        raise ValueError("Roadmap Item not found")
+    if item is not None and fiscal_year is not None and item.fiscal_year != fiscal_year:
+        raise ValueError("Roadmap Item does not belong to the selected fiscal year")
+
+    all_existing_links = db.scalars(
+        select(RoadmapItemIssueLink)
+        .options(joinedload(RoadmapItemIssueLink.roadmap_item))
+        .where(RoadmapItemIssueLink.jira_issue_key == normalized_ticket_key)
+    ).all()
+    existing_links = [
+        link
+        for link in all_existing_links
+        if fiscal_year is None or link.roadmap_item.fiscal_year == fiscal_year
+    ]
+    from_value = ", ".join(
+        sorted({f"{link.roadmap_item.jira_issue_key} - {link.roadmap_item.title}" for link in existing_links})
+    ) or "Unmapped"
+    impact_fiscal_year = fiscal_year if fiscal_year is not None else item.fiscal_year if item is not None else None
+    impact = _ticket_actual_impact(db, normalized_ticket_key, impact_fiscal_year)
+
     for link in existing_links:
         db.delete(link)
     db.flush()
 
     if roadmap_item_id is None:
+        record_attribution_change(
+            db,
+            change_type="roadmap_ticket",
+            source_key=normalized_ticket_key,
+            from_value=from_value,
+            to_value="Unmapped",
+            actor=actor,
+            reason=reason,
+            **impact,
+        )
         return {
             "ticket_key": normalized_ticket_key,
             "roadmap_item_id": None,
             "roadmap_item_key": None,
             "roadmap_item_title": None,
         }
-
-    item = db.get(RoadmapItem, roadmap_item_id)
-    if item is None:
-        raise ValueError("Roadmap Item not found")
 
     link = RoadmapItemIssueLink(
         roadmap_item_id=item.id,
@@ -323,6 +360,16 @@ def map_roadmap_ticket(db: Session, ticket_key: str, roadmap_item_id: int | None
         last_synced_at=utcnow(),
     )
     db.add(link)
+    record_attribution_change(
+        db,
+        change_type="roadmap_ticket",
+        source_key=normalized_ticket_key,
+        from_value=from_value,
+        to_value=f"{item.jira_issue_key} - {item.title}",
+        actor=actor,
+        reason=reason,
+        **impact,
+    )
     db.flush()
     return {
         "ticket_key": normalized_ticket_key,
@@ -511,24 +558,47 @@ def roadmap_actual_rows(
                 "ticket_keys": set(),
                 "mapping_status": mapping_status,
                 "mapping_candidates": {},
+                "ticket_attributions": {},
             },
         )
+        entry_cost = calculate_cost(entry.hours, entry.team_member.bill_rate)
         row["actual_hours"] += entry.hours
-        row["actual_cost"] = round(float(row["actual_cost"]) + calculate_cost(entry.hours, entry.team_member.bill_rate), 2)
+        row["actual_cost"] = round(float(row["actual_cost"]) + entry_cost, 2)
         row["worklog_count"] += 1
         if ticket_key:
             row["ticket_keys"].add(ticket_key)
             row["mapping_candidates"][ticket_key] = mapping_candidates
+            ticket_attribution = row["ticket_attributions"].setdefault(
+                ticket_key,
+                {
+                    "ticket_key": ticket_key,
+                    "actual_hours": Decimal("0"),
+                    "actual_cost": 0.0,
+                    "worklog_count": 0,
+                    "mapping_candidates": mapping_candidates,
+                },
+            )
+            ticket_attribution["actual_hours"] += entry.hours
+            ticket_attribution["actual_cost"] = round(float(ticket_attribution["actual_cost"]) + entry_cost, 2)
+            ticket_attribution["worklog_count"] += 1
 
     rows = []
     for row in grouped.values():
         ticket_keys = sorted(row["ticket_keys"])
+        ticket_attributions = [
+            {
+                **attribution,
+                "actual_hours": round_hours(attribution["actual_hours"]),
+            }
+            for attribution in sorted(row["ticket_attributions"].values(), key=lambda attribution: attribution["ticket_key"])
+        ]
         rows.append(
             {
                 **row,
                 "actual_hours": round_hours(row["actual_hours"]),
                 "ticket_count": len(ticket_keys),
                 "ticket_keys": ticket_keys,
+                "ticket_attributions": ticket_attributions,
             }
         )
     return sorted(rows, key=_roadmap_actual_sort_key)
@@ -592,6 +662,21 @@ def _remove_stale_roadmap_items_from_fiscal_year(
 
 def _replace_roadmap_issue_links(db: Session, item: RoadmapItem, links: tuple[RoadmapIssueLinkPayload, ...]) -> int:
     existing = {link.jira_issue_key: link for link in item.issue_links}
+    payload_keys = {
+        issue_key
+        for payload in links
+        if (issue_key := _normalize_issue_key(payload.issue_key)) and issue_key != item.jira_issue_key
+    }
+    manual_links = db.scalars(
+        select(RoadmapItemIssueLink)
+        .join(RoadmapItemIssueLink.roadmap_item)
+        .where(
+            RoadmapItemIssueLink.source == "manual",
+            RoadmapItemIssueLink.jira_issue_key.in_(payload_keys),
+            RoadmapItem.fiscal_year == item.fiscal_year,
+        )
+    ).all() if payload_keys else []
+    manual_by_ticket = {link.jira_issue_key: link for link in manual_links}
     seen: set[str] = set()
     linked = 0
     now = utcnow()
@@ -599,8 +684,12 @@ def _replace_roadmap_issue_links(db: Session, item: RoadmapItem, links: tuple[Ro
         issue_key = _normalize_issue_key(payload.issue_key)
         if not issue_key or issue_key in seen or issue_key == item.jira_issue_key:
             continue
+        manual_link = manual_by_ticket.get(issue_key)
+        if manual_link is not None and manual_link.roadmap_item_id != item.id:
+            # A deliberate correction owns this ticket until an admin changes it.
+            continue
         seen.add(issue_key)
-        link = existing.get(issue_key)
+        link = manual_link or existing.get(issue_key)
         if link is None:
             link = RoadmapItemIssueLink(roadmap_item_id=item.id, jira_issue_key=issue_key)
             db.add(link)
@@ -615,7 +704,8 @@ def _replace_roadmap_issue_links(db: Session, item: RoadmapItem, links: tuple[Ro
         link.source_category = payload.category
         link.bucket_id = _bucket_id_from_category(db, payload.category) or item.bucket_id
         link.relationship_type = payload.relationship_type
-        link.source = ROADMAP_LINK_SOURCE
+        if manual_link is None:
+            link.source = ROADMAP_LINK_SOURCE
         link.last_synced_at = now
         linked += 1
 
@@ -656,6 +746,22 @@ def _actual_entries(
     if month_sequence is not None:
         statement = statement.where(FiscalMonth.sequence == month_sequence)
     return db.scalars(statement).all()
+
+
+def _ticket_actual_impact(db: Session, ticket_key: str, fiscal_year: int | None) -> dict[str, object]:
+    statement = (
+        select(ActualEntry)
+        .options(joinedload(ActualEntry.team_member))
+        .where(ActualEntry.source_ticket_key == ticket_key)
+    )
+    if fiscal_year is not None:
+        statement = statement.join(ActualEntry.fiscal_month).where(FiscalMonth.fiscal_year == fiscal_year)
+    entries = db.scalars(statement).all()
+    return {
+        "affected_actual_count": len(entries),
+        "affected_hours": sum((entry.hours for entry in entries), Decimal("0")),
+        "affected_cost": sum((Decimal(str(calculate_cost(entry.hours, entry.team_member.bill_rate))) for entry in entries), Decimal("0")),
+    }
 
 
 def _roadmap_links_by_ticket(db: Session, entries: list[ActualEntry], fiscal_year: int) -> dict[str, list[RoadmapItemIssueLink]]:

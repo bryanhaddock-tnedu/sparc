@@ -13,6 +13,7 @@ import { api } from "../lib/api";
 import { fiscalYearRangeLabel as formatFiscalYearRangeLabel, useFiscalYear } from "../lib/fiscalYear";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type {
+  AttributionChange,
   Bucket,
   ForecastRecommendationAction,
   ForecastRecommendationDecision,
@@ -24,6 +25,7 @@ import type {
   ReportedValueRow,
   RoadmapActualRow,
   RoadmapItem,
+  RoadmapItemCandidate,
   SyncRun,
   TeamMember,
 } from "../types/api";
@@ -115,6 +117,22 @@ type RoadmapItemCoverageRow = {
   linkedTickets: number;
 };
 
+type RoadmapTicketAttribution = {
+  ticketKey: string;
+  mappingStatus: string;
+  roadmapItemId: number | null;
+  roadmapItemKey: string | null;
+  roadmapItemTitle: string | null;
+  products: string[];
+  teamMembers: string[];
+  buckets: string[];
+  programAreas: string[];
+  actualHours: number;
+  actualCost: number;
+  worklogCount: number;
+  mappingCandidates: RoadmapItemCandidate[];
+};
+
 const EMPTY_ROADMAP_FILTERS: RoadmapFilterState = {
   productId: "",
   teamMemberId: "",
@@ -142,6 +160,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [forecastDecisions, setForecastDecisions] = useState<ForecastRecommendationDecision[]>([]);
   const [syncRuns, setSyncRuns] = useState<SyncRun[]>([]);
+  const [attributionChanges, setAttributionChanges] = useState<AttributionChange[]>([]);
   const [jiraStatus, setJiraStatus] = useState<JiraIntegrationStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [liveSyncing, setLiveSyncing] = useState(false);
@@ -169,6 +188,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       reportedValueRows,
       forecastDecisionRows,
       runs,
+      changeRows,
       status,
     ] = await Promise.all([
       api.teamMembers(),
@@ -184,6 +204,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       api.reportedValues({}, fiscalYear),
       api.forecastRecommendationDecisions(fiscalYear),
       api.syncRuns(),
+      api.attributionChanges(),
       api.jiraIntegrationStatus(),
     ]);
     setTeamMembers(members);
@@ -199,6 +220,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     setReportedRows(reportedValueRows);
     setForecastDecisions(forecastDecisionRows);
     setSyncRuns(runs);
+    setAttributionChanges(changeRows);
     setJiraStatus(status);
   }
 
@@ -286,12 +308,32 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     }
   }
 
-  async function updateRoadmapTicketMapping(ticketKey: string, roadmapItemId: number | null) {
+  async function updateRoadmapTicketMapping(attribution: RoadmapTicketAttribution, roadmapItemId: number | null) {
+    if (attribution.roadmapItemId === roadmapItemId && attribution.mappingStatus === "mapped") return;
+    const targetItem = roadmapItems.find((item) => item.id === roadmapItemId);
+    const fromLabel = attribution.roadmapItemId
+      ? `${attribution.roadmapItemKey ?? "Roadmap Item"} - ${attribution.roadmapItemTitle ?? "Untitled"}`
+      : attribution.mappingStatus;
+    const toLabel = targetItem ? `${targetItem.jira_issue_key} - ${targetItem.title}` : "Unmapped";
+    const confirmed = window.confirm(
+      `Change ${attribution.ticketKey} from ${fromLabel} to ${toLabel}?\n\n` +
+        `This changes ${fiscalYearLabel} Roadmap attribution for ${attribution.worklogCount} worklogs, ` +
+        `${formatHours(attribution.actualHours)} hours, and ${formatCurrency(attribution.actualCost)}. Product ownership and Forecasts will not change.`,
+    );
+    if (!confirmed) return;
     setError(null);
     setNotice(null);
     try {
-      await api.updateRoadmapTicketMapping(ticketKey, { roadmap_item_id: roadmapItemId });
+      await api.updateRoadmapTicketMapping(attribution.ticketKey, {
+        roadmap_item_id: roadmapItemId,
+        fiscal_year: fiscalYear,
+        reason: "Manual Roadmap ticket attribution correction",
+      });
       await loadData();
+      setNotice(
+        `${attribution.ticketKey} was assigned to ${toLabel} for ${fiscalYearLabel}. ` +
+          `${formatHours(attribution.actualHours)} hours and ${formatCurrency(attribution.actualCost)} now roll up through that attribution.`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update ticket Roadmap Item mapping");
     }
@@ -377,13 +419,26 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const roadmapItemMappingSummary = useMemo(() => buildRoadmapItemMappingSummary(roadmapItems), [roadmapItems]);
   const programAreaOptions = useMemo(() => programAreaOptionsFrom(roadmapActualRows, roadmapItems), [roadmapActualRows, roadmapItems]);
   const visibleRoadmapActualRows = useMemo(() => filterRoadmapActualRows(roadmapActualRows, roadmapFilters), [roadmapActualRows, roadmapFilters]);
+  const visibleFullYearRoadmapActualRows = useMemo(
+    () => filterRoadmapActualRows(roadmapForecastActualRows, roadmapFilters),
+    [roadmapForecastActualRows, roadmapFilters],
+  );
   const visibleRoadmapGapRows = useMemo(() => filterRoadmapActualRows(roadmapGaps, roadmapFilters), [roadmapGaps, roadmapFilters]);
   const visibleMappedRoadmapActualRows = useMemo(
     () => visibleRoadmapActualRows.filter((row) => row.mapping_status === "mapped"),
     [visibleRoadmapActualRows],
   );
   const visibleReportedRows = useMemo(() => filterReportedRows(reportedRows, roadmapFilters), [reportedRows, roadmapFilters]);
-  const roadmapGapTickets = useMemo(() => expandRoadmapGapTickets(visibleRoadmapGapRows), [visibleRoadmapGapRows]);
+  const roadmapTicketAttributions = useMemo(() => {
+    const fullYearAttributions = buildRoadmapTicketAttributions(visibleFullYearRoadmapActualRows);
+    if (!roadmapFilters.monthSequence) return fullYearAttributions;
+    const selectedMonthTickets = new Set(buildRoadmapTicketAttributions(visibleRoadmapActualRows).map((row) => row.ticketKey));
+    return fullYearAttributions.filter((row) => selectedMonthTickets.has(row.ticketKey));
+  }, [roadmapFilters.monthSequence, visibleFullYearRoadmapActualRows, visibleRoadmapActualRows]);
+  const roadmapGapTickets = useMemo(
+    () => roadmapTicketAttributions.filter((attribution) => attribution.mappingStatus !== "mapped"),
+    [roadmapTicketAttributions],
+  );
   const billingSummary = useMemo(
     () => buildRoadmapBillingSummary(visibleMappedRoadmapActualRows, visibleRoadmapGapRows),
     [visibleMappedRoadmapActualRows, visibleRoadmapGapRows],
@@ -552,49 +607,62 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         onChange={updateRoadmapItemMapping}
       />
 
-      <MappingTable title="Roadmap Actual Gaps" unmapped={roadmapGapTickets.length} badgeLabel="gaps">
+      <MappingTable title="Roadmap Ticket Attribution" unmapped={roadmapGapTickets.length} badgeLabel="gaps">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Ticket</TableHead>
               <TableHead>Product</TableHead>
-              <TableHead>Team Member</TableHead>
+              <TableHead>Team Members</TableHead>
               <TableHead>Bucket</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>FY Impact</TableHead>
               <TableHead>Roadmap Item</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {roadmapGapTickets.length ? (
-              roadmapGapTickets.map((gap) => {
-                const roadmapItemOptions = gap.row.mapping_status === "ambiguous" ? gap.mappingCandidates : sortedRoadmapItems;
+            {roadmapTicketAttributions.length ? (
+              roadmapTicketAttributions.map((attribution) => {
+                const roadmapItemOptions = attribution.mappingStatus === "ambiguous" ? attribution.mappingCandidates : sortedRoadmapItems;
+                const selectValue = attribution.mappingStatus === "mapped" && attribution.roadmapItemId ? String(attribution.roadmapItemId) : "";
                 return (
-                  <TableRow key={gap.key}>
+                  <TableRow key={attribution.ticketKey}>
                     <TableCell>
-                      <div className="font-medium text-primary">{gap.ticketKey}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatHours(gap.row.actual_hours)} / {formatCurrency(gap.row.actual_cost)}
-                      </div>
+                      <div className="font-medium text-primary">{attribution.ticketKey}</div>
                     </TableCell>
-                    <TableCell>{gap.row.product}</TableCell>
+                    <TableCell>{attribution.products.join(", ")}</TableCell>
+                    <TableCell>{attribution.teamMembers.join(", ")}</TableCell>
+                    <TableCell>{attribution.buckets.join(", ")}</TableCell>
                     <TableCell>
-                      <TeamMemberNameLink className="font-medium text-primary hover:underline" member={gap.row}>
-                        {gap.row.team_member}
-                      </TeamMemberNameLink>
-                    </TableCell>
-                    <TableCell>{gap.row.bucket}</TableCell>
-                    <TableCell>
-                      <Badge className={gap.row.mapping_status === "ambiguous" ? "border-warning/50 text-warning" : "border-muted text-muted-foreground"}>
-                        {gap.row.mapping_status}
+                      <Badge
+                        className={
+                          attribution.mappingStatus === "mapped"
+                            ? "border-primary/40 text-primary"
+                            : attribution.mappingStatus === "ambiguous"
+                              ? "border-warning/50 text-warning"
+                              : "border-muted text-muted-foreground"
+                        }
+                      >
+                        {attribution.mappingStatus}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div>{formatHours(attribution.actualHours)} / {formatCurrency(attribution.actualCost)}</div>
+                      <div className="text-xs text-muted-foreground">{attribution.worklogCount} worklogs</div>
                     </TableCell>
                     <TableCell>
                       <select
                         className="h-9 w-full min-w-64 rounded-md border border-input bg-background px-2 text-sm"
-                        defaultValue=""
-                        onChange={(event) => void updateRoadmapTicketMapping(gap.ticketKey, event.target.value ? Number(event.target.value) : null)}
+                        value={selectValue}
+                        onChange={(event) => void updateRoadmapTicketMapping(attribution, event.target.value ? Number(event.target.value) : null)}
                       >
-                        <option value="">{gap.row.mapping_status === "ambiguous" ? "Choose competing Roadmap Item" : "Map to Roadmap Item"}</option>
+                        <option value="">
+                          {attribution.mappingStatus === "mapped"
+                            ? "Leave unmapped"
+                            : attribution.mappingStatus === "ambiguous"
+                              ? "Choose competing Roadmap Item"
+                              : "Map to Roadmap Item"}
+                        </option>
                         {roadmapItemOptions.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.jira_issue_key} - {item.title}
@@ -607,14 +675,61 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
               })
             ) : (
               <TableRow>
-                <TableCell className="py-6 text-sm text-muted-foreground" colSpan={6}>
-                  No Roadmap Actual gaps for {fiscalYearLabel}.
+                <TableCell className="py-6 text-sm text-muted-foreground" colSpan={7}>
+                  No Jira Actual tickets for {fiscalYearLabel}.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </MappingTable>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Attribution Changes</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Source</TableHead>
+                <TableHead>Correction</TableHead>
+                <TableHead>Impact</TableHead>
+                <TableHead>Changed By</TableHead>
+                <TableHead>Changed</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {attributionChanges.length ? (
+                attributionChanges.map((change) => (
+                  <TableRow key={change.id}>
+                    <TableCell>
+                      <div className="font-medium text-primary">{change.source_key}</div>
+                      <div className="text-xs text-muted-foreground">{attributionChangeTypeLabel(change.change_type)}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div>{change.from_value ?? "Unmapped"} to {change.to_value ?? "Unmapped"}</div>
+                      {change.reason ? <div className="text-xs text-muted-foreground">{change.reason}</div> : null}
+                    </TableCell>
+                    <TableCell>
+                      <div>{formatHours(change.affected_hours)} / {formatCurrency(change.affected_cost)}</div>
+                      <div className="text-xs text-muted-foreground">{change.affected_actual_count} Actual entries</div>
+                    </TableCell>
+                    <TableCell>{change.changed_by_display_name}</TableCell>
+                    <TableCell>{formatDateTime(change.created_at)}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell className="py-6 text-sm text-muted-foreground" colSpan={5}>
+                    No attribution corrections have been recorded.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -1574,15 +1689,69 @@ type RoadmapItemCoverageAccumulator = {
   linkedTickets: number;
 };
 
-function expandRoadmapGapTickets(rows: RoadmapActualRow[]) {
-  return rows.flatMap((row) =>
-    row.ticket_keys.map((ticketKey) => ({
-      key: `${row.mapping_status}:${row.product_id}:${row.team_member_id}:${row.bucket_id}:${ticketKey}`,
-      ticketKey,
-      row,
-      mappingCandidates: row.mapping_candidates?.[ticketKey] ?? [],
-    })),
-  );
+function buildRoadmapTicketAttributions(rows: RoadmapActualRow[]): RoadmapTicketAttribution[] {
+  const tickets = new Map<
+    string,
+    Omit<RoadmapTicketAttribution, "products" | "teamMembers" | "buckets" | "programAreas" | "mappingCandidates"> & {
+      products: Set<string>;
+      teamMembers: Set<string>;
+      buckets: Set<string>;
+      programAreas: Set<string>;
+      mappingCandidates: Map<number, RoadmapItemCandidate>;
+    }
+  >();
+
+  rows.forEach((row) => {
+    row.ticket_attributions.forEach((detail) => {
+      const current = tickets.get(detail.ticket_key) ?? {
+        ticketKey: detail.ticket_key,
+        mappingStatus: row.mapping_status,
+        roadmapItemId: row.roadmap_item_id,
+        roadmapItemKey: row.roadmap_item_key,
+        roadmapItemTitle: row.roadmap_item_title,
+        products: new Set<string>(),
+        teamMembers: new Set<string>(),
+        buckets: new Set<string>(),
+        programAreas: new Set<string>(),
+        actualHours: 0,
+        actualCost: 0,
+        worklogCount: 0,
+        mappingCandidates: new Map<number, RoadmapItemCandidate>(),
+      };
+      current.products.add(row.product);
+      current.teamMembers.add(row.team_member);
+      current.buckets.add(row.bucket);
+      current.programAreas.add(row.program_area || "Unassigned");
+      current.actualHours += detail.actual_hours;
+      current.actualCost += detail.actual_cost;
+      current.worklogCount += detail.worklog_count;
+      detail.mapping_candidates.forEach((candidate) => current.mappingCandidates.set(candidate.id, candidate));
+      tickets.set(detail.ticket_key, current);
+    });
+  });
+
+  return Array.from(tickets.values())
+    .map((ticket) => ({
+      ...ticket,
+      products: Array.from(ticket.products).sort(),
+      teamMembers: Array.from(ticket.teamMembers).sort(),
+      buckets: Array.from(ticket.buckets).sort(),
+      programAreas: Array.from(ticket.programAreas).sort(),
+      mappingCandidates: Array.from(ticket.mappingCandidates.values()).sort((left, right) =>
+        left.jira_issue_key.localeCompare(right.jira_issue_key),
+      ),
+    }))
+    .sort(
+      (left, right) =>
+        roadmapAttributionStatusRank(left.mappingStatus) - roadmapAttributionStatusRank(right.mappingStatus) ||
+        left.ticketKey.localeCompare(right.ticketKey),
+    );
+}
+
+function roadmapAttributionStatusRank(status: string) {
+  if (status === "ambiguous") return 0;
+  if (status === "unmapped") return 1;
+  return 2;
 }
 
 function filterRoadmapActualRows(rows: RoadmapActualRow[], filters: RoadmapFilterState) {
@@ -1923,19 +2092,19 @@ function addSummaryCsvRows(rows: Array<Array<string | number>>, section: string,
   });
 }
 
-function roadmapGapCsvRows(gaps: ReturnType<typeof expandRoadmapGapTickets>) {
+function roadmapGapCsvRows(gaps: RoadmapTicketAttribution[]) {
   return [
-    ["ticket_key", "mapping_status", "product", "team_member", "bucket", "program_area", "group_ticket_count", "group_hours", "group_cost"],
+    ["ticket_key", "mapping_status", "products", "team_members", "buckets", "program_areas", "worklogs", "actual_hours", "actual_cost"],
     ...gaps.map((gap) => [
       gap.ticketKey,
-      gap.row.mapping_status,
-      gap.row.product,
-      gap.row.team_member,
-      gap.row.bucket,
-      gap.row.program_area ?? "Unassigned",
-      gap.row.ticket_count,
-      roundCsvNumber(gap.row.actual_hours),
-      roundCsvNumber(gap.row.actual_cost),
+      gap.mappingStatus,
+      gap.products.join("; "),
+      gap.teamMembers.join("; "),
+      gap.buckets.join("; "),
+      gap.programAreas.join("; "),
+      gap.worklogCount,
+      roundCsvNumber(gap.actualHours),
+      roundCsvNumber(gap.actualCost),
     ]),
   ];
 }
@@ -2019,6 +2188,10 @@ function formatDate(value: string) {
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+function attributionChangeTypeLabel(changeType: string) {
+  return changeType === "jira_project_product" ? "Jira project to Product" : "Jira ticket to Roadmap Item";
 }
 
 function latestCatalogCheckedAt(projects: JiraProjectCatalog[]) {

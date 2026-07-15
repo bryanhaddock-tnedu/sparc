@@ -28,6 +28,8 @@ from app.schemas import (
     ProductBucketTablesResponse,
     ProductCreate,
     ProductJiraSpaceCreate,
+    ProductJiraSpaceMoveRequest,
+    ProductJiraSpaceMoveResponse,
     ProductJiraSpaceResponse,
     ProductJiraSpaceUpdate,
     ProductResponse,
@@ -51,6 +53,7 @@ from app.services.auth import (
 from app.services.jira_projects import (
     add_product_jira_space,
     list_product_jira_spaces,
+    move_product_jira_space,
     remove_product_jira_space,
     serialize_product_jira_space,
     update_product_jira_space,
@@ -338,6 +341,31 @@ def edit_product_jira_space(
     except ValueError as exc:
         db.rollback()
         raise not_found(str(exc).replace(" not found", "")) from exc
+
+
+@router.post("/{product_ref}/jira-spaces/{space_id}/move", response_model=ProductJiraSpaceMoveResponse)
+def move_product_jira_space_endpoint(
+    product_ref: str,
+    space_id: int,
+    payload: ProductJiraSpaceMoveRequest,
+    db: Session = Depends(get_db),
+    admin: AuthenticatedUser = Depends(require_admin),
+) -> dict[str, object]:
+    product = _resolve_product_or_404(db, product_ref)
+    try:
+        result = move_product_jira_space(
+            db,
+            product.id,
+            space_id,
+            payload.target_product_id,
+            actor=admin,
+            reason=payload.reason,
+        )
+        db.commit()
+        return result
+    except ValueError as exc:
+        db.rollback()
+        raise bad_request(str(exc)) from exc
 
 
 @router.delete("/{product_ref}/jira-spaces/{space_id}", response_model=dict[str, str])

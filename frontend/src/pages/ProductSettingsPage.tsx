@@ -1,4 +1,4 @@
-import { CheckCircle2, ExternalLink, EyeOff, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowRightLeft, CheckCircle2, ExternalLink, EyeOff, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -12,7 +12,7 @@ import { useAuth } from "../lib/auth";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { OFFICE_OPTIONS, divisionBelongsToOffice, divisionOptionsForOffice } from "../lib/productOrg";
 import { productDetailPath } from "../lib/routes";
-import { formatCurrency } from "../lib/utils";
+import { formatCurrency, formatHours } from "../lib/utils";
 import type { JiraProjectCatalog, Product, ProductJiraSpace, ProductJiraSpacePayload } from "../types/api";
 
 type ProductUpdate = Partial<Pick<Product, "name" | "description" | "office" | "division" | "budget_amount" | "is_active">>;
@@ -276,6 +276,45 @@ export function ProductSettingsPage() {
     }
   }, []);
 
+  const moveJiraSpace = useCallback(
+    async (product: Product, space: ProductJiraSpace, targetProductId: number) => {
+      const targetProduct = products.find((row) => row.id === targetProductId);
+      if (!targetProduct) return;
+      const confirmed = window.confirm(
+        `Move Jira project ${space.jira_project_key} from ${product.name} to ${targetProduct.name}?\n\n` +
+          "This immediately moves all Jira-synced Actual hours and costs for this Jira project across stored fiscal years. Forecasts and manual Actuals will not move.",
+      );
+      if (!confirmed) return;
+      const actionId = `move-${product.id}-${space.id}`;
+      setSpaceActionIds((current) => new Set(current).add(actionId));
+      setError(null);
+      setNotice(null);
+      try {
+        const result = await api.moveProductJiraSpace(
+          product.id,
+          space.id,
+          targetProduct.id,
+          "Manual Jira project-to-Product correction",
+        );
+        await loadSettings();
+        setNotice(
+          `${result.jira_project_key} moved from ${result.from_product} to ${result.to_product}: ` +
+            `${result.actual_entries_moved} Jira Actual entries, ${formatHours(result.actual_hours_moved)} hours, ` +
+            `${formatCurrency(result.actual_cost_moved)}. Forecasts were unchanged.`,
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to move Jira project");
+      } finally {
+        setSpaceActionIds((current) => {
+          const next = new Set(current);
+          next.delete(actionId);
+          return next;
+        });
+      }
+    },
+    [loadSettings, products],
+  );
+
   const updateCatalogProjectVisibility = useCallback(async (project: JiraProjectCatalog, isVisible: boolean) => {
     setCatalogActionIds((current) => new Set(current).add(project.id));
     setError(null);
@@ -396,6 +435,7 @@ export function ProductSettingsPage() {
           <ProductSettingsCard
             key={product.id}
             product={product}
+            products={products}
             deleting={deletingIds.has(product.id)}
             saving={savingIds.has(product.id)}
             spaces={productSpaces[product.id] ?? []}
@@ -410,6 +450,7 @@ export function ProductSettingsPage() {
             onUpdateSpace={(space, payload) => updateJiraSpace(product, space, payload)}
             onValidateSpace={(space) => validateJiraSpace(product, space)}
             onRemoveSpace={(space) => removeJiraSpace(product, space)}
+            onMoveSpace={(space, targetProductId) => moveJiraSpace(product, space, targetProductId)}
           />
         ))}
       </section>
@@ -568,6 +609,7 @@ function UnmappedJiraProjectsPanel({
 
 function ProductSettingsCard({
   product,
+  products,
   deleting,
   saving,
   spaces,
@@ -582,8 +624,10 @@ function ProductSettingsCard({
   onUpdateSpace,
   onValidateSpace,
   onRemoveSpace,
+  onMoveSpace,
 }: {
   product: Product;
+  products: Product[];
   deleting: boolean;
   saving: boolean;
   spaces: ProductJiraSpace[];
@@ -598,6 +642,7 @@ function ProductSettingsCard({
   onUpdateSpace: (space: ProductJiraSpace, payload: Partial<Pick<ProductJiraSpace, "is_active" | "scope_jql">>) => void | Promise<void>;
   onValidateSpace: (space: ProductJiraSpace) => void | Promise<void>;
   onRemoveSpace: (space: ProductJiraSpace) => void | Promise<void>;
+  onMoveSpace: (space: ProductJiraSpace, targetProductId: number) => void | Promise<void>;
 }) {
   return (
     <article className="overflow-hidden rounded-lg border bg-card">
@@ -664,6 +709,7 @@ function ProductSettingsCard({
           </div>
           <ProductJiraSpacesEditor
             product={product}
+            products={products}
             spaces={spaces}
             catalog={catalog}
             jiraKeyOwners={jiraKeyOwners}
@@ -672,6 +718,7 @@ function ProductSettingsCard({
             onUpdate={onUpdateSpace}
             onValidate={onValidateSpace}
             onRemove={onRemoveSpace}
+            onMove={onMoveSpace}
           />
           </div>
         ) : null}
@@ -762,6 +809,7 @@ function ProductMetadataFields({
 
 function ProductJiraSpacesEditor({
   product,
+  products,
   spaces,
   catalog,
   jiraKeyOwners,
@@ -770,8 +818,10 @@ function ProductJiraSpacesEditor({
   onUpdate,
   onValidate,
   onRemove,
+  onMove,
 }: {
   product: Product;
+  products: Product[];
   spaces: ProductJiraSpace[];
   catalog: JiraProjectCatalog[];
   jiraKeyOwners: Map<string, JiraKeyOwner>;
@@ -780,9 +830,11 @@ function ProductJiraSpacesEditor({
   onUpdate: (space: ProductJiraSpace, payload: Partial<Pick<ProductJiraSpace, "is_active" | "scope_jql">>) => void | Promise<void>;
   onValidate: (space: ProductJiraSpace) => void | Promise<void>;
   onRemove: (space: ProductJiraSpace) => void | Promise<void>;
+  onMove: (space: ProductJiraSpace, targetProductId: number) => void | Promise<void>;
 }) {
   const [selectedCatalogId, setSelectedCatalogId] = useState("");
   const [manualKey, setManualKey] = useState("");
+  const [moveTargets, setMoveTargets] = useState<Record<number, string>>({});
   const addBusy = busyIds.has(`add-${product.id}`);
   const productKeys = useMemo(() => new Set(spaces.map((space) => space.jira_project_key)), [spaces]);
   const availableCatalog = useMemo(
@@ -797,6 +849,10 @@ function ProductJiraSpacesEditor({
   const manualKeyOwner = manualKeyNormalized ? jiraKeyOwners.get(manualKeyNormalized) : undefined;
   const manualKeyAlreadyMappedHere = manualKeyNormalized ? productKeys.has(manualKeyNormalized) || manualKeyOwner?.productId === product.id : false;
   const manualKeyMappedElsewhere = manualKeyOwner !== undefined && manualKeyOwner.productId !== product.id;
+  const moveTargetProducts = useMemo(
+    () => products.filter((row) => row.is_active && row.id !== product.id).sort((left, right) => left.name.localeCompare(right.name)),
+    [product.id, products],
+  );
 
   function addSelectedCatalog() {
     const catalogId = Number(selectedCatalogId);
@@ -822,7 +878,9 @@ function ProductJiraSpacesEditor({
           const updating = busyIds.has(`update-${product.id}-${space.id}`);
           const validating = busyIds.has(`validate-${product.id}-${space.id}`);
           const removing = busyIds.has(`remove-${product.id}-${space.id}`);
-          const busy = updating || validating || removing;
+          const moving = busyIds.has(`move-${product.id}-${space.id}`);
+          const busy = updating || validating || removing || moving;
+          const moveTargetId = Number(moveTargets[space.id] || 0);
           return (
             <div key={space.id} className="rounded-md border bg-background px-3 py-2">
               <div className="flex flex-col justify-between gap-2 lg:flex-row lg:items-start">
@@ -864,6 +922,32 @@ function ProductJiraSpacesEditor({
                   value={space.scope_jql ?? ""}
                   onCommit={(scope_jql) => onUpdate(space, { scope_jql: scope_jql || null })}
                 />
+              </div>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <select
+                  aria-label={`${space.jira_project_key} target Product`}
+                  className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                  disabled={busy || moveTargetProducts.length === 0}
+                  value={moveTargets[space.id] ?? ""}
+                  onChange={(event) => setMoveTargets((current) => ({ ...current, [space.id]: event.target.value }))}
+                >
+                  <option value="">Move to another Product</option>
+                  {moveTargetProducts.map((target) => (
+                    <option key={target.id} value={target.id}>
+                      {target.name}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || !moveTargetId}
+                  onClick={() => void onMove(space, moveTargetId)}
+                >
+                  <ArrowRightLeft className="h-4 w-4" />
+                  {moving ? "Moving" : "Move"}
+                </Button>
               </div>
             </div>
           );

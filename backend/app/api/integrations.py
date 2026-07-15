@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import bad_request
 from app.db.session import get_db
 from app.schemas import (
+    AttributionChangeResponse,
     ForecastRecommendationDecisionRequest,
     ForecastRecommendationDecisionResponse,
     JiraProductMappingResponse,
@@ -23,6 +24,8 @@ from app.schemas import (
     RoadmapTicketMapResponse,
     SyncRunResponse,
 )
+from app.services.access_control import AuthenticatedUser
+from app.services.attribution_changes import list_attribution_changes
 from app.services.forecast_recommendations import create_forecast_recommendation_decision, list_forecast_recommendation_decisions
 from app.services.jira_projects import list_jira_project_catalog, refresh_jira_project_catalog, update_jira_project_catalog_visibility
 from app.services.jira_rovo import (
@@ -182,14 +185,27 @@ def update_roadmap_ticket_mapping(
     ticket_key: str,
     payload: RoadmapTicketMapRequest,
     db: Session = Depends(get_db),
+    admin: AuthenticatedUser = Depends(require_admin),
 ) -> dict[str, object]:
     try:
-        result = map_roadmap_ticket(db, ticket_key, payload.roadmap_item_id)
+        result = map_roadmap_ticket(
+            db,
+            ticket_key,
+            payload.roadmap_item_id,
+            fiscal_year=payload.fiscal_year,
+            actor=admin,
+            reason=payload.reason,
+        )
         db.commit()
         return result
     except ValueError as exc:
         db.rollback()
         raise bad_request(str(exc)) from exc
+
+
+@router.get("/attribution-changes", response_model=list[AttributionChangeResponse])
+def get_attribution_changes(limit: int = 50, db: Session = Depends(get_db)) -> list[dict[str, object]]:
+    return list_attribution_changes(db, limit=limit)
 
 
 @router.post("/roadmap/sync", response_model=RoadmapSyncResponse)

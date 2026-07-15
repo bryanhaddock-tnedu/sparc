@@ -330,6 +330,24 @@ class ProductJiraSpaceResponse(BaseModel):
     updated_at: datetime
 
 
+class ProductJiraSpaceMoveRequest(BaseModel):
+    target_product_id: int
+    reason: str | None = None
+
+
+class ProductJiraSpaceMoveResponse(BaseModel):
+    jira_project_key: str
+    from_product_id: int
+    from_product: str
+    to_product_id: int
+    to_product: str
+    actual_entries_moved: int
+    actual_hours_moved: float
+    actual_cost_moved: float
+    roadmap_links_updated: int
+    space: ProductJiraSpaceResponse
+
+
 class EstimationProfileResponse(BaseModel):
     id: int
     name: str
@@ -880,6 +898,8 @@ class RoadmapItemMapRequest(BaseModel):
 
 class RoadmapTicketMapRequest(BaseModel):
     roadmap_item_id: int | None
+    fiscal_year: int | None = None
+    reason: str | None = None
 
 
 class RoadmapTicketMapResponse(BaseModel):
@@ -893,6 +913,14 @@ class RoadmapItemCandidateResponse(BaseModel):
     id: int
     jira_issue_key: str
     title: str
+
+
+class RoadmapTicketAttributionDetailResponse(BaseModel):
+    ticket_key: str
+    actual_hours: float
+    actual_cost: float
+    worklog_count: int
+    mapping_candidates: list[RoadmapItemCandidateResponse] = Field(default_factory=list)
 
 
 class RoadmapActualRowResponse(BaseModel):
@@ -918,6 +946,23 @@ class RoadmapActualRowResponse(BaseModel):
     ticket_keys: list[str]
     mapping_status: str
     mapping_candidates: dict[str, list[RoadmapItemCandidateResponse]] = Field(default_factory=dict)
+    ticket_attributions: list[RoadmapTicketAttributionDetailResponse] = Field(default_factory=list)
+
+
+class AttributionChangeResponse(BaseModel):
+    id: int
+    change_type: str
+    source_key: str
+    from_value: str | None
+    to_value: str | None
+    affected_actual_count: int
+    affected_hours: float
+    affected_cost: float
+    changed_by_user_id: int | None
+    changed_by_display_name: str
+    changed_by_email: str | None
+    reason: str | None
+    created_at: datetime
 
 
 class RoadmapForecastAllocationResponse(BaseModel):

@@ -1,6 +1,7 @@
 from app.models.entities import (
     ActualEntry,
     AppUser,
+    AttributionChange,
     Base,
     Bucket,
     EstimatedEntry,
@@ -27,6 +28,7 @@ from app.models.entities import (
 __all__ = [
     "ActualEntry",
     "AppUser",
+    "AttributionChange",
     "Base",
     "Bucket",
     "EstimatedEntry",

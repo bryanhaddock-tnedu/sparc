@@ -88,6 +88,10 @@ Use a monorepo:
 - Roadmap sync and worklog sync are separate pipelines. Worklog sync owns actual hours; roadmap sync owns Roadmap Items and ticket relationships; SPARC reporting joins them by Jira ticket key.
 - Roadmap sync must follow the Jira parent hierarchy beneath each directly linked delivery work item so work logged on descendant Epics, Stories, Tasks, or subtasks can roll up to the Roadmap Item. The original Actual ticket key remains unchanged and auditable.
 - Roadmap Actual Gaps must show only the competing Roadmap Items when a ticket is ambiguous. A truly unmapped ticket may show all fiscal-year Roadmap Items because it has no inferred candidates.
+- Admins must be able to correct a Jira project's canonical Product owner from Product Settings. The correction moves all Jira-sourced Actual entries for that Jira project across stored fiscal years and updates Product context on linked Roadmap work. It must not move Forecast entries, generated Estimates, manual Actual entries, or curated Product Team Member assignments.
+- Admins must be able to reassign any Jira Actual ticket, including an already mapped ticket, to a different Roadmap Item for the selected fiscal year. This changes Roadmap rollup attribution only; it does not change the Actual entry's Product, Team Member, Bucket, month, hours, or cost.
+- A manual Jira ticket-to-Roadmap Item correction is authoritative for that fiscal year and must survive later Roadmap syncs until an admin changes or removes it.
+- Product and Roadmap attribution corrections must require confirmation, report the affected Actual entry/worklog count, hours, and cost, and append immutable audit history with actor, before/after values, reason, and timestamp.
 - Created date and last updated date are required.
 
 ## Access Model
@@ -456,6 +460,7 @@ Products:
 - `PUT /api/products/{product_id}/jira-spaces/{space_id}`
 - `DELETE /api/products/{product_id}/jira-spaces/{space_id}`
 - `POST /api/products/{product_id}/jira-spaces/{space_id}/validate`
+- `POST /api/products/{product_id}/jira-spaces/{space_id}/move`
 - `GET /api/products/{product_ref}/roadmap-actuals?fiscal_year=2026`
 
 Team Members:
@@ -479,6 +484,8 @@ Jira/Rovo:
 - `POST /api/integrations/jira-rovo/sync-live`
 - `POST /api/integrations/jira-rovo/roadmap/sync`
 - `GET /api/integrations/jira-rovo/roadmap/items`
+- `PUT /api/integrations/jira-rovo/roadmap/ticket-links/{ticket_key}`
+- `GET /api/integrations/jira-rovo/attribution-changes`
 - `GET /api/integrations/jira-rovo/unmapped-users`
 - `GET /api/integrations/jira-rovo/unmapped-products`
 - `GET /api/integrations/jira-rovo/project-catalog`
@@ -644,6 +651,9 @@ Backend tests:
 - Overlapping Jira ticket capacity splitting
 - Estimation run audit snapshots
 - Repeated estimation runs preserve history
+- Jira project-to-Product corrections reattribute all Jira Actuals without changing Forecast or manual Actual rows
+- Jira ticket-to-Roadmap corrections are fiscal-year scoped and survive later Roadmap syncs
+- Attribution correction audit history captures actor, before/after values, and exact Actual impact
 
 Frontend tests:
 
