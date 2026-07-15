@@ -108,6 +108,8 @@ Program Area assignment rows apply only to Program Area View Only users. Admin a
 
 The existing `sparc` basic login remains the break-glass Admin login while Entra SSO is implemented and validated. Other users should be stored as email-based SPARC user records with temporary local password hashes before SSO; those same records should later link to Entra tenant/object IDs after first SSO login.
 
+After a successful sign-in, SPARC should land the user on the Dashboard rather than preserving a pre-login Admin or otherwise restricted URL. Direct restricted-route access must remain denied by the frontend capability gate and the backend authorization layer.
+
 Program Area View Only filtering must use:
 
 ```text

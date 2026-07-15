@@ -1,5 +1,6 @@
 import { LockKeyhole, LogIn } from "lucide-react";
 import { FormEvent, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import tdoeLogo from "../assets/tdoe-logo.png";
 import { Button } from "../components/ui/button";
@@ -10,6 +11,7 @@ import { appConfig } from "../lib/config";
 
 export function LoginPage() {
   const { login, status } = useAuth();
+  const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +23,7 @@ export function LoginPage() {
     setError(null);
     try {
       await login(username, password);
+      navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in");
     } finally {
