@@ -195,7 +195,11 @@ def create_app_user(
     )
     db.add(user)
     db.flush()
-    replace_program_area_assignments(db, user, program_areas or [])
+    replace_program_area_assignments(
+        db,
+        user,
+        program_areas_for_role(normalize_role(user.role), program_areas or []),
+    )
     db.flush()
     return get_app_user(db, user.id) or user
 
@@ -229,17 +233,36 @@ def update_app_user(
     if temporary_password is not None:
         user.password_hash = hash_password(temporary_password) if temporary_password else None
     if program_areas is not None:
-        replace_program_area_assignments(db, user, program_areas)
+        replace_program_area_assignments(
+            db,
+            user,
+            program_areas_for_role(normalize_role(user.role), program_areas),
+        )
+    elif role is not None and normalize_role(user.role) != UserRole.PROGRAM_AREA_VIEW_ONLY:
+        replace_program_area_assignments(db, user, [])
     db.flush()
     return get_app_user(db, user.id) or user
 
 
 def replace_program_area_assignments(db: Session, user: AppUser, program_areas: list[str]) -> None:
     normalized = normalize_program_areas(program_areas)
-    user.program_area_assignments.clear()
+    requested = set(normalized)
+    existing = {assignment.program_area: assignment for assignment in user.program_area_assignments}
+
+    for program_area, assignment in existing.items():
+        if program_area not in requested:
+            user.program_area_assignments.remove(assignment)
     for program_area in normalized:
+        if program_area in existing:
+            continue
         user.program_area_assignments.append(UserProgramAreaAssignment(program_area=program_area))
     db.flush()
+
+
+def program_areas_for_role(role: UserRole, program_areas: list[str]) -> list[str]:
+    if role != UserRole.PROGRAM_AREA_VIEW_ONLY:
+        return []
+    return program_areas
 
 
 def authenticate_local_user(db: Session, identifier: str, password: str) -> AppUser | None:

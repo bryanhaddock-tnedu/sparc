@@ -141,8 +141,11 @@ export function AdminUsersPage() {
             value={newUser.display_name}
             onChange={(event) => setNewUser({ ...newUser, display_name: event.target.value })}
           />
-          <RoleSelect value={newUser.role} onChange={(role) => setNewUser({ ...newUser, role })} />
-          <ProgramAreaPicker value={newUser.program_areas} onChange={(program_areas) => setNewUser({ ...newUser, program_areas })} />
+          <RoleSelect
+            value={newUser.role}
+            onChange={(role) => setNewUser({ ...newUser, role, program_areas: role === "PROGRAM_AREA_VIEW_ONLY" ? newUser.program_areas : [] })}
+          />
+          <ProgramAreaAccess role={newUser.role} value={newUser.program_areas} onChange={(program_areas) => setNewUser({ ...newUser, program_areas })} />
           <Input
             aria-label="New user temporary password"
             placeholder="Temporary password"
@@ -207,10 +210,17 @@ export function AdminUsersPage() {
                         </div>
                       </TableCell>
                       <TableCell className="min-w-[13rem]">
-                        <RoleSelect value={draft.role} onChange={(role) => updateDraft(user.id, { role })} />
+                        <RoleSelect
+                          value={draft.role}
+                          onChange={(role) => updateDraft(user.id, { role, program_areas: role === "PROGRAM_AREA_VIEW_ONLY" ? draft.program_areas : [] })}
+                        />
                       </TableCell>
                       <TableCell className="min-w-[16rem]">
-                        <ProgramAreaPicker value={draft.program_areas} onChange={(program_areas) => updateDraft(user.id, { program_areas })} />
+                        <ProgramAreaAccess
+                          role={draft.role}
+                          value={draft.program_areas}
+                          onChange={(program_areas) => updateDraft(user.id, { program_areas })}
+                        />
                       </TableCell>
                       <TableCell className="min-w-[10rem]">
                         <label className="flex items-center gap-2 text-sm">
@@ -294,6 +304,13 @@ function ProgramAreaPicker({ value, onChange }: { value: string[]; onChange: (va
       ))}
     </div>
   );
+}
+
+function ProgramAreaAccess({ role, value, onChange }: { role: AccessRole; value: string[]; onChange: (value: string[]) => void }) {
+  if (role !== "PROGRAM_AREA_VIEW_ONLY") {
+    return <div className="py-2 text-sm text-muted-foreground">All Program Areas</div>;
+  }
+  return <ProgramAreaPicker value={value} onChange={onChange} />;
 }
 
 function draftFromUser(user: AppUser): UserDraft {

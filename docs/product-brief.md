@@ -104,6 +104,8 @@ Initial SPARC roles:
 - Leadership View Only: can view all Program Areas; cannot edit; can see hours and costs; cannot see bill rates.
 - Program Area View Only: can view only assigned Program Area(s); cannot edit; cannot see bill rates; can be assigned multiple Program Areas.
 
+Program Area assignment rows apply only to Program Area View Only users. Admin and Leadership View Only users see all Program Areas by role. Changing a user from Program Area View Only to either broader role must clear the user's stored Program Area assignments atomically; changing unrelated fields must preserve unchanged assignments without deleting and recreating them.
+
 The existing `sparc` basic login remains the break-glass Admin login while Entra SSO is implemented and validated. Other users should be stored as email-based SPARC user records with temporary local password hashes before SSO; those same records should later link to Entra tenant/object IDs after first SSO login.
 
 Program Area View Only filtering must use:

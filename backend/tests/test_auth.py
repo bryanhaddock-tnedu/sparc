@@ -76,7 +76,7 @@ def test_update_app_user_changes_role_and_program_area_scope():
         )
         db.commit()
 
-        updated = update_app_user(db, user, role="LEADERSHIP_VIEW_ONLY", program_areas=[])
+        updated = update_app_user(db, user, role="LEADERSHIP_VIEW_ONLY", program_areas=["Academics"])
         db.commit()
         principal = authenticated_user_from_app_user(updated)
 
@@ -84,6 +84,46 @@ def test_update_app_user_changes_role_and_program_area_scope():
     assert [assignment.program_area for assignment in updated.program_area_assignments] == []
     assert principal.role == "LEADERSHIP_VIEW_ONLY"
     assert principal.program_areas == ()
+
+
+def test_update_app_user_preserves_unchanged_program_area_assignments():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        user = create_app_user(
+            db,
+            email="florie@example.org",
+            display_name="Florie",
+            role="PROGRAM_AREA_VIEW_ONLY",
+            program_areas=["Academics"],
+            temporary_password="temporary-secret",
+        )
+        db.commit()
+        assignment_id = user.program_area_assignments[0].id
+
+        updated = update_app_user(db, user, display_name="Florie Updated", program_areas=["Academics"])
+        db.commit()
+
+        assert updated.display_name == "Florie Updated"
+        assert [assignment.id for assignment in updated.program_area_assignments] == [assignment_id]
+
+
+def test_create_leadership_user_does_not_store_program_area_assignments():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        user = create_app_user(
+            db,
+            email="leader@example.org",
+            display_name="Leader",
+            role="LEADERSHIP_VIEW_ONLY",
+            program_areas=["Academics"],
+        )
+        db.commit()
+
+        assert user.program_area_assignments == []
 
 
 def test_login_rejects_invalid_password(monkeypatch):
