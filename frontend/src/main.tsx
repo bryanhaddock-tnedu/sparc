@@ -8,13 +8,23 @@ import { appConfig } from "./lib/config";
 
 const ACTIVE_BUILD_VERSION = appConfig.buildVersion;
 const MAX_BUILD_RELOAD_ATTEMPTS = 3;
+const BUILD_VERSION_CHECK_INTERVAL_MS = 60_000;
+let buildVersionCheckInFlight = false;
 
 document.documentElement.dataset.sparcBuildVersion = ACTIVE_BUILD_VERSION;
 
-void reloadForNewBuild();
+if (!import.meta.env.DEV && ACTIVE_BUILD_VERSION !== "local") {
+  void reloadForNewBuild();
+  window.setInterval(() => void reloadForNewBuild(), BUILD_VERSION_CHECK_INTERVAL_MS);
+  window.addEventListener("focus", () => void reloadForNewBuild());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void reloadForNewBuild();
+  });
+}
 
 async function reloadForNewBuild() {
-  if (import.meta.env.DEV || ACTIVE_BUILD_VERSION === "local") return;
+  if (buildVersionCheckInFlight) return;
+  buildVersionCheckInFlight = true;
 
   try {
     const params = new URLSearchParams({ current: ACTIVE_BUILD_VERSION, t: String(Date.now()) });
@@ -39,6 +49,8 @@ async function reloadForNewBuild() {
     window.location.replace(url.toString());
   } catch {
     // Version checks should never block app startup.
+  } finally {
+    buildVersionCheckInFlight = false;
   }
 }
 

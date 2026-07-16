@@ -80,7 +80,7 @@ Every user interface change should bump the JavaScript/interface version before 
 - `frontend/package.json`
 - `frontend/public/app-version.json`
 
-The frontend embeds the package version when `VITE_BUILD_VERSION` is unset or `local`. The packaged FastAPI app also exposes `frontend/public/app-version.json` through `/api/app-version` when no explicit `SPARC_BUILD_VERSION` is provided, which lets browser sessions detect a newer UI build and reload instead of staying on stale JavaScript.
+The frontend embeds the package version when `VITE_BUILD_VERSION` is unset or `local`. The packaged FastAPI app also exposes `frontend/public/app-version.json` through `/api/app-version` when no explicit `SPARC_BUILD_VERSION` is provided. Browser sessions check that endpoint at startup, once per minute, and whenever a tab becomes visible or focused; a version change reloads the page with cache-busting parameters so tabs left open across a deployment do not keep stale JavaScript.
 
 ## Migration Rule
 
