@@ -4,6 +4,12 @@ SPARC uses Microsoft Entra for authentication and SPARC-owned data for authoriza
 
 This plan intentionally keeps access control independent from Jira roadmap metadata. Program Area visibility is based on SPARC Product ownership, not roadmap item fields, Jira agency office fields, Team Member teams, or Team Member labor roles.
 
+## Current Status
+
+The SPARC-local access model is implemented and deployed to stage. Milestones 0, 1, and 3 through 11 are complete in application code. Milestone 2 is partially complete because the `sparc` break-glass Admin exists, but a guard preventing removal of the final active Admin remains to be built. The explicit no-Program-Area user state and browser-level role-flow regression tests also remain active hardening work.
+
+Entra authorization-code support is implemented, but end-to-end SSO remains externally blocked on App Registration values and stage secret configuration. Entra does not own SPARC roles or Program Area assignments.
+
 ## Source Of Truth
 
 - Product Program Area is stored today as `Product.office`.
@@ -100,12 +106,16 @@ It must not scope by `RoadmapItem.program_area`.
 
 ### Milestone 0: Access Readiness Fence
 
+**Status**: Complete
+
 - Document `Product.office` as the Program Area source of truth.
 - Document `RoadmapItem.program_area` as non-authoritative metadata for authorization.
 - Confirm blank Program Area behavior.
 - Keep Roadmap Item cleanup out of the role implementation path.
 
 ### Milestone 1: Local User Data Model
+
+**Status**: Complete
 
 - Add SPARC-local user table.
 - Add many-to-many Program Area assignment table.
@@ -114,17 +124,23 @@ It must not scope by `RoadmapItem.program_area`.
 
 ### Milestone 2: Break-Glass Admin Preservation
 
+**Status**: Partially complete - final-active-Admin guard remains
+
 - Keep the existing `sparc` credentials working.
 - Resolve `sparc` to an Admin capability set.
 - Prevent disabling or demoting the final active Admin once user management exists.
 
 ### Milestone 3: Email-Based Local Login
 
+**Status**: Complete
+
 - Let Admin-created users log in with email plus temporary password before SSO.
 - Store password hashes only.
 - Allow local login to be disabled per user after SSO is in place.
 
 ### Milestone 4: Admin User Management API
+
+**Status**: Complete
 
 - List users.
 - Create users.
@@ -135,6 +151,8 @@ It must not scope by `RoadmapItem.program_area`.
 
 ### Milestone 5: Auth Status Capabilities
 
+**Status**: Complete
+
 - Return authenticated user identity.
 - Return role.
 - Return assigned Program Areas.
@@ -142,17 +160,23 @@ It must not scope by `RoadmapItem.program_area`.
 
 ### Milestone 6: Backend Permission And Scope Enforcement
 
+**Status**: Complete
+
 - Add `current_user`, `require_admin`, `require_write_access`, and Program Area scoping helpers.
 - Apply scoping to dashboard, Products, Product Detail, Forecasts, Actuals, Team Members, Reports, and exports.
 - Ensure no-area Program Area users receive no scoped data.
 
 ### Milestone 7: Redaction
 
+**Status**: Complete
+
 - Remove bill rates from restricted API responses.
 - Remove bill rates from restricted exports.
 - Add tests proving restricted users cannot retrieve rates.
 
 ### Milestone 8: Admin Access UI
+
+**Status**: Complete
 
 - Add an Admin Users tab.
 - Support create/edit users.
@@ -163,12 +187,16 @@ It must not scope by `RoadmapItem.program_area`.
 
 ### Milestone 9: Role-Specific Frontend Behavior
 
+**Status**: Complete except explicit no-assignment empty-state polish
+
 - Hide or disable edit controls for read-only roles.
 - Hide Admin navigation for non-admins.
 - Show no-assigned-Program-Area state.
 - Bump the frontend/interface version for each interface change.
 
 ### Milestone 10: Entra SSO
+
+**Status**: Application code complete; external configuration and end-to-end validation pending
 
 - Add Entra authorization-code callback.
 - Match by Entra tenant/object ID when linked.
@@ -177,6 +205,8 @@ It must not scope by `RoadmapItem.program_area`.
 - Keep `sparc` break-glass login available for stage.
 
 ### Milestone 11: Access-Control Hardening
+
+**Status**: Complete for backend enforcement; browser-level role-flow coverage remains
 
 - Add focused regression tests for Program Area product scoping.
 - Add focused regression tests for restricted person-level report access.

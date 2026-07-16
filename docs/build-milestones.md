@@ -1,6 +1,24 @@
 # SPARC Build Milestones
 
-SPARC is the internal labor forecasting and cost intelligence app for this project. This plan starts from the current scaffold: Docker Compose, FastAPI, PostgreSQL, React/Vite, reference data, core routes, editable forecast cells, editable bill rates, and app-owned Jira/Rovo sync.
+SPARC is the internal labor forecasting and cost intelligence app for this project. This is the living milestone tracker; historical completion notes remain in the milestone bodies, while the status and active backlog below describe the application as deployed to stage on July 16, 2026.
+
+## Current State
+
+- MVP Planning Release: complete.
+- Actuals Intelligence Release: complete for the current Jira/Roadmap scope and running in stage.
+- Pilot Readiness Release: in progress.
+- SPARC-local users, roles, Program Area assignments, backend authorization, redaction, and local test login are implemented.
+- Entra application code is implemented; App Registration values and stage secret configuration remain external dependencies for end-to-end SSO.
+- Roadmap billing milestones 1 through 5 are implemented and awaiting final stakeholder acceptance against real stage data.
+
+## Active Backlog
+
+1. Complete role-based stage acceptance for Admin, Leadership View Only, Program Area View Only, and a Program Area user with no assignments.
+2. Prevent disabling or demoting the final active SPARC Admin and add the explicit no-Program-Area state.
+3. Add browser-level role/login regression coverage, repair ESLint configuration, and add backend tests, migration checks, and stage smoke tests to CI.
+4. Complete Roadmap billing acceptance with real gaps, remapping, sync persistence, financial-impact confirmation, audit history, summaries, exports, and forecast recommendation decisions.
+5. Complete pilot runbooks, backup/restore notes, known limitations, onboarding, and repeatable stakeholder validation.
+6. Configure and validate Entra SSO after DevOps supplies the external registration and secret values.
 
 ## Build Principles
 
@@ -15,11 +33,11 @@ SPARC is the internal labor forecasting and cost intelligence app for this proje
 
 ## Release Shape
 
-The remainder of the build should be delivered in three practical releases:
+The build is organized into three practical releases:
 
-1. **MVP Planning Release**: reliable local app, durable schema, roster import, forecast editing, and useful dashboard/product/team views.
-2. **Actuals Intelligence Release**: mock-to-live Jira/Rovo path, mappings, actual hours ingestion, sync history, and analytics rules.
-3. **Pilot Readiness Release**: quality gates, operational hardening, deployment readiness, and stakeholder polish.
+1. **MVP Planning Release - Complete**: reliable local app, durable schema, roster import, forecast editing, and useful dashboard/product/team views.
+2. **Actuals Intelligence Release - Complete for current scope**: live Jira/Rovo path, mappings, actual hours ingestion, Roadmap attribution, sync history, and analytics rules.
+3. **Pilot Readiness Release - In progress**: quality gates, operational hardening, deployment readiness, SSO configuration, and stakeholder acceptance.
 
 ## Milestone 0: Scaffold Baseline
 
@@ -45,14 +63,9 @@ SPARC runs locally and demonstrates the main navigation and data model.
 - Forecast upsert API and editable forecast cells.
 - Mock Jira/Rovo sync service and unmapped reference APIs.
 
-**Known Gaps**
+**Historical Gaps At Scaffold Completion**
 
-- No Alembic migrations yet.
-- No spreadsheet import yet.
-- No mapping management screens yet.
-- No live Jira/Rovo integration yet.
-- No CI pipeline yet.
-- Minimal automated test coverage.
+These gaps were recorded at Milestone 0 and are not the current backlog. Alembic, spreadsheet import, mapping management, live Jira/Rovo integration, an image build/publish pipeline, and substantial backend test coverage now exist. Remaining CI quality-gate work is tracked under Milestone 10.
 
 ## Milestone 1: Foundation Hardening
 
@@ -331,6 +344,8 @@ The app proves the actual-hours model with realistic mock ticket/worklog evidenc
 
 ## Milestone 6: App-Owned Live Jira/Rovo Integration
 
+**Status**: Complete for current stage scope
+
 **Outcome**
 
 SPARC can fetch actual hours from Jira/Rovo through controlled server-side integration.
@@ -398,6 +413,8 @@ SPARC can fetch actual hours from Jira/Rovo through controlled server-side integ
 
 ## Milestone 7: Derived Analytics And Business Rules
 
+**Status**: Complete for current product scope
+
 **Outcome**
 
 The UI is driven by SPARC-owned analytics, not raw Jira/Rovo payloads.
@@ -448,6 +465,8 @@ The UI is driven by SPARC-owned analytics, not raw Jira/Rovo payloads.
 
 ## Milestone 8: Product And Team Management Completion
 
+**Status**: Complete for current product scope
+
 **Outcome**
 
 Managers can maintain the operational reference data needed for forecasting.
@@ -490,6 +509,8 @@ Managers can maintain the operational reference data needed for forecasting.
 
 ## Milestone 9: UX Polish And Accessibility
 
+**Status**: Ongoing
+
 **Outcome**
 
 SPARC feels like a real internal tool: dense, clear, fast, and hard to misuse.
@@ -523,6 +544,10 @@ SPARC feels like a real internal tool: dense, clear, fast, and hard to misuse.
 - Dense analytical pages can become visually heavy. Prioritize scanability over decoration.
 
 ## Milestone 10: Testing, CI, And Quality Gates
+
+**Status**: Partially complete
+
+The backend suite, migration checks used during releases, frontend TypeScript production build, and Docker image build/publish workflow exist. Missing quality gates are browser-level role/workflow tests, a working ESLint 9 configuration, backend test and migration jobs in GitHub Actions, and a post-rollout stage smoke test.
 
 **Outcome**
 
@@ -587,6 +612,10 @@ The team can change SPARC without guessing whether core planning math still work
 
 ## Milestone 11: Pilot Readiness And Operations
 
+**Status**: In progress
+
+Stage is deployed as a container against Azure PostgreSQL with health endpoints, scheduled Jira sync, and immutable build-version verification. Remaining work includes operational and backup/restore runbooks, pilot/onboarding material, stronger automated stage validation, and external Entra registration/secret configuration.
+
 **Outcome**
 
 SPARC is ready for a controlled pilot with real users and real data.
@@ -633,7 +662,7 @@ SPARC is ready for a controlled pilot with real users and real data.
 **Dependencies**
 
 - Milestones 1 through 10.
-- Decision on authentication. Authentication was intentionally excluded from the initial scaffold and should only be added when explicitly approved.
+- SPARC-local authorization is implemented. End-to-end Entra SSO depends on external App Registration values and stage secret configuration.
 - DevOps confirmation of registry, namespace, ingress/host, and Key Vault integration pattern.
 
 **Risks**
@@ -642,42 +671,28 @@ SPARC is ready for a controlled pilot with real users and real data.
 - Real Jira/Rovo data may reveal identity and bucket edge cases not covered by mock data.
 - App-owned Key Vault retrieval may require managed identity or cluster-level setup outside the app repo.
 
-## Cross-Cutting Decisions To Make
+## Cross-Cutting Decisions And Current State
 
-These decisions should be made before or during the milestones listed.
+These decisions were raised during the original build plan; the table records their current resolution or deferral.
 
-| Decision | Needed By | Recommended Default |
-|---|---:|---|
-| Where Jira/Rovo scope lives | Milestone 6 | Start with Product-level Jira reference plus a future Workspace/Team config if needed |
-| Whether Product CRUD is in MVP | Milestone 8 | Add minimal Product maintenance after roster import |
-| Whether forecast edits save per-cell or batch | Milestone 4 | Move to batch save for real planning sessions |
-| Whether to support multiple fiscal years in MVP | Milestone 4 | Keep FY2026 default, add selector once another year exists |
-| Whether to track bill rate history | Future | Do not build until explicitly requested |
-| Whether auth is required for pilot | Milestone 11 | Keep out until approved, then add before production pilot |
-| Bucket classification source for Jira/Rovo | Milestone 6 | Make configurable and surface unknowns |
-| STAGE secret loading pattern | Milestone 11 | Support env vars first, add app-owned Key Vault provider when cluster identity is ready |
-| Kubernetes manifest ownership | Milestone 11 | Confirm whether manifests live here or in the DevOps deployment repo |
+| Decision | Current State |
+|---|---|
+| Jira/Rovo Product scope | `ProductJiraSpace` is the canonical Jira project-to-Product mapping. |
+| Product maintenance | Implemented in Product Settings with history-safe inactive/delete behavior. |
+| Forecast save behavior | Batch save/discard workflow is implemented. |
+| Fiscal years | Fiscal-year selection is implemented; stage currently plans against configured years including FY2027. |
+| Bill rate history | Explicitly deferred until requested. |
+| Authentication and authorization | Local test authentication and SPARC authorization are implemented; Entra configuration is externally pending. |
+| Jira Bucket classification | Recognized values map explicitly; missing or unknown work types remain unclassified and are not silently defaulted. |
+| Stage secrets | Environment/secret injection is in use; Entra values remain pending from DevOps. |
+| Deployment ownership | GitHub builds/pushes the image and the stage platform rolls it out; infrastructure manifests remain outside the current app work. |
 
-## Suggested Build Order
+## Active Execution Order
 
-1. Milestone 1: Foundation Hardening.
-2. Milestone 2: Durable Data Model And API Contracts.
-3. Milestone 3: Spreadsheet Import And Roster Management.
-4. Milestone 4: Forecast Planning Workflow.
-5. Milestone 5: Mock Jira/Rovo Actuals And Mapping Workflow.
-6. Milestone 7: Derived Analytics And Business Rules.
-7. Milestone 8: Product And Team Management Completion.
-8. Milestone 9: UX Polish And Accessibility.
-9. Milestone 10: Testing, CI, And Quality Gates.
-10. Milestone 6: App-Owned Live Jira/Rovo Integration.
-11. Milestone 11: Pilot Readiness And Operations.
+1. Non-Entra access hardening and automated role-flow coverage.
+2. Roadmap billing stage acceptance and real-data gap cleanup.
+3. CI quality gates and deployment smoke testing.
+4. Pilot operations and stakeholder handoff material.
+5. Entra end-to-end validation when external registration values are available.
 
-Live Jira/Rovo is intentionally placed after mock mapping and analytics so the app has a proven internal contract before touching external systems.
-
-## Suggested Next Prompt
-
-Use this next:
-
-```text
-Implement Milestone 1 from docs/build-milestones.md. Add Alembic migrations, explicit seed/reset commands, typed FastAPI response schemas for current endpoints, and improved API error handling. Keep the current UI behavior working and update README with the new local development commands.
-```
+Do not restart completed foundation, mock integration, live Jira, authorization, or Roadmap implementation milestones unless stage evidence identifies a specific defect.

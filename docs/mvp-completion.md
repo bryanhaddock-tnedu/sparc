@@ -1,6 +1,8 @@
 # SPARC MVP Completion Notes
 
-This document summarizes the MVP work completed after the initial scaffold.
+> Historical snapshot: this document records the first MVP completion point and is not the current backlog or application status. Use `docs/build-milestones.md`, `docs/access-control-plan.md`, and `docs/roadmap-billing-milestones.md` for the living plan.
+
+This document summarizes the MVP work completed after the initial scaffold. Live Jira/Rovo integration, SPARC-local authorization, stage deployment, and Roadmap billing were implemented after this snapshot.
 
 ## Completed MVP Scope
 
@@ -40,19 +42,19 @@ This document summarizes the MVP work completed after the initial scaffold.
   - Backend test coverage expanded to import and mock sync behavior.
   - Frontend TypeScript production build passes.
 
-## Still Out Of MVP Scope
+## Out Of Scope At This Historical Point
 
-- Live Jira/Rovo integration.
-- Authentication and authorization.
+- Live Jira/Rovo integration. Implemented after this snapshot.
+- Authentication and authorization. SPARC-local users/roles are now implemented; Entra end-to-end configuration remains pending externally.
 - Kubernetes manifests or deployment repo wiring.
 - Bill rate versioning.
 - Project-management features such as boards, due dates, Gantt charts, or sprint planning.
 
-## Next Recommended Build
+## Historical Next Recommendation
 
-Move next into pilot hardening:
+The recommendations below were written before live integration and authorization shipped. Their current disposition is:
 
-1. Add CI pipeline jobs for backend tests, frontend build, and image builds.
-2. Coordinate STAGE registry, namespace, ingress, and Key Vault integration details with DevOps.
-3. Add deployment handoff artifacts or manifests once DevOps confirms ownership.
-4. Replace mock Jira/Rovo with live app-owned Jira/Rovo sync after the mapping workflow is validated with stakeholders.
+1. CI image build/publish exists; backend test, migration, lint, browser, and stage smoke gates remain in the living backlog.
+2. Stage registry, ingress, and PostgreSQL connectivity are operating; Entra secret configuration remains externally pending.
+3. Deployment infrastructure ownership remains outside the current application repository.
+4. Live app-owned Jira/Rovo sync is implemented and scheduled in stage.
