@@ -3,7 +3,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Bucket, FiscalMonth, ForecastEntry, Product, ProductTeamMember
+from app.models import ActualEntry, Bucket, FiscalMonth, ForecastEntry, Product, ProductTeamMember
 from app.services.fiscal_year import get_fiscal_month
 
 
@@ -82,6 +82,49 @@ def upsert_forecast_entry(
         entry.hours = Decimal(str(hours))
     db.flush()
     return entry
+
+
+def remove_empty_forecast_line(
+    db: Session,
+    *,
+    product_id: int,
+    team_member_id: int,
+    bucket_id: int,
+    fiscal_year: int,
+) -> int:
+    entries = db.scalars(
+        select(ForecastEntry)
+        .join(ForecastEntry.fiscal_month)
+        .where(
+            ForecastEntry.product_id == product_id,
+            ForecastEntry.team_member_id == team_member_id,
+            ForecastEntry.bucket_id == bucket_id,
+            FiscalMonth.fiscal_year == fiscal_year,
+        )
+    ).all()
+    if not entries:
+        raise ValueError("Forecast line not found")
+    if any(entry.hours != 0 for entry in entries):
+        raise ValueError("Set all forecast hours to 0 before removing this forecast line")
+
+    actual_entry_id = db.scalar(
+        select(ActualEntry.id)
+        .join(ActualEntry.fiscal_month)
+        .where(
+            ActualEntry.product_id == product_id,
+            ActualEntry.team_member_id == team_member_id,
+            ActualEntry.bucket_id == bucket_id,
+            FiscalMonth.fiscal_year == fiscal_year,
+        )
+        .limit(1)
+    )
+    if actual_entry_id is not None:
+        raise ValueError("Forecast lines with Actual labor must remain visible")
+
+    for entry in entries:
+        db.delete(entry)
+    db.flush()
+    return len(entries)
 
 
 def ensure_product_team_member(db: Session, *, product_id: int, team_member_id: int) -> ProductTeamMember:

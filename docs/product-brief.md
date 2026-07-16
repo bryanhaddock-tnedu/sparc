@@ -209,6 +209,8 @@ Each Product Detail page should include:
    - Flags actuals with no Roadmap Item mapping as unmapped
    - Flags tickets linked to multiple Roadmap Items as ambiguous
 
+Product Forecast lines may be removed for a selected fiscal year only when the Product + Team Member + Bucket line has zero Forecast hours and no Actual labor. Removing an empty Forecast line deletes only those zero-value Forecast placeholders; it must retain Product Team membership and must never delete Actual entries.
+
 7. Product Team
    - Shows manager-curated team members assigned to the Product
    - Allows adding rostered Team Members to the Product before forecast/actual hours exist

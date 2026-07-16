@@ -5,11 +5,11 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.errors import bad_request
 from app.db.session import get_db
 from app.models import FiscalMonth, ForecastEntry
-from app.schemas import ForecastBatchUpsert, ForecastResponse, ForecastUpsert
+from app.schemas import ApiMessage, ForecastBatchUpsert, ForecastResponse, ForecastUpsert
 from app.services.access_control import AuthenticatedUser, can_view_product_office
-from app.services.costs import round_hours
-from app.services.forecasting import upsert_forecast_entry
 from app.services.auth import require_named_people_access, require_write_access
+from app.services.costs import round_hours
+from app.services.forecasting import remove_empty_forecast_line, upsert_forecast_entry
 
 router = APIRouter(prefix="/forecasts", tags=["forecasts"])
 
@@ -72,6 +72,30 @@ def upsert_forecast(payload: ForecastUpsert, db: Session = Depends(get_db), _wri
         "fiscal_month_id": entry.fiscal_month_id,
         "hours": round_hours(entry.hours),
     }
+
+
+@router.delete("/line", response_model=ApiMessage)
+def delete_forecast_line(
+    product_id: int,
+    team_member_id: int,
+    bucket_id: int,
+    fiscal_year: int,
+    db: Session = Depends(get_db),
+    _writer=Depends(require_write_access),
+) -> dict[str, str]:
+    try:
+        remove_empty_forecast_line(
+            db,
+            product_id=product_id,
+            team_member_id=team_member_id,
+            bucket_id=bucket_id,
+            fiscal_year=fiscal_year,
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise bad_request(str(exc)) from exc
+    db.commit()
+    return {"message": "Empty forecast line removed. Product Team membership was retained."}
 
 
 @router.put("/batch", response_model=list[ForecastResponse])

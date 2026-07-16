@@ -13,12 +13,14 @@ SPARC is the internal labor forecasting and cost intelligence app for this proje
 
 ## Active Backlog
 
-1. Complete role-based stage acceptance for Admin, Leadership View Only, Program Area View Only, and a Program Area user with no assignments.
-2. Prevent disabling or demoting the final active SPARC Admin and add the explicit no-Program-Area state.
-3. Add browser-level role/login regression coverage, repair ESLint configuration, and add backend tests, migration checks, and stage smoke tests to CI.
-4. Complete Roadmap billing acceptance with real gaps, remapping, sync persistence, financial-impact confirmation, audit history, summaries, exports, and forecast recommendation decisions.
-5. Complete pilot runbooks, backup/restore notes, known limitations, onboarding, and repeatable stakeholder validation.
-6. Configure and validate Entra SSO after DevOps supplies the external registration and secret values.
+1. Review and simplify the Forecast Review Queue so its purpose, recommendation evidence, available decisions, and outcomes are clear.
+2. Review Team pages, especially the Product Forecast section, for correct ownership, calculations, terminology, and planning workflow.
+3. Complete role-based stage acceptance for Admin, Leadership View Only, Program Area View Only, and a Program Area user with no assignments.
+4. Prevent disabling or demoting the final active SPARC Admin and add the explicit no-Program-Area state.
+5. Add browser-level role/login regression coverage, repair ESLint configuration, and add backend tests, migration checks, and stage smoke tests to CI.
+6. Complete Roadmap billing acceptance with real gaps, remapping, sync persistence, financial-impact confirmation, audit history, summaries, exports, and forecast recommendation decisions.
+7. Complete pilot runbooks, backup/restore notes, known limitations, onboarding, and repeatable stakeholder validation.
+8. Configure and validate Entra SSO after DevOps supplies the external registration and secret values.
 
 ## Build Principles
 
@@ -247,6 +249,7 @@ Product Detail becomes a practical planning surface, not just a demo matrix.
 
 **Frontend Deliverables**
 
+- Allow editors to remove an accidentally added Product + Team Member + Bucket Forecast line when all Forecast hours are zero and no Actual labor exists, without removing Product Team membership.
 - Improve forecast table editing:
   - batch save
   - save state

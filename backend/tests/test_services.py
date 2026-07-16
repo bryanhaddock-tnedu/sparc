@@ -36,7 +36,7 @@ from app.schemas import ProductCreate, TeamMemberCreate
 from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_work_type_breakdown, product_bucket_tables, product_summary
 from app.services.costs import calculate_cost
 from app.services.fiscal_year import current_fiscal_year, fiscal_sequence_for_date, fiscal_year_for_date, get_fiscal_month
-from app.services.forecasting import upsert_forecast_entry
+from app.services.forecasting import remove_empty_forecast_line, upsert_forecast_entry
 from app.services.roadmap_forecasting import team_roadmap_forecast_plan, upsert_team_roadmap_forecast_allocations
 from app.services.forecast_recommendations import (
     create_forecast_recommendation_decision,
@@ -2465,6 +2465,89 @@ def test_removing_product_team_member_with_forecast_marks_assignment_inactive_an
         assert db.scalar(select(ForecastEntry)) is not None
         assert db.scalar(select(ProductTeamMember)).status == "inactive"
         assert any(bucket["rows"] for bucket in product_bucket_tables(db, product.id, 2026)["buckets"])
+
+
+def test_remove_empty_forecast_line_retains_product_team_assignment():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", jira_space_key="SIS")
+        member = TeamMember(name="Avery Johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+
+        entry = upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_code="ENHANCE",
+            fiscal_year=2026,
+            month_sequence=1,
+            hours=0,
+        )
+
+        assert remove_empty_forecast_line(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_id=entry.bucket_id,
+            fiscal_year=2026,
+        ) == 1
+        assert db.scalar(select(ForecastEntry)) is None
+        assert db.scalar(select(ProductTeamMember)).status == "active"
+
+
+def test_remove_forecast_line_rejects_forecast_or_actual_history():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", jira_space_key="SIS")
+        member = TeamMember(name="Avery Johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+
+        entry = upsert_forecast_entry(
+            db,
+            product_id=product.id,
+            team_member_id=member.id,
+            bucket_code="ENHANCE",
+            fiscal_year=2026,
+            month_sequence=1,
+            hours=10,
+        )
+        with pytest.raises(ValueError, match="Set all forecast hours to 0"):
+            remove_empty_forecast_line(
+                db,
+                product_id=product.id,
+                team_member_id=member.id,
+                bucket_id=entry.bucket_id,
+                fiscal_year=2026,
+            )
+
+        entry.hours = Decimal("0")
+        db.add(
+            ActualEntry(
+                product_id=product.id,
+                team_member_id=member.id,
+                bucket_id=entry.bucket_id,
+                fiscal_month_id=entry.fiscal_month_id,
+                hours=Decimal("1"),
+                source="test",
+                source_ticket_key="SIS-1",
+                source_worklog_id="1",
+            )
+        )
+        db.flush()
+        with pytest.raises(ValueError, match="Actual labor"):
+            remove_empty_forecast_line(
+                db,
+                product_id=product.id,
+                team_member_id=member.id,
+                bucket_id=entry.bucket_id,
+                fiscal_year=2026,
+            )
 
 
 def test_product_jira_space_mapping_uses_catalog_and_prevents_double_mapping():

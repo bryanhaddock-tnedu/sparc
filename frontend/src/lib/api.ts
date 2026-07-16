@@ -327,6 +327,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ entries }),
     }),
+  removeForecastLine: (payload: { product_id: number; team_member_id: number; bucket_id: number; fiscal_year: number }) => {
+    const params = new URLSearchParams(Object.entries(payload).map(([key, value]) => [key, String(value)]));
+    return request<{ message: string }>(`/api/forecasts/line?${params.toString()}`, { method: "DELETE" });
+  },
   importTeamMembers: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);

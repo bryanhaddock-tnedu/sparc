@@ -65,6 +65,8 @@ export function ProductDetailPage() {
   const [forecastLineBucketId, setForecastLineBucketId] = useState("");
   const [forecastLineSaving, setForecastLineSaving] = useState(false);
   const [forecastLineMessage, setForecastLineMessage] = useState<string | null>(null);
+  const [forecastLineError, setForecastLineError] = useState<string | null>(null);
+  const [deletingForecastLines, setDeletingForecastLines] = useState<Record<string, boolean>>({});
   const [savingCells, setSavingCells] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -200,7 +202,7 @@ export function ProductDetailPage() {
 
     setForecastLineSaving(true);
     setForecastLineMessage(null);
-    setError(null);
+    setForecastLineError(null);
     try {
       const assignment = productTeam.find((item) => item.team_member_id === teamMemberId);
       if (!assignment) {
@@ -220,9 +222,43 @@ export function ProductDetailPage() {
       setForecastLineMessage(`${member?.name ?? "Team member"} added to ${bucket?.name ?? "the selected bucket"} for ${fiscalYearLabel}.`);
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to add forecast line");
+      setForecastLineError(err instanceof Error ? err.message : "Unable to add forecast line");
     } finally {
       setForecastLineSaving(false);
+    }
+  }
+
+  async function removeForecastLine(bucket: BucketTable, row: BucketTableRow) {
+    if (productId === null) return;
+    const key = forecastLineKey(row.team_member_id, bucket.bucket_id);
+    if (
+      !window.confirm(
+        `Remove ${row.team_member} from the ${bucket.name} forecast line for ${fiscalYearLabel}? Product Team membership will remain.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingForecastLines((current) => ({ ...current, [key]: true }));
+    setForecastLineMessage(null);
+    setForecastLineError(null);
+    try {
+      const result = await api.removeForecastLine({
+        product_id: productId,
+        team_member_id: row.team_member_id,
+        bucket_id: bucket.bucket_id,
+        fiscal_year: fiscalYear,
+      });
+      setForecastLineMessage(result.message);
+      await loadData();
+    } catch (err) {
+      setForecastLineError(err instanceof Error ? err.message : "Unable to remove forecast line");
+    } finally {
+      setDeletingForecastLines((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
     }
   }
 
@@ -339,6 +375,7 @@ export function ProductDetailPage() {
         <ForecastLineSection
           assignments={productTeam}
           buckets={tables.buckets}
+          error={forecastLineError}
           existingLineKeys={existingForecastLineKeys}
           members={teamMembers}
           message={forecastLineMessage}
@@ -358,9 +395,11 @@ export function ProductDetailPage() {
               <BucketSection
                 key={bucket.bucket_id}
                 bucket={bucket}
+                deletingLines={deletingForecastLines}
                 drafts={drafts}
                 onDraftChange={updateDraft}
                 onDraftCommit={saveForecastCell}
+                onRemove={removeForecastLine}
                 readOnly={!canEditForecast}
                 savingCells={savingCells}
               />
@@ -630,6 +669,7 @@ function ProductTeamSection({
 function ForecastLineSection({
   assignments,
   buckets,
+  error,
   existingLineKeys,
   members,
   message,
@@ -642,6 +682,7 @@ function ForecastLineSection({
 }: {
   assignments: ProductTeamMember[];
   buckets: BucketTable[];
+  error: string | null;
   existingLineKeys: Set<string>;
   members: TeamMember[];
   message: string | null;
@@ -722,6 +763,7 @@ function ForecastLineSection({
       </div>
       {!activeMembers.length ? <div className="mt-3 text-sm text-muted-foreground">Add active members to Product Team before creating forecast lines.</div> : null}
       {duplicateLine ? <div className="mt-3 text-sm text-muted-foreground">That line already exists. Edit its monthly forecast cells below.</div> : null}
+      {error ? <div className="mt-3 text-sm text-destructive">{error}</div> : null}
       {message ? <div className="mt-3 text-sm text-primary">{message}</div> : null}
     </section>
   );
@@ -729,16 +771,20 @@ function ForecastLineSection({
 
 function BucketSection({
   bucket,
+  deletingLines,
   drafts,
   onDraftChange,
   onDraftCommit,
+  onRemove,
   readOnly,
   savingCells,
 }: {
   bucket: BucketTable;
+  deletingLines: Record<string, boolean>;
   drafts: Record<string, string>;
   onDraftChange: (bucket: BucketTable, row: BucketTableRow, cell: MonthCell, value: string) => void;
   onDraftCommit: (bucket: BucketTable, row: BucketTableRow, cell: MonthCell) => void;
+  onRemove: (bucket: BucketTable, row: BucketTableRow) => void;
   readOnly: boolean;
   savingCells: Record<string, boolean>;
 }) {
@@ -794,33 +840,57 @@ function BucketSection({
               </tr>
             </thead>
             <tbody>
-              {bucket.rows.map((row) => (
-                <Fragment key={row.team_member_id}>
-                  <tr className="border-t align-middle">
-                    <td rowSpan={4} className="sticky left-0 z-10 bg-card px-2 py-2 align-top">
-                      <Link className="block truncate font-medium text-primary hover:underline" to={teamMemberDetailPath(row)}>
-                        {row.team_member}
-                      </Link>
-                      <div className="numeric-cell mt-1 truncate text-[11px] text-muted-foreground">{formatBillRate(row.bill_rate, "", { includeUnit: true })}</div>
-                    </td>
-                    <MetricLabel label="Forecast" />
-                    {row.months.map((cell) => (
-                      <td key={cell.fiscal_month_id} className="px-1 py-1">
-                        <ForecastInput
-                          bucket={bucket}
-                          row={row}
-                          cell={cell}
-                          value={drafts[draftKey(bucket, row, cell)] ?? String(cell.forecast_hours)}
-                          dirty={drafts[draftKey(bucket, row, cell)] !== undefined}
-                          readOnly={readOnly}
-                          saving={savingCells[draftKey(bucket, row, cell)] === true}
-                          onChange={(value) => onDraftChange(bucket, row, cell, value)}
-                          onCommit={() => onDraftCommit(bucket, row, cell)}
-                        />
+              {bucket.rows.map((row) => {
+                const lineKey = forecastLineKey(row.team_member_id, bucket.bucket_id);
+                const hasDrafts = Object.keys(drafts).some((key) => key.startsWith(`${bucket.bucket_id}:${row.team_member_id}:`));
+                const canRemove = row.totals.forecast_hours === 0 && row.totals.actual_hours === 0 && !hasDrafts;
+                return (
+                  <Fragment key={row.team_member_id}>
+                    <tr className="border-t align-middle">
+                      <td rowSpan={4} className="sticky left-0 z-10 bg-card px-2 py-2 align-top">
+                        <div className="flex items-start gap-1">
+                          <Link className="min-w-0 flex-1 truncate font-medium text-primary hover:underline" to={teamMemberDetailPath(row)}>
+                            {row.team_member}
+                          </Link>
+                          {!readOnly ? (
+                            <Button
+                              aria-label={`Remove ${row.team_member} from ${bucket.name} forecast line`}
+                              className="h-7 w-7 shrink-0"
+                              disabled={!canRemove || deletingLines[lineKey] === true}
+                              onClick={() => onRemove(bucket, row)}
+                              size="icon"
+                              title={
+                                canRemove
+                                  ? `Remove empty ${bucket.name} forecast line`
+                                  : "Only empty forecast lines without Actual labor can be removed"
+                              }
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                        </div>
+                        <div className="numeric-cell mt-1 truncate text-[11px] text-muted-foreground">{formatBillRate(row.bill_rate, "", { includeUnit: true })}</div>
                       </td>
-                    ))}
-                    <ValueCell value={formatHours(row.totals.forecast_hours)} strong />
-                  </tr>
+                      <MetricLabel label="Forecast" />
+                      {row.months.map((cell) => (
+                        <td key={cell.fiscal_month_id} className="px-1 py-1">
+                          <ForecastInput
+                            bucket={bucket}
+                            row={row}
+                            cell={cell}
+                            value={drafts[draftKey(bucket, row, cell)] ?? String(cell.forecast_hours)}
+                            dirty={drafts[draftKey(bucket, row, cell)] !== undefined}
+                            readOnly={readOnly}
+                            saving={savingCells[draftKey(bucket, row, cell)] === true}
+                            onChange={(value) => onDraftChange(bucket, row, cell, value)}
+                            onCommit={() => onDraftCommit(bucket, row, cell)}
+                          />
+                        </td>
+                      ))}
+                      <ValueCell value={formatHours(row.totals.forecast_hours)} strong />
+                    </tr>
                   <tr>
                     <MetricLabel label="Actual" muted />
                     {row.months.map((cell) => (
@@ -850,8 +920,9 @@ function BucketSection({
                       strong
                     />
                   </tr>
-                </Fragment>
-              ))}
+                  </Fragment>
+                );
+              })}
               <tr className="border-t bg-secondary/50 font-semibold">
                 <td rowSpan={4} className="sticky left-0 z-10 bg-secondary px-2 py-2 align-top">
                   Bucket Total
