@@ -749,26 +749,37 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
             <TableHeader>
               <TableRow>
                 <TableHead>Status</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Imported</TableHead>
-                <TableHead>Skipped</TableHead>
+                <TableHead>Sync</TableHead>
+                <TableHead>Results</TableHead>
                 <TableHead>Completed</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {syncRuns.map((run) => (
-                <TableRow key={run.id}>
-                  <TableCell>
-                    <Badge className={run.status === "completed" ? "border-primary/40 text-primary" : "border-destructive/40 text-destructive"}>
-                      {run.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{run.source}</TableCell>
-                  <TableCell className="numeric-cell">{run.imported_count}</TableCell>
-                  <TableCell className="numeric-cell">{run.skipped_count}</TableCell>
-                  <TableCell>{run.completed_at ? formatDate(run.completed_at) : ""}</TableCell>
-                </TableRow>
-              ))}
+              {syncRuns.map((run) => {
+                const result = syncRunResult(run);
+                return (
+                  <TableRow key={run.id}>
+                    <TableCell className="align-top">
+                      <Badge className={syncStatusClassName(run.status)}>
+                        {syncStatusLabel(run.status)}
+                      </Badge>
+                      {run.error_summary ? <div className="mt-1 max-w-64 text-xs text-destructive">{run.error_summary}</div> : null}
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <div className="font-medium text-foreground">{result.sourceLabel}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">{result.sourceDetail}</div>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <div className="font-medium text-foreground">{result.primaryResult}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">{result.secondaryResult}</div>
+                      {result.secondaryDetail ? <div className="mt-0.5 text-xs text-muted-foreground">{result.secondaryDetail}</div> : null}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap align-top">
+                      {run.completed_at ? formatSyncDateTime(run.completed_at) : "In progress"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
@@ -2233,6 +2244,74 @@ function formatDate(value: string) {
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+function formatSyncDateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function syncRunResult(run: SyncRun) {
+  const imported = formatRecordCount(run.imported_count);
+  const skipped = formatRecordCount(run.skipped_count);
+  if (run.source === "jira" || run.source === "mock_jira_rovo") {
+    return {
+      sourceLabel: run.source === "jira" ? "Jira Actuals" : "Mock Jira Actuals",
+      sourceDetail: run.source === "jira" ? "Live worklog sync" : "Test worklog sync",
+      primaryResult: `${imported} ${run.imported_count === 1 ? "worklog" : "worklogs"} accepted`,
+      secondaryResult: `${skipped} ${run.skipped_count === 1 ? "worklog" : "worklogs"} excluded`,
+      secondaryDetail:
+        run.skipped_count > 0
+          ? "Missing Team Member, Product, or Work Type mapping"
+          : "No mapping or Work Type exclusions",
+    };
+  }
+  if (run.source === "jira_roadmap") {
+    return {
+      sourceLabel: "Jira Roadmap",
+      sourceDetail: "Roadmap Item sync",
+      primaryResult: `${imported} Roadmap ${run.imported_count === 1 ? "Item" : "Items"} synchronized`,
+      secondaryResult:
+        run.status === "completed"
+          ? `${skipped} stale ${run.skipped_count === 1 ? "item" : "items"} removed from the Fiscal Year`
+          : `${skipped} linked ${run.skipped_count === 1 ? "issue" : "issues"} processed before failure`,
+      secondaryDetail: run.status === "completed" && run.skipped_count === 0 ? "No stale Roadmap Items removed" : null,
+    };
+  }
+  return {
+    sourceLabel: humanizeSyncSource(run.source),
+    sourceDetail: run.mode === "live" ? "Live sync" : `${syncStatusLabel(run.mode)} sync`,
+    primaryResult: `${imported} ${run.imported_count === 1 ? "record" : "records"} processed`,
+    secondaryResult: `${skipped} ${run.skipped_count === 1 ? "record" : "records"} not applied`,
+    secondaryDetail: null,
+  };
+}
+
+function syncStatusLabel(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function syncStatusClassName(status: string) {
+  if (status === "completed") return "border-primary/40 text-primary";
+  if (status === "failed") return "border-destructive/40 text-destructive";
+  return "border-warning/50 text-warning";
+}
+
+function humanizeSyncSource(value: string) {
+  return syncStatusLabel(value.replace(/-/g, "_"));
+}
+
+function formatRecordCount(value: number) {
+  return new Intl.NumberFormat().format(value);
 }
 
 function attributionChangeTypeLabel(changeType: string) {

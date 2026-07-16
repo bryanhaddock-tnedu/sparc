@@ -551,6 +551,8 @@ Jira credentials must remain server-side. The app owns Jira access; AI tools sho
 
 Live Jira Actuals sync must run automatically once every morning before 8am Central time. The default schedule is 7:30am `America/Chicago`. Automatic sync uses the same app-owned backend codepath as manual Jira Actuals sync, syncs the current fiscal year, and skips when a live sync already ran that Central-time day.
 
+Sync History must present source-specific results rather than generic Imported/Skipped counters. Jira Actuals runs report worklogs accepted into Actuals and worklogs excluded because Team Member, Product, or Work Type mapping is unresolved. Jira Roadmap runs report Roadmap Items synchronized and stale items removed from the selected Fiscal Year. Accepted and synchronized counts include both new and refreshed records. Completion timestamps include time so repeated same-day runs are distinguishable.
+
 Jira project/product mapping policy:
 
 - Product Settings owns Jira project-to-Product mapping through `ProductJiraSpace`.

@@ -389,10 +389,12 @@ SPARC can fetch actual hours from Jira/Rovo through controlled server-side integ
 - Add readiness state and sync controls.
 - Add sync result details:
   - fetched issues
-  - imported worklogs
-  - skipped worklogs
+  - accepted Jira Actual worklogs
+  - Jira Actual worklogs excluded for unresolved Team Member, Product, or Work Type mapping
+  - synchronized Roadmap Items and stale Fiscal Year items removed
   - unmapped references
   - errors
+- Present source-specific Sync History results and completion times instead of applying generic Imported/Skipped labels to different sync jobs.
 
 **Acceptance Criteria**
 
