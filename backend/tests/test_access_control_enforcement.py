@@ -5,7 +5,7 @@ from fastapi.routing import APIRoute
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api import forecasts as forecasts_api, products as products_api
+from app.api import forecasts as forecasts_api, products as products_api, teams as teams_api
 from app.db.seed import _seed_buckets
 from app.models import Base, Bucket, Product, TeamMember
 from app.services.access_control import AuthenticatedUser, UserRole
@@ -105,6 +105,20 @@ def test_restricted_rate_viewer_gets_named_rows_without_bill_rates():
     assert rows
     assert all(row["bill_rate"] is None for row in rows)
     assert {row["team_member"] for row in rows} == {"Academics Analyst"}
+
+
+def test_leadership_team_forecast_plan_redacts_bill_rates():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        _seed_access_scope_data(db)
+        user = _authenticated_user(UserRole.LEADERSHIP_VIEW_ONLY)
+
+        plan = teams_api.get_team_roadmap_forecast_plan("Product", fiscal_year=2027, db=db, viewer=user)
+
+    assert plan["team_members"]
+    assert all(member["bill_rate"] is None for member in plan["team_members"])
 
 
 def test_forecast_detail_route_requires_named_people_access():

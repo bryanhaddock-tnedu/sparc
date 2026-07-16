@@ -373,6 +373,7 @@ export interface TeamRoadmapForecastRow {
   product_id: number | null;
   product: string | null;
   product_slug: string | null;
+  product_active: boolean;
   bucket_id: number | null;
   bucket: string | null;
   deliverables: RoadmapPlannerDeliverable[];

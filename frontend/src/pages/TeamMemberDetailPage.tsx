@@ -1,4 +1,4 @@
-import { Pencil, Plus, Save, X } from "lucide-react";
+import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -54,6 +54,7 @@ export function TeamMemberDetailPage() {
   const [forecastLineBucketId, setForecastLineBucketId] = useState("");
   const [forecastLineSaving, setForecastLineSaving] = useState(false);
   const [forecastLineMessage, setForecastLineMessage] = useState<string | null>(null);
+  const [deletingForecastLines, setDeletingForecastLines] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -102,8 +103,8 @@ export function TeamMemberDetailPage() {
 
   useEffect(() => {
     if (forecastLineProductId || products.length === 0) return;
-    const firstActiveProduct = products.find((product) => product.is_active) ?? products[0];
-    setForecastLineProductId(String(firstActiveProduct.id));
+    const firstActiveProduct = products.find((product) => product.is_active);
+    if (firstActiveProduct) setForecastLineProductId(String(firstActiveProduct.id));
   }, [forecastLineProductId, products]);
 
   useEffect(() => {
@@ -153,6 +154,7 @@ export function TeamMemberDetailPage() {
   if (!data) return null;
 
   const member = data.team_member;
+  const activeProducts = products.filter((product) => product.is_active);
   const forecastHours = data.products.reduce((total, row) => total + row.forecast_hours, 0);
   const actualHours = data.products.reduce((total, row) => total + row.actual_hours, 0);
   const forecastCost = data.products.reduce((total, row) => total + row.forecast_cost, 0);
@@ -172,7 +174,7 @@ export function TeamMemberDetailPage() {
   }
 
   async function saveForecastCell(line: MemberForecastLine, cell: MemberForecastMonthCell) {
-    if (!canEditForecast) return;
+    if (!canEditForecast || member.status !== "active") return;
     const key = memberForecastDraftKey(line, cell);
     const draft = forecastDrafts[key];
     if (draft === undefined) return;
@@ -190,7 +192,7 @@ export function TeamMemberDetailPage() {
     }
 
     setSavingForecastCells((current) => ({ ...current, [key]: true }));
-    setError(null);
+    setForecastLineMessage(null);
     try {
       await api.upsertForecast({
         product_id: line.product_id,
@@ -206,7 +208,7 @@ export function TeamMemberDetailPage() {
       });
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save forecast");
+      setForecastLineMessage(err instanceof Error ? err.message : "Unable to save Forecast");
     } finally {
       setSavingForecastCells((current) => {
         const next = { ...current };
@@ -217,13 +219,17 @@ export function TeamMemberDetailPage() {
   }
 
   async function addForecastLine() {
-    if (!canEditForecast) return;
+    if (!canEditForecast || member.status !== "active") return;
     const productId = Number(forecastLineProductId);
     const bucketId = Number(forecastLineBucketId);
     if (!Number.isFinite(productId) || !Number.isFinite(bucketId) || !data?.months[0]) return;
 
     const selectedProduct = products.find((product) => product.id === productId);
     const selectedBucket = bucketOptions.find((bucket) => bucket.bucket_id === bucketId);
+    if (!selectedProduct?.is_active) {
+      setForecastLineMessage("Inactive Products cannot receive new Forecast lines.");
+      return;
+    }
     if (forecastLines.some((line) => line.product_id === productId && line.bucket_id === bucketId)) {
       setForecastLineMessage(`${member.name} already has ${selectedProduct?.name ?? "this product"} / ${selectedBucket?.name ?? "this bucket"} in the forecast table.`);
       return;
@@ -241,9 +247,9 @@ export function TeamMemberDetailPage() {
           default_bucket_id: bucketId,
           status: "active",
         });
-      } else if (existingAssignment.status !== "active" || existingAssignment.default_bucket_id !== bucketId) {
+      } else if (existingAssignment.status !== "active" || existingAssignment.default_bucket_id == null) {
         await api.updateProductTeamMember(productId, existingAssignment.id, {
-          default_bucket_id: bucketId,
+          default_bucket_id: existingAssignment.default_bucket_id ?? bucketId,
           status: "active",
         });
       }
@@ -260,6 +266,39 @@ export function TeamMemberDetailPage() {
       setForecastLineMessage(err instanceof Error ? err.message : "Unable to add product and bucket");
     } finally {
       setForecastLineSaving(false);
+    }
+  }
+
+  async function removeForecastLine(line: MemberForecastLine) {
+    if (!canEditForecast || member.status !== "active") return;
+    const key = memberForecastLineKey(line.product_id, line.bucket_id);
+    if (
+      !window.confirm(
+        `Remove ${line.product} / ${line.bucket} from ${member.name}'s ${fiscalYearLabel} Forecast table? Product Team membership will remain.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingForecastLines((current) => ({ ...current, [key]: true }));
+    setForecastLineMessage(null);
+    try {
+      const result = await api.removeForecastLine({
+        product_id: line.product_id,
+        team_member_id: member.id,
+        bucket_id: line.bucket_id,
+        fiscal_year: fiscalYear,
+      });
+      setForecastLineMessage(result.message);
+      await loadData();
+    } catch (err) {
+      setForecastLineMessage(err instanceof Error ? err.message : "Unable to remove Forecast line");
+    } finally {
+      setDeletingForecastLines((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
     }
   }
 
@@ -420,7 +459,8 @@ export function TeamMemberDetailPage() {
 
       <MemberForecastTable
         bucketOptions={bucketOptions}
-        canEdit={canEditForecast}
+        canEdit={canEditForecast && member.status === "active"}
+        deletingLines={deletingForecastLines}
         drafts={forecastDrafts}
         forecastLineMessage={forecastLineMessage}
         forecastLineSaving={forecastLineSaving}
@@ -428,7 +468,8 @@ export function TeamMemberDetailPage() {
         onDraftChange={updateForecastDraft}
         onDraftCommit={saveForecastCell}
         onForecastLineAdd={addForecastLine}
-        products={products}
+        onForecastLineRemove={removeForecastLine}
+        products={activeProducts}
         savingCells={savingForecastCells}
         selectedBucketId={forecastLineBucketId}
         selectedProductId={forecastLineProductId}
@@ -817,6 +858,7 @@ function buildMemberRoadmapBillingRows(rows: RoadmapActualRow[]) {
 function MemberForecastTable({
   bucketOptions,
   canEdit,
+  deletingLines,
   drafts,
   forecastLineMessage,
   forecastLineSaving,
@@ -824,6 +866,7 @@ function MemberForecastTable({
   onDraftChange,
   onDraftCommit,
   onForecastLineAdd,
+  onForecastLineRemove,
   products,
   savingCells,
   selectedBucketId,
@@ -833,6 +876,7 @@ function MemberForecastTable({
 }: {
   bucketOptions: BucketTable[];
   canEdit: boolean;
+  deletingLines: Record<string, boolean>;
   drafts: Record<string, string>;
   forecastLineMessage: string | null;
   forecastLineSaving: boolean;
@@ -840,6 +884,7 @@ function MemberForecastTable({
   onDraftChange: (line: MemberForecastLine, cell: MemberForecastMonthCell, value: string) => void;
   onDraftCommit: (line: MemberForecastLine, cell: MemberForecastMonthCell) => void;
   onForecastLineAdd: () => void;
+  onForecastLineRemove: (line: MemberForecastLine) => void;
   products: Product[];
   savingCells: Record<string, boolean>;
   selectedBucketId: string;
@@ -911,7 +956,7 @@ function MemberForecastTable({
                 type="button"
               >
                 <Plus className="h-4 w-4" />
-                {forecastLineSaving ? "Adding" : "Add"}
+                {forecastLineSaving ? "Adding" : "Add Forecast Line"}
               </Button>
             </div>
             {forecastLineMessage ? <div className="max-w-xl text-right text-xs text-muted-foreground">{forecastLineMessage}</div> : null}
@@ -947,13 +992,33 @@ function MemberForecastTable({
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line) => (
-                  <Fragment key={`${line.product_id}-${line.bucket_id}`}>
+                {lines.map((line) => {
+                  const lineKey = memberForecastLineKey(line.product_id, line.bucket_id);
+                  const hasDrafts = Object.keys(drafts).some((key) => key.startsWith(`${lineKey}:`));
+                  const canRemove = line.totals.forecast_hours === 0 && line.totals.actual_hours === 0 && !hasDrafts;
+                  return (
+                    <Fragment key={`${line.product_id}-${line.bucket_id}`}>
                     <tr className="border-t align-middle">
                       <td rowSpan={4} className="sticky left-0 z-10 bg-card px-2 py-2 align-top">
-                        <Link className="block truncate font-medium text-primary hover:underline" to={productDetailPath(line)}>
-                          {line.product}
-                        </Link>
+                        <div className="flex items-start gap-1">
+                          <Link className="min-w-0 flex-1 truncate font-medium text-primary hover:underline" to={productDetailPath(line)}>
+                            {line.product}
+                          </Link>
+                          {canEdit ? (
+                            <Button
+                              aria-label={`Remove ${line.product} ${line.bucket} Forecast line`}
+                              className="h-7 w-7 shrink-0"
+                              disabled={!canRemove || deletingLines[lineKey] === true}
+                              onClick={() => onForecastLineRemove(line)}
+                              size="icon"
+                              title={canRemove ? "Remove empty Forecast line" : "Only empty Forecast lines without Actual labor can be removed"}
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                        </div>
                         <div className="mt-1 truncate text-[11px] text-muted-foreground">{line.bucket}</div>
                         <div className="mt-1 truncate text-[11px] text-muted-foreground">Program Area: {line.program_area ?? "Unassigned"}</div>
                       </td>
@@ -1003,8 +1068,9 @@ function MemberForecastTable({
                         value={formatDerivedCurrency(line.totals.variance_cost, line.costs_hidden)}
                       />
                     </tr>
-                  </Fragment>
-                ))}
+                    </Fragment>
+                  );
+                })}
                 <tr className="border-t bg-secondary/50 font-semibold">
                   <td rowSpan={4} className="sticky left-0 z-10 bg-secondary px-2 py-2 align-top">
                     Member Total

@@ -514,7 +514,7 @@ def test_team_roadmap_forecast_allocations_roll_up_to_forecast():
         assert cleared["rows"][0]["forecast_hours"] == Decimal("0")
 
 
-def test_team_roadmap_forecast_reconciles_product_forecast_full_year():
+def test_team_roadmap_forecast_updates_only_submitted_months():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
@@ -574,8 +574,38 @@ def test_team_roadmap_forecast_reconciles_product_forecast_full_year():
         maintenance = next(bucket_payload for bucket_payload in tables["buckets"] if bucket_payload["code"] == "MAINTENANCE")
         row = next(member_row for member_row in maintenance["rows"] if member_row["team_member_id"] == member.id)
 
-        assert [cell["forecast_hours"] for cell in row["months"]] == [40, 40, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        assert row["totals"]["forecast_hours"] == 120
+        assert [cell["forecast_hours"] for cell in row["months"]] == [40] * 12
+        assert row["totals"]["forecast_hours"] == 480
+
+
+def test_team_roadmap_forecast_rejects_inactive_products():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Retired Product", slug="retired-product", is_active=False)
+        member = TeamMember(name="Avery Johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+
+        with pytest.raises(ValueError, match="Inactive Products"):
+            upsert_team_roadmap_forecast_allocations(
+                db,
+                "Applications",
+                2027,
+                [
+                    {
+                        "roadmap_item_id": None,
+                        "product_id": product.id,
+                        "team_member_id": member.id,
+                        "bucket_id": bucket.id,
+                        "fiscal_year": 2027,
+                        "month_sequence": 1,
+                        "hours": Decimal("10"),
+                    }
+                ],
+            )
 
 
 def test_team_roadmap_forecast_plan_uses_existing_product_forecast():
@@ -794,6 +824,12 @@ def test_team_roadmap_forecast_plan_scopes_linked_components_to_row_product():
         db.flush()
         bucket = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
         assert bucket is not None
+        db.add_all(
+            [
+                ProductTeamMember(product_id=epso.id, team_member_id=member.id, default_bucket_id=bucket.id, status="active"),
+                ProductTeamMember(product_id=sword.id, team_member_id=member.id, default_bucket_id=bucket.id, status="active"),
+            ]
+        )
         roadmap_item = RoadmapItem(
             source="jira_product_discovery",
             fiscal_year=2027,
@@ -842,6 +878,121 @@ def test_team_roadmap_forecast_plan_scopes_linked_components_to_row_product():
         rows_by_product = {row["product"]: row for row in rows}
         assert [deliverable["jira_issue_key"] for deliverable in rows_by_product["EPSO"]["deliverables"]] == ["EPSO-54"]
         assert [deliverable["jira_issue_key"] for deliverable in rows_by_product["SWORD"]["deliverables"]] == ["SWORD-974"]
+
+
+def test_team_product_forecast_plan_uses_team_actuals_product_program_area_and_rate_redaction():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", slug="student-information", office="Academics")
+        team_member = TeamMember(
+            name="Avery Johnson",
+            slug="avery-johnson",
+            role="Engineer",
+            team="Applications",
+            bill_rate=Decimal("100"),
+        )
+        other_member = TeamMember(
+            name="Morgan Smith",
+            slug="morgan-smith",
+            role="Engineer",
+            team="Operations",
+            bill_rate=Decimal("120"),
+        )
+        db.add_all([product, team_member, other_member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "ENHANCE"))
+        month = get_fiscal_month(db, 2027, 1)
+        db.add(ProductTeamMember(product_id=product.id, team_member_id=team_member.id, default_bucket_id=bucket.id, status="active"))
+        db.add(
+            RoadmapItem(
+                source="jira_product_discovery",
+                fiscal_year=2027,
+                product_id=product.id,
+                bucket_id=bucket.id,
+                jira_issue_id="10001",
+                jira_issue_key="ROADMAP-1",
+                title="Student platform improvements",
+                issue_type="Idea",
+                source_team="Applications",
+                program_area="Jira Agency Office",
+            )
+        )
+        db.add_all(
+            [
+                ActualEntry(
+                    product_id=product.id,
+                    team_member_id=team_member.id,
+                    bucket_id=bucket.id,
+                    fiscal_month_id=month.id,
+                    hours=Decimal("3"),
+                    source="test",
+                    source_ticket_key="SIS-1",
+                    source_worklog_id="1",
+                ),
+                ActualEntry(
+                    product_id=product.id,
+                    team_member_id=team_member.id,
+                    bucket_id=bucket.id,
+                    fiscal_month_id=month.id,
+                    hours=Decimal("2"),
+                    source="test",
+                    source_ticket_key="SIS-1",
+                    source_worklog_id="2",
+                ),
+                ActualEntry(
+                    product_id=product.id,
+                    team_member_id=other_member.id,
+                    bucket_id=bucket.id,
+                    fiscal_month_id=month.id,
+                    hours=Decimal("7"),
+                    source="test",
+                    source_ticket_key="SIS-2",
+                    source_worklog_id="3",
+                ),
+            ]
+        )
+        db.flush()
+
+        result = team_roadmap_forecast_plan(db, "Applications", 2027, can_view_rates=False)
+
+        assert len(result["rows"]) == 1
+        assert result["rows"][0]["actual_hours"] == Decimal("5")
+        assert result["rows"][0]["worklog_count"] == 2
+        assert result["rows"][0]["ticket_count"] == 1
+        assert result["rows"][0]["program_area"] == "Academics"
+        assert result["team_members"][0]["bill_rate"] is None
+
+
+def test_team_product_forecast_plan_does_not_use_roadmap_source_team_as_product_ownership():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", slug="student-information")
+        member = TeamMember(name="Avery Johnson", role="Engineer", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, member])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "NET_NEW"))
+        db.add(
+            RoadmapItem(
+                source="jira_product_discovery",
+                fiscal_year=2027,
+                product_id=product.id,
+                bucket_id=bucket.id,
+                jira_issue_id="10001",
+                jira_issue_key="ROADMAP-1",
+                title="Unassigned product work",
+                issue_type="Idea",
+                source_team="Applications",
+            )
+        )
+        db.flush()
+
+        result = team_roadmap_forecast_plan(db, "Applications", 2027)
+
+        assert result["rows"] == []
 
 
 def test_product_roadmap_items_do_not_create_noncanonical_forecast_attribution():

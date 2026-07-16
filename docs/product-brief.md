@@ -286,6 +286,10 @@ Each Team Member Detail page should include:
 
 2. Product associations table
 
+   - Includes a monthly Forecast by Product and Bucket table backed by canonical Forecast entries.
+   - Active Team Members may add a Product + Bucket Forecast line without overwriting an existing Product Team default bucket.
+   - Empty Forecast lines may be removed only when Forecast hours are zero and no Actual labor exists; Product Team membership remains.
+
 3. Budget Tracker
    - Shows Team Member forecast and actuals for the selected Fiscal Year
 
@@ -352,6 +356,7 @@ The page should include:
 - Products supported.
 - Primary Product and primary work type.
 - Monthly forecast versus actual hours.
+- Product Forecast Planner grouped by Product and Bucket with Team Member rows and fiscal-month Forecast inputs.
 - Delivery Flow section that separates In Engineering, Engineering Work Done, Business Acceptance, and Business Accepted / Done.
 - Team Member ranking table with a dimension selector.
 - Product, work type, and role mix tables.
@@ -366,6 +371,14 @@ Rules:
 - Engineering Work Done should represent Jira statuses such as Ready for UAT, Ready for Acceptance, Dev Complete, or Code Complete.
 - Business Acceptance should represent Jira statuses such as In UAT, Business Acceptance, Business Review, Awaiting Acceptance, or Signoff.
 - Delivery-flow aging should use the latest Jira updated date until SPARC captures explicit Jira status-transition dates.
+- Product Forecast Planner writes canonical Product + Team Member + Bucket + Fiscal Month/Fiscal Year Forecast entries shared with Product Detail and Team Member Detail.
+- Team Actual totals use canonical Jira Actual entries for Team Members on the selected Team, including Actuals with unresolved Roadmap attribution. Product-wide labor from other Teams must not be included.
+- Product Program Area in Team planning comes from `Product.office`. Roadmap Item Program Area/Agency Office and source Team are context only and must not grant Product ownership to a Team.
+- Jira Roadmap schedule dates may highlight planning months but must not become Forecast ownership or Forecast grain.
+- Saving one or more Team Forecast cells updates only the submitted cells and must never clear untouched fiscal months.
+- Invalid Forecast input must remain unsaved and visibly invalid; it must never be coerced to zero.
+- Inactive Products and inactive Team Members may remain visible for history but cannot receive new Team Forecast entries.
+- Leadership viewers may see named Team planning rows and aggregate hours/costs but must not receive bill rates from the Team planning API.
 
 ## Enterprise Reports Page Requirements
 

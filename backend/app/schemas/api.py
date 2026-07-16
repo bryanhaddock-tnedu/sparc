@@ -1009,6 +1009,7 @@ class TeamRoadmapForecastRowResponse(BaseModel):
     product_id: int | None
     product: str | None
     product_slug: str | None
+    product_active: bool
     bucket_id: int | None
     bucket: str | None
     deliverables: list[RoadmapPlannerDeliverableResponse] = Field(default_factory=list)

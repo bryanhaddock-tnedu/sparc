@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
+    ActualEntry,
     Bucket,
     FiscalMonth,
     ForecastEntry,
@@ -17,23 +18,29 @@ from app.services.aggregations import serialize_team_member
 from app.services.costs import round_hours
 from app.services.fiscal_year import ensure_fiscal_months, get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
-from app.services.roadmap import _is_roadmap_item_issue_type, roadmap_actual_rows
+from app.services.roadmap import _is_roadmap_item_issue_type
 from app.services.slugs import product_url_slug, slugify, team_member_url_slug
 
 
-def team_roadmap_forecast_plan(db: Session, team_ref: str, fiscal_year: int) -> dict[str, object]:
+def team_roadmap_forecast_plan(
+    db: Session,
+    team_ref: str,
+    fiscal_year: int,
+    *,
+    can_view_rates: bool = True,
+) -> dict[str, object]:
     team_name = resolve_team_name(db, team_ref)
     months = ensure_fiscal_months(db, fiscal_year)
     team_members = _team_members(db, team_name)
     rows = _planner_rows(db, team_name, fiscal_year)
     _attach_forecast_entries(db, rows, fiscal_year, team_name)
-    _attach_actuals(db, rows, fiscal_year)
+    _attach_actuals(db, rows, fiscal_year, team_name)
 
     return {
         "team": team_name,
         "fiscal_year": fiscal_year,
         "months": [_serialize_month(month) for month in months],
-        "team_members": [serialize_team_member(member) for member in team_members],
+        "team_members": [serialize_team_member(member, can_view_rates=can_view_rates) for member in team_members],
         "rows": sorted(rows.values(), key=_planner_row_sort_key),
     }
 
@@ -45,25 +52,22 @@ def upsert_team_roadmap_forecast_allocations(
     entries: list[dict[str, object]],
 ) -> dict[str, object]:
     team_name = resolve_team_name(db, team_ref)
-    months = ensure_fiscal_months(db, fiscal_year)
+    ensure_fiscal_months(db, fiscal_year)
     submitted_hours: dict[tuple[int, int, int, int], Decimal] = {}
-    affected_contexts: set[tuple[int, int, int]] = set()
 
     for entry in entries:
         product_id, team_member_id, bucket_id, fiscal_month_id, hours = _validate_forecast_entry(db, team_name, fiscal_year, entry)
         submitted_hours[(product_id, team_member_id, bucket_id, fiscal_month_id)] = hours
-        affected_contexts.add((product_id, team_member_id, bucket_id))
 
-    for product_id, team_member_id, bucket_id in sorted(affected_contexts):
-        for month in months:
-            upsert_forecast_entry(
-                db,
-                product_id=product_id,
-                team_member_id=team_member_id,
-                bucket_id=bucket_id,
-                fiscal_month_id=month.id,
-                hours=submitted_hours.get((product_id, team_member_id, bucket_id, month.id), Decimal("0")),
-            )
+    for (product_id, team_member_id, bucket_id, fiscal_month_id), hours in sorted(submitted_hours.items()):
+        upsert_forecast_entry(
+            db,
+            product_id=product_id,
+            team_member_id=team_member_id,
+            bucket_id=bucket_id,
+            fiscal_month_id=fiscal_month_id,
+            hours=hours,
+        )
 
     db.flush()
     return team_roadmap_forecast_plan(db, team_name, fiscal_year)
@@ -101,6 +105,8 @@ def _validate_forecast_entry(
     product = db.get(Product, product_id)
     if product is None:
         raise ValueError("Product not found")
+    if not product.is_active:
+        raise ValueError("Inactive Products cannot receive new Forecast entries")
     bucket = db.get(Bucket, bucket_id)
     if bucket is None:
         raise ValueError("Bucket not found")
@@ -115,6 +121,8 @@ def _validate_forecast_entry(
         raise ValueError("Team Member not found")
     if slugify(member.team, fallback="team") != slugify(team_name, fallback="team"):
         raise ValueError("Team Member does not belong to this team")
+    if member.status != "active":
+        raise ValueError("Inactive Team Members cannot receive new Forecast entries")
 
     month = get_fiscal_month(db, fiscal_year, month_sequence)
     return product.id, member.id, bucket.id, month.id, hours
@@ -122,7 +130,8 @@ def _validate_forecast_entry(
 
 def _planner_rows(db: Session, team_name: str, fiscal_year: int) -> dict[tuple[int | None, int | None, int | None], dict[str, object]]:
     team_slug = slugify(team_name, fallback="team")
-    team_product_ids = _product_ids_for_team(db, team_name)
+    team_contexts = _product_bucket_contexts_for_team(db, team_name, fiscal_year)
+    team_product_ids = _product_ids_for_team(db, team_name) | {product_id for product_id, _bucket_id in team_contexts}
     statement = (
         select(RoadmapItem)
         .options(
@@ -140,8 +149,7 @@ def _planner_rows(db: Session, team_name: str, fiscal_year: int) -> dict[tuple[i
             continue
         source_team_matches = bool(item.source_team and slugify(item.source_team, fallback="team") == team_slug)
         for product, bucket in _roadmap_contexts(item):
-            fallback_team_product = product is not None and product.id in team_product_ids
-            if not source_team_matches and not fallback_team_product:
+            if product is None or product.id not in team_product_ids:
                 continue
             key = (item.id, product.id if product else None, bucket.id if bucket else None)
             rows[key] = _serialize_planner_row(item, product, bucket, source_team_matches)
@@ -150,7 +158,7 @@ def _planner_rows(db: Session, team_name: str, fiscal_year: int) -> dict[tuple[i
         for row in rows.values()
         if row["product_id"] is not None and row["bucket_id"] is not None
     }
-    for (product_id, bucket_id), (product, bucket) in _product_bucket_contexts_for_team(db, team_name, fiscal_year).items():
+    for (product_id, bucket_id), (product, bucket) in team_contexts.items():
         if (product_id, bucket_id) in existing_contexts:
             continue
         rows[(None, product_id, bucket_id)] = _serialize_product_bucket_planner_row(product, bucket)
@@ -200,9 +208,24 @@ def _product_bucket_contexts_for_team(db: Session, team_name: str, fiscal_year: 
         .where(FiscalMonth.fiscal_year == fiscal_year)
     ).all()
     for forecast in forecasts:
-        if forecast.team_member.status != "active" or slugify(forecast.team_member.team, fallback="team") != team_slug:
+        if slugify(forecast.team_member.team, fallback="team") != team_slug:
             continue
         contexts[(forecast.product.id, forecast.bucket.id)] = (forecast.product, forecast.bucket)
+
+    actuals = db.scalars(
+        select(ActualEntry)
+        .join(ActualEntry.fiscal_month)
+        .options(
+            joinedload(ActualEntry.product),
+            joinedload(ActualEntry.bucket),
+            joinedload(ActualEntry.team_member),
+        )
+        .where(FiscalMonth.fiscal_year == fiscal_year)
+    ).all()
+    for actual in actuals:
+        if slugify(actual.team_member.team, fallback="team") != team_slug:
+            continue
+        contexts[(actual.product.id, actual.bucket.id)] = (actual.product, actual.bucket)
     return contexts
 
 
@@ -254,7 +277,7 @@ def _attach_forecast_entries(db: Session, rows: dict[tuple[int | None, int | Non
     for forecast in forecasts:
         if forecast.hours == 0:
             continue
-        if forecast.team_member.status != "active" or slugify(forecast.team_member.team, fallback="team") != team_slug:
+        if slugify(forecast.team_member.team, fallback="team") != team_slug:
             continue
         row = _forecast_row_for_month(rows_by_context.get((forecast.product_id, forecast.bucket_id), []), forecast.fiscal_month)
         if row is None:
@@ -280,20 +303,51 @@ def _row_scheduled_for_month(row: dict[str, object], month: FiscalMonth) -> bool
     return start <= month.ends_on and end >= month.starts_on
 
 
-def _attach_actuals(db: Session, rows: dict[tuple[int | None, int | None, int | None], dict[str, object]], fiscal_year: int) -> None:
+def _attach_actuals(
+    db: Session,
+    rows: dict[tuple[int | None, int | None, int | None], dict[str, object]],
+    fiscal_year: int,
+    team_name: str,
+) -> None:
     if not rows:
         return
-    for actual in roadmap_actual_rows(db, fiscal_year):
-        roadmap_item_id = actual["roadmap_item_id"]
-        if roadmap_item_id is None:
+    rows_by_context: dict[tuple[int, int], list[dict[str, object]]] = {}
+    for row in rows.values():
+        if row["product_id"] is None or row["bucket_id"] is None:
             continue
-        key = (int(roadmap_item_id), int(actual["product_id"]), int(actual["bucket_id"]))
-        row = rows.get(key)
-        if row is None:
+        rows_by_context.setdefault((int(row["product_id"]), int(row["bucket_id"])), []).append(row)
+    if not rows_by_context:
+        return
+
+    team_slug = slugify(team_name, fallback="team")
+    actuals = db.scalars(
+        select(ActualEntry)
+        .join(ActualEntry.fiscal_month)
+        .options(joinedload(ActualEntry.team_member))
+        .where(
+            FiscalMonth.fiscal_year == fiscal_year,
+            ActualEntry.product_id.in_({context[0] for context in rows_by_context}),
+            ActualEntry.bucket_id.in_({context[1] for context in rows_by_context}),
+        )
+    ).all()
+    totals: dict[tuple[int, int], dict[str, object]] = {}
+    for actual in actuals:
+        if slugify(actual.team_member.team, fallback="team") != team_slug:
             continue
-        row["actual_hours"] += Decimal(str(actual["actual_hours"]))
-        row["worklog_count"] += int(actual["worklog_count"])
-        row["ticket_count"] += int(actual["ticket_count"])
+        context = (actual.product_id, actual.bucket_id)
+        if context not in rows_by_context:
+            continue
+        values = totals.setdefault(context, {"hours": Decimal("0"), "worklogs": 0, "tickets": set()})
+        values["hours"] += actual.hours
+        values["worklogs"] += 1
+        if actual.source_ticket_key:
+            values["tickets"].add(actual.source_ticket_key)
+
+    for context, values in totals.items():
+        row = sorted(rows_by_context[context], key=_planner_row_sort_key)[0]
+        row["actual_hours"] += values["hours"]
+        row["worklog_count"] += values["worklogs"]
+        row["ticket_count"] += len(values["tickets"])
 
 
 def _team_members(db: Session, team_name: str) -> list[TeamMember]:
@@ -301,7 +355,7 @@ def _team_members(db: Session, team_name: str) -> list[TeamMember]:
     return [
         member
         for member in db.scalars(select(TeamMember).order_by(TeamMember.name)).all()
-        if member.status == "active" and slugify(member.team, fallback="team") == team_slug
+        if slugify(member.team, fallback="team") == team_slug
     ]
 
 
@@ -313,7 +367,7 @@ def _serialize_planner_row(item: RoadmapItem, product: Product | None, bucket: B
         "roadmap_item_status": item.status,
         "source_team": item.source_team,
         "source_team_matches": source_team_matches,
-        "program_area": item.program_area,
+        "program_area": product.office if product else None,
         "roadmap_start_date": item.roadmap_start_date,
         "roadmap_end_date": item.roadmap_end_date,
         "roadmap_schedule_months": item.roadmap_schedule_months or [],
@@ -321,6 +375,7 @@ def _serialize_planner_row(item: RoadmapItem, product: Product | None, bucket: B
         "product_id": product.id if product else None,
         "product": product.name if product else None,
         "product_slug": product_url_slug(product) if product else None,
+        "product_active": product.is_active if product else False,
         "bucket_id": bucket.id if bucket else None,
         "bucket": bucket.name if bucket else None,
         "deliverables": [_serialize_deliverable_link(link, item) for link in _context_component_links(item, product, bucket)],
@@ -340,7 +395,7 @@ def _serialize_product_bucket_planner_row(product: Product, bucket: Bucket) -> d
         "roadmap_item_status": None,
         "source_team": None,
         "source_team_matches": False,
-        "program_area": None,
+        "program_area": product.office,
         "roadmap_start_date": None,
         "roadmap_end_date": None,
         "roadmap_schedule_months": [],
@@ -348,6 +403,7 @@ def _serialize_product_bucket_planner_row(product: Product, bucket: Bucket) -> d
         "product_id": product.id,
         "product": product.name,
         "product_slug": product_url_slug(product),
+        "product_active": product.is_active,
         "bucket_id": bucket.id,
         "bucket": bucket.name,
         "deliverables": [],

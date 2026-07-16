@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 from app.api.errors import bad_request
 from app.db.session import get_db
 from app.schemas import RoadmapForecastAllocationBatchUpsert, TeamRoadmapForecastPlanResponse
-from app.services.roadmap_forecasting import team_roadmap_forecast_plan, upsert_team_roadmap_forecast_allocations
+from app.services.access_control import AuthenticatedUser, role_capabilities
 from app.services.auth import require_admin, require_named_people_access
+from app.services.roadmap_forecasting import team_roadmap_forecast_plan, upsert_team_roadmap_forecast_allocations
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 
@@ -15,9 +16,14 @@ def get_team_roadmap_forecast_plan(
     team_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
-    _viewer=Depends(require_named_people_access),
+    viewer: AuthenticatedUser = Depends(require_named_people_access),
 ) -> dict[str, object]:
-    return team_roadmap_forecast_plan(db, team_ref, fiscal_year)
+    return team_roadmap_forecast_plan(
+        db,
+        team_ref,
+        fiscal_year,
+        can_view_rates=role_capabilities(viewer.role).get("can_view_rates", False),
+    )
 
 
 @router.put("/{team_ref}/roadmap-forecast-plan", response_model=TeamRoadmapForecastPlanResponse)

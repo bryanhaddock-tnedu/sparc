@@ -14,7 +14,7 @@ SPARC is the internal labor forecasting and cost intelligence app for this proje
 ## Active Backlog
 
 1. Complete Florie's stage acceptance of the simplified Forecast Adjustment Review scope, decision lifecycle, and confirmation flow.
-2. Review Team pages, especially the Product Forecast section, for correct ownership, calculations, terminology, and planning workflow.
+2. Complete Florie's stage acceptance of corrected Team Product Forecast ownership, Team Actual totals, save behavior, and Team Member line management.
 3. Complete role-based stage acceptance for Admin, Leadership View Only, Program Area View Only, and a Program Area user with no assignments.
 4. Prevent disabling or demoting the final active SPARC Admin and add the explicit no-Program-Area state.
 5. Add browser-level role/login regression coverage, repair ESLint configuration, and add backend tests, migration checks, and stage smoke tests to CI.
