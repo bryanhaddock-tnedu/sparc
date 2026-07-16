@@ -5,12 +5,12 @@ from fastapi.routing import APIRoute
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api import forecasts as forecasts_api, products as products_api, teams as teams_api
+from app.api import forecasts as forecasts_api, integrations as integrations_api, products as products_api, teams as teams_api
 from app.db.seed import _seed_buckets
 from app.models import Base, Bucket, Product, TeamMember
 from app.services.access_control import AuthenticatedUser, UserRole
 from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_summary, dashboard_work_type_breakdown, product_bucket_tables, product_summary
-from app.services.auth import require_hours_access, require_labor_detail_access, require_named_people_access
+from app.services.auth import require_admin, require_hours_access, require_labor_detail_access, require_named_people_access
 from app.services.fiscal_year import get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
 from app.services.reporting import build_labor_cost_report
@@ -129,6 +129,16 @@ def test_forecast_detail_route_requires_named_people_access():
     )
 
     assert any(dependency.call is require_named_people_access for dependency in route.dependant.dependencies)
+
+
+def test_jira_actual_exclusion_queue_requires_admin_access():
+    route = next(
+        route
+        for route in integrations_api.router.routes
+        if isinstance(route, APIRoute) and route.path == "/integrations/jira-rovo/worklog-exclusions" and "GET" in route.methods
+    )
+
+    assert any(dependency.call is require_admin for dependency in route.dependant.dependencies)
 
 
 @pytest.mark.parametrize(

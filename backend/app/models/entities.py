@@ -432,6 +432,33 @@ class SyncRun(TimestampMixin, Base):
     error_summary: Mapped[str | None] = mapped_column(Text)
 
     actual_entries: Mapped[list[ActualEntry]] = relationship(back_populates="sync_run")
+    worklog_exclusions: Mapped[list["JiraWorklogExclusion"]] = relationship(
+        back_populates="sync_run",
+        cascade="all, delete-orphan",
+    )
+
+
+class JiraWorklogExclusion(TimestampMixin, Base):
+    __tablename__ = "jira_worklog_exclusions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sync_run_id: Mapped[int] = mapped_column(ForeignKey("sync_runs.id", ondelete="CASCADE"), index=True, nullable=False)
+    source_issue_id: Mapped[str | None] = mapped_column(String(160))
+    source_worklog_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    ticket_key: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    ticket_summary: Mapped[str | None] = mapped_column(Text)
+    jira_project_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    jira_project_name: Mapped[str | None] = mapped_column(String(160))
+    jira_account_id: Mapped[str | None] = mapped_column(String(160))
+    jira_display_name: Mapped[str | None] = mapped_column(String(160))
+    worked_on: Mapped[date] = mapped_column(Date, nullable=False)
+    hours: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    work_type_value: Mapped[str | None] = mapped_column(String(160))
+    invalid_work_type: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    unmapped_user: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    unmapped_product: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    sync_run: Mapped[SyncRun] = relationship(back_populates="worklog_exclusions")
 
 
 class EstimationProfile(TimestampMixin, Base):

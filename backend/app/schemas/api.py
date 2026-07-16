@@ -840,6 +840,29 @@ class SyncRunResponse(BaseModel):
     error_summary: str | None
 
 
+class JiraWorklogExclusionTicketResponse(BaseModel):
+    ticket_key: str
+    ticket_summary: str | None
+    jira_project_key: str
+    jira_project_name: str | None
+    jira_url: str | None
+    worklog_count: int
+    hours: Decimal
+    worked_on_start: date
+    worked_on_end: date
+    jira_users: list[str]
+    work_type_values: list[str]
+    reason_codes: list[str]
+
+
+class JiraWorklogExclusionSummaryResponse(BaseModel):
+    sync_run_id: int | None
+    completed_at: datetime | None
+    excluded_worklog_count: int
+    details_available: bool
+    tickets: list[JiraWorklogExclusionTicketResponse]
+
+
 class RoadmapItemLinkedIssueResponse(BaseModel):
     id: int
     jira_issue_id: str | None

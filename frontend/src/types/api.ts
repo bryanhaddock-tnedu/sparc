@@ -993,6 +993,29 @@ export interface SyncRun {
   error_summary: string | null;
 }
 
+export interface JiraWorklogExclusionTicket {
+  ticket_key: string;
+  ticket_summary: string | null;
+  jira_project_key: string;
+  jira_project_name: string | null;
+  jira_url: string | null;
+  worklog_count: number;
+  hours: number;
+  worked_on_start: string;
+  worked_on_end: string;
+  jira_users: string[];
+  work_type_values: string[];
+  reason_codes: string[];
+}
+
+export interface JiraWorklogExclusionSummary {
+  sync_run_id: number | null;
+  completed_at: string | null;
+  excluded_worklog_count: number;
+  details_available: boolean;
+  tickets: JiraWorklogExclusionTicket[];
+}
+
 export interface JiraRovoSyncResult {
   source: string;
   fiscal_year?: number | null;

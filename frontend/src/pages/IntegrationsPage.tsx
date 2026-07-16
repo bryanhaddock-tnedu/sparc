@@ -1,6 +1,7 @@
-import { CheckCircle2, DatabaseZap, Download, RefreshCw, XCircle } from "lucide-react";
+import { CheckCircle2, DatabaseZap, Download, ExternalLink, RefreshCw, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { PageNav } from "../components/PageNav";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
@@ -21,6 +22,8 @@ import type {
   JiraProductMapping,
   JiraProjectCatalog,
   JiraUserMapping,
+  JiraWorklogExclusionSummary,
+  JiraWorklogExclusionTicket,
   Product,
   ReportedValueRow,
   RoadmapActualRow,
@@ -160,6 +163,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [forecastDecisions, setForecastDecisions] = useState<ForecastRecommendationDecision[]>([]);
   const [syncRuns, setSyncRuns] = useState<SyncRun[]>([]);
+  const [worklogExclusions, setWorklogExclusions] = useState<JiraWorklogExclusionSummary | null>(null);
   const [attributionChanges, setAttributionChanges] = useState<AttributionChange[]>([]);
   const [jiraStatus, setJiraStatus] = useState<JiraIntegrationStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -188,6 +192,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       reportedValueRows,
       forecastDecisionRows,
       runs,
+      exclusionSummary,
       changeRows,
       status,
     ] = await Promise.all([
@@ -204,6 +209,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       api.reportedValues({}, fiscalYear),
       api.forecastRecommendationDecisions(fiscalYear),
       api.syncRuns(),
+      api.worklogExclusions(),
       api.attributionChanges(),
       api.jiraIntegrationStatus(),
     ]);
@@ -220,6 +226,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
     setReportedRows(reportedValueRows);
     setForecastDecisions(forecastDecisionRows);
     setSyncRuns(runs);
+    setWorklogExclusions(exclusionSummary);
     setAttributionChanges(changeRows);
     setJiraStatus(status);
   }
@@ -244,7 +251,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
           ? ` Selected view was FY${result.requested_fiscal_year}; live Jira Actuals stay on the current fiscal year.`
           : "";
       setNotice(
-        `Jira actuals synced for FY${syncedFiscalYear} (${formatFiscalYearRangeLabel(syncedFiscalYear)}): ${result.imported_worklogs} worklogs imported, ${result.deleted_worklogs} stale worklogs removed, ${result.skipped_unmapped_worklogs} skipped for mapping.${selectedYearNote}`,
+        `Jira actuals synced for FY${syncedFiscalYear} (${formatFiscalYearRangeLabel(syncedFiscalYear)}): ${result.imported_worklogs} worklogs accepted into Actuals, ${result.deleted_worklogs} stale worklogs removed, ${result.skipped_unmapped_worklogs} worklogs excluded from Actuals. Review Jira Actual Exclusions below.${selectedYearNote}`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to run live Jira sync");
@@ -510,6 +517,8 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         <StatusCard label="Latest sync" value={syncRuns[0]?.status ?? "No runs"} />
       </section>
 
+      {worklogExclusions ? <JiraActualExclusionsSection summary={worklogExclusions} /> : null}
+
       <RoadmapBillingFilters
         buckets={buckets}
         filters={roadmapFilters}
@@ -554,7 +563,7 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         </div>
       ) : null}
 
-      <MappingTable title="Jira Users" unmapped={unmappedUserCount}>
+      <MappingTable id="jira-user-mappings" title="Jira Users" unmapped={unmappedUserCount}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -1660,9 +1669,152 @@ function RoadmapItemMappingBadge({ item }: { item: RoadmapItem }) {
   return <Badge className="border-warning/50 text-warning">needs bucket</Badge>;
 }
 
-function MappingTable({ title, unmapped, badgeLabel = "unmapped", children }: { title: string; unmapped: number; badgeLabel?: string; children: ReactNode }) {
+function JiraActualExclusionsSection({ summary }: { summary: JiraWorklogExclusionSummary }) {
   return (
-    <section className="space-y-3">
+    <section aria-labelledby="jira-actual-exclusions-heading" className="space-y-3">
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+        <div>
+          <h2 id="jira-actual-exclusions-heading" className="text-lg font-semibold">
+            Jira Actual Exclusions
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Tickets whose worklogs were not added to SPARC Actuals in the latest Jira Actuals sync.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          {summary.completed_at ? <span className="text-xs text-muted-foreground">Synced {formatSyncDateTime(summary.completed_at)}</span> : null}
+          <Badge className={summary.excluded_worklog_count ? "border-warning/50 text-warning" : "border-primary/40 text-primary"}>
+            {summary.excluded_worklog_count} excluded {summary.excluded_worklog_count === 1 ? "worklog" : "worklogs"}
+          </Badge>
+        </div>
+      </div>
+
+      {summary.sync_run_id === null ? (
+        <div className="rounded-md border px-4 py-5 text-sm text-muted-foreground">No Jira Actuals sync has been recorded.</div>
+      ) : !summary.details_available ? (
+        <div className="rounded-md border border-warning/40 bg-warning/10 px-4 py-4 text-sm">
+          <div className="font-medium text-foreground">Ticket details were not captured for this earlier sync.</div>
+          <div className="mt-1 text-muted-foreground">Run Jira Actuals sync once to populate the exclusion queue with tickets and resolution paths.</div>
+        </div>
+      ) : summary.tickets.length === 0 ? (
+        <div className="rounded-md border border-primary/30 bg-accent/10 px-4 py-5 text-sm text-primary">
+          The latest Jira Actuals sync has no excluded worklogs.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <Table className="min-w-[980px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ticket</TableHead>
+                <TableHead>Project</TableHead>
+                <TableHead>Work Type</TableHead>
+                <TableHead>Jira User</TableHead>
+                <TableHead>Excluded Labor</TableHead>
+                <TableHead>Resolution</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {summary.tickets.map((ticket) => (
+                <TableRow key={ticket.ticket_key}>
+                  <TableCell className="align-top">
+                    {ticket.jira_url ? (
+                      <a className="inline-flex items-center gap-1 font-medium text-primary hover:underline" href={ticket.jira_url} rel="noreferrer" target="_blank">
+                        {ticket.ticket_key}
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    ) : (
+                      <div className="font-medium text-primary">{ticket.ticket_key}</div>
+                    )}
+                    <div className="mt-1 max-w-72 text-xs text-muted-foreground">{ticket.ticket_summary ?? "No Jira summary"}</div>
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <div className="font-medium">{ticket.jira_project_key}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{ticket.jira_project_name ?? "Unknown Jira project"}</div>
+                  </TableCell>
+                  <TableCell className="align-top">{workTypeExclusionLabel(ticket)}</TableCell>
+                  <TableCell className="align-top">
+                    {ticket.jira_users.length ? ticket.jira_users.map((user) => <div key={user}>{user}</div>) : <span className="text-muted-foreground">Unknown Jira user</span>}
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <div className="font-medium">{formatHours(ticket.hours)} hrs</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {ticket.worklog_count} {ticket.worklog_count === 1 ? "worklog" : "worklogs"} · {formatWorklogDateRange(ticket)}
+                    </div>
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <ExclusionResolution ticket={ticket} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ExclusionResolution({ ticket }: { ticket: JiraWorklogExclusionTicket }) {
+  return (
+    <div className="space-y-2 text-sm">
+      {ticket.reason_codes.includes("missing_work_type") ? (
+        <div>
+          <div className="font-medium text-warning">Set Work Type in Jira</div>
+          <div className="text-xs text-muted-foreground">Choose Net New, Enhance, or Maintenance, then sync Jira Actuals again.</div>
+        </div>
+      ) : null}
+      {ticket.reason_codes.includes("unrecognized_work_type") ? (
+        <div>
+          <div className="font-medium text-warning">Correct Work Type in Jira</div>
+          <div className="text-xs text-muted-foreground">Use a recognized SPARC Work Type, then sync Jira Actuals again.</div>
+        </div>
+      ) : null}
+      {ticket.reason_codes.includes("unmapped_user") ? (
+        <div>
+          <a className="font-medium text-primary hover:underline" href="#jira-user-mappings">
+            Map Jira user in SPARC
+          </a>
+          <div className="text-xs text-muted-foreground">Assign the Jira identity to a Team Member below, then sync again.</div>
+        </div>
+      ) : null}
+      {ticket.reason_codes.includes("unmapped_product") ? (
+        <div>
+          <Link className="font-medium text-primary hover:underline" to="/products/settings">
+            Map Jira project in Product Settings
+          </Link>
+          <div className="text-xs text-muted-foreground">Assign the Jira project to its Product, then sync again.</div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function workTypeExclusionLabel(ticket: JiraWorklogExclusionTicket) {
+  if (ticket.reason_codes.includes("missing_work_type")) return <Badge className="border-warning/50 text-warning">Missing</Badge>;
+  if (ticket.reason_codes.includes("unrecognized_work_type")) {
+    return (
+      <div>
+        <Badge className="border-warning/50 text-warning">Unrecognized</Badge>
+        <div className="mt-1 max-w-48 text-xs text-muted-foreground">{ticket.work_type_values.join(", ")}</div>
+      </div>
+    );
+  }
+  return <span className="text-sm text-muted-foreground">Mapped</span>;
+}
+
+function formatWorklogDateRange(ticket: JiraWorklogExclusionTicket) {
+  const start = formatWorklogDate(ticket.worked_on_start);
+  const end = formatWorklogDate(ticket.worked_on_end);
+  return start === end ? start : `${start} - ${end}`;
+}
+
+function formatWorklogDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${value}T12:00:00`));
+}
+
+function MappingTable({ id, title, unmapped, badgeLabel = "unmapped", children }: { id?: string; title: string; unmapped: number; badgeLabel?: string; children: ReactNode }) {
+  return (
+    <section id={id} className="scroll-mt-4 space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">{title}</h2>
         <Badge className={unmapped ? "border-destructive/40 text-destructive" : "border-primary/40 text-primary"}>

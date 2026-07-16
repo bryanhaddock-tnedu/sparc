@@ -34,6 +34,7 @@ import type {
   LaborCostReportOptionalDimension,
   LaborCostReportSort,
   JiraUserMapping,
+  JiraWorklogExclusionSummary,
   Product,
   ProductBucketTables,
   ProductCreatePayload,
@@ -397,6 +398,7 @@ export const api = {
       body: JSON.stringify({ team_member_id: teamMemberId }),
     }),
   syncRuns: () => request<SyncRun[]>("/api/integrations/jira-rovo/sync-runs"),
+  worklogExclusions: () => request<JiraWorklogExclusionSummary>("/api/integrations/jira-rovo/worklog-exclusions"),
   estimationProfiles: () => request<EstimationProfile[]>("/api/estimations/profiles"),
   updateEstimationProfile: (profileId: number, payload: EstimationProfileUpdatePayload) =>
     request<EstimationProfile>(`/api/estimations/profiles/${profileId}`, {

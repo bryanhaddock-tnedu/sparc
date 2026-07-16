@@ -16,6 +16,7 @@ from app.schemas import (
     JiraRovoSyncResponse,
     JiraUserMapRequest,
     JiraUserMappingResponse,
+    JiraWorklogExclusionSummaryResponse,
     RoadmapActualRowResponse,
     RoadmapItemMapRequest,
     RoadmapItemResponse,
@@ -30,6 +31,7 @@ from app.services.forecast_recommendations import create_forecast_recommendation
 from app.services.jira_projects import list_jira_project_catalog, refresh_jira_project_catalog, update_jira_project_catalog_visibility
 from app.services.jira_rovo import (
     jira_integration_status,
+    list_latest_worklog_exclusions,
     list_product_mappings,
     list_sync_runs,
     list_unmapped_products,
@@ -259,3 +261,8 @@ def get_product_mappings(db: Session = Depends(get_db)) -> list[dict[str, object
 @router.get("/sync-runs", response_model=list[SyncRunResponse])
 def get_sync_runs(limit: int = 20, db: Session = Depends(get_db)) -> list[dict[str, object]]:
     return list_sync_runs(db, limit=limit)
+
+
+@router.get("/worklog-exclusions", response_model=JiraWorklogExclusionSummaryResponse)
+def get_worklog_exclusions(db: Session = Depends(get_db)) -> dict[str, object]:
+    return list_latest_worklog_exclusions(db)

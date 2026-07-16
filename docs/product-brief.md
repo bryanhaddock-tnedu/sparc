@@ -501,6 +501,7 @@ Jira/Rovo:
 - `GET /api/integrations/jira-rovo/status`
 - `POST /api/integrations/jira-rovo/sync`
 - `POST /api/integrations/jira-rovo/sync-live`
+- `GET /api/integrations/jira-rovo/worklog-exclusions`
 - `POST /api/integrations/jira-rovo/roadmap/sync`
 - `GET /api/integrations/jira-rovo/roadmap/items`
 - `GET /api/integrations/jira-rovo/roadmap/forecast-recommendation-decisions`
@@ -545,13 +546,15 @@ The app should:
 5. Identify bucket if Jira has bucket/type data.
 6. Normalize worklog dates into fiscal months.
 7. Store actual hours.
-8. Surface unmapped users/products.
+8. Surface worklogs excluded because Work Type, Team Member, or Product cannot be resolved.
 
 Jira credentials must remain server-side. The app owns Jira access; AI tools should only call app codepaths.
 
 Live Jira Actuals sync must run automatically once every morning before 8am Central time. The default schedule is 7:30am `America/Chicago`. Automatic sync uses the same app-owned backend codepath as manual Jira Actuals sync, syncs the current fiscal year, and skips when a live sync already ran that Central-time day.
 
 Sync History must present source-specific results rather than generic Imported/Skipped counters. Jira Actuals runs report worklogs accepted into Actuals and worklogs excluded because Team Member, Product, or Work Type mapping is unresolved. Jira Roadmap runs report Roadmap Items synchronized and stale items removed from the selected Fiscal Year. Accepted and synchronized counts include both new and refreshed records. Completion timestamps include time so repeated same-day runs are distinguishable.
+
+The Admin Jira page must also surface the latest live Jira Actuals exclusions as a ticket-level correction queue. SPARC persists each excluded worklog with its Jira ticket, labor impact, raw Work Type value, Jira identity, Jira project, and unresolved reason, then groups those records by ticket for review. Missing or unrecognized Work Type is corrected on the linked Jira ticket; an unmapped Jira identity is corrected in the SPARC Jira Users mapping table; an unmapped Jira project is corrected through Product Settings. A corrected ticket enters canonical Actuals only after the next Jira Actuals sync. Syncs created before worklog-level diagnostics were introduced retain their aggregate excluded count but require one new live sync before ticket details are available.
 
 Jira project/product mapping policy:
 

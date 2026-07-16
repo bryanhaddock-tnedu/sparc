@@ -8,7 +8,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import ActualEntry, Bucket, FiscalMonth, JiraProductMapping, JiraUserMapping, Product, ProductJiraSpace, SyncRun, TeamMember
+from app.models import (
+    ActualEntry,
+    Bucket,
+    FiscalMonth,
+    JiraProductMapping,
+    JiraUserMapping,
+    JiraWorklogExclusion,
+    Product,
+    ProductJiraSpace,
+    SyncRun,
+    TeamMember,
+)
 from app.models.entities import utcnow
 from app.services.estimation_policy import WORK_TYPE_ALIASES, normalize_lookup_value
 from app.services.fiscal_year import current_fiscal_year, ensure_fiscal_months, fiscal_sequence_for_date, fiscal_year_for_date
@@ -38,6 +49,7 @@ class MockWorklog:
     bucket_code: str | None
     worked_on: date
     hours: Decimal
+    work_type_value: str | None = None
 
 
 MOCK_WORKLOGS = [
@@ -67,6 +79,7 @@ def run_mock_jira_rovo_sync(db: Session) -> dict[str, object]:
             product_mapping = _ensure_product_mapping(db, worklog)
 
             if bucket is None or user_mapping.team_member_id is None or product_mapping.product_id is None:
+                _record_worklog_exclusion(db, sync_run, worklog, bucket, user_mapping, product_mapping)
                 skipped_unmapped += 1
                 continue
 
@@ -184,6 +197,7 @@ def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = Non
             existing = _existing_live_actual(db, worklog)
 
             if bucket is None or user_mapping.team_member_id is None or product_mapping.product_id is None:
+                _record_worklog_exclusion(db, sync_run, worklog, bucket, user_mapping, product_mapping)
                 if existing is not None:
                     db.delete(existing)
                     deleted += 1
@@ -421,6 +435,84 @@ def list_sync_runs(db: Session, limit: int = 20) -> list[dict[str, object]]:
     return [serialize_sync_run(run) for run in runs]
 
 
+def list_latest_worklog_exclusions(db: Session) -> dict[str, object]:
+    sync_run = db.scalar(
+        select(SyncRun)
+        .where(
+            SyncRun.source == "jira",
+            SyncRun.status == "completed",
+        )
+        .order_by(SyncRun.started_at.desc())
+        .limit(1)
+    )
+    if sync_run is None:
+        return {
+            "sync_run_id": None,
+            "completed_at": None,
+            "excluded_worklog_count": 0,
+            "details_available": True,
+            "tickets": [],
+        }
+
+    exclusions = db.scalars(
+        select(JiraWorklogExclusion)
+        .where(JiraWorklogExclusion.sync_run_id == sync_run.id)
+        .order_by(JiraWorklogExclusion.ticket_key, JiraWorklogExclusion.worked_on, JiraWorklogExclusion.id)
+    ).all()
+    grouped: dict[str, dict[str, object]] = {}
+    for exclusion in exclusions:
+        group = grouped.setdefault(
+            exclusion.ticket_key,
+            {
+                "ticket_key": exclusion.ticket_key,
+                "ticket_summary": exclusion.ticket_summary,
+                "jira_project_key": exclusion.jira_project_key,
+                "jira_project_name": exclusion.jira_project_name,
+                "worklog_count": 0,
+                "hours": Decimal("0"),
+                "worked_on_start": exclusion.worked_on,
+                "worked_on_end": exclusion.worked_on,
+                "jira_users": set(),
+                "work_type_values": set(),
+                "reason_codes": set(),
+            },
+        )
+        group["worklog_count"] += 1
+        group["hours"] += exclusion.hours
+        group["worked_on_start"] = min(group["worked_on_start"], exclusion.worked_on)
+        group["worked_on_end"] = max(group["worked_on_end"], exclusion.worked_on)
+        if exclusion.jira_display_name:
+            group["jira_users"].add(exclusion.jira_display_name)
+        if exclusion.work_type_value:
+            group["work_type_values"].add(exclusion.work_type_value)
+        if exclusion.invalid_work_type:
+            group["reason_codes"].add("unrecognized_work_type" if exclusion.work_type_value else "missing_work_type")
+        if exclusion.unmapped_user:
+            group["reason_codes"].add("unmapped_user")
+        if exclusion.unmapped_product:
+            group["reason_codes"].add("unmapped_product")
+
+    site_url = (get_settings().jira_site_url or "").rstrip("/")
+    tickets = []
+    for group in grouped.values():
+        tickets.append(
+            {
+                **group,
+                "jira_url": f"{site_url}/browse/{group['ticket_key']}" if site_url else None,
+                "jira_users": sorted(group["jira_users"]),
+                "work_type_values": sorted(group["work_type_values"]),
+                "reason_codes": sorted(group["reason_codes"]),
+            }
+        )
+    return {
+        "sync_run_id": sync_run.id,
+        "completed_at": sync_run.completed_at,
+        "excluded_worklog_count": sync_run.skipped_count,
+        "details_available": sync_run.skipped_count == 0 or bool(exclusions),
+        "tickets": tickets,
+    }
+
+
 def serialize_sync_run(run: SyncRun) -> dict[str, object]:
     return {
         "id": run.id,
@@ -433,6 +525,35 @@ def serialize_sync_run(run: SyncRun) -> dict[str, object]:
         "skipped_count": run.skipped_count,
         "error_summary": run.error_summary,
     }
+
+
+def _record_worklog_exclusion(
+    db: Session,
+    sync_run: SyncRun,
+    worklog: MockWorklog,
+    bucket: Bucket | None,
+    user_mapping: JiraUserMapping,
+    product_mapping: JiraProductMapping,
+) -> None:
+    db.add(
+        JiraWorklogExclusion(
+            sync_run_id=sync_run.id,
+            source_issue_id=worklog.issue_id,
+            source_worklog_id=worklog.worklog_id,
+            ticket_key=worklog.ticket_key,
+            ticket_summary=worklog.ticket_summary,
+            jira_project_key=worklog.jira_project_key,
+            jira_project_name=worklog.jira_project_name,
+            jira_account_id=worklog.jira_account_id or None,
+            jira_display_name=worklog.jira_display_name or None,
+            worked_on=worklog.worked_on,
+            hours=worklog.hours,
+            work_type_value=worklog.work_type_value,
+            invalid_work_type=bucket is None,
+            unmapped_user=user_mapping.team_member_id is None,
+            unmapped_product=product_mapping.product_id is None,
+        )
+    )
 
 
 def _ensure_month_for_worklog(db: Session, fiscal_year: int, worked_on: date) -> FiscalMonth:
@@ -648,6 +769,7 @@ def _normalize_jira_worklog(
     if not project_key:
         return None
 
+    bucket_code, work_type_value = _work_type_details_from_issue_fields(fields, work_type_field_ids)
     return MockWorklog(
         worklog_id=worklog_id,
         issue_id=str(issue.get("id") or issue.get("key") or ""),
@@ -659,9 +781,10 @@ def _normalize_jira_worklog(
         jira_account_id=str(author.get("accountId") or ""),
         jira_display_name=str(author.get("displayName") or "Unknown Jira user"),
         jira_email=str(author.get("emailAddress") or "") or None,
-        bucket_code=_bucket_code_from_issue_fields(fields, work_type_field_ids),
+        bucket_code=bucket_code,
         worked_on=worked_on,
         hours=hours,
+        work_type_value=work_type_value,
     )
 
 
@@ -672,14 +795,24 @@ def _bucket_for_worklog(db: Session, worklog: MockWorklog) -> Bucket | None:
 
 
 def _bucket_code_from_issue_fields(fields: dict[str, object], work_type_field_ids: list[str]) -> str | None:
+    return _work_type_details_from_issue_fields(fields, work_type_field_ids)[0]
+
+
+def _work_type_details_from_issue_fields(
+    fields: dict[str, object],
+    work_type_field_ids: list[str],
+) -> tuple[str | None, str | None]:
+    first_value: str | None = None
     for field_id in work_type_field_ids:
         value = _jira_field_text(fields.get(field_id))
         if not value:
             continue
+        if first_value is None:
+            first_value = value
         bucket_code = WORK_TYPE_ALIASES.get(normalize_lookup_value(value))
         if bucket_code:
-            return bucket_code
-    return None
+            return bucket_code, value
+    return None, first_value
 
 
 def _jira_field_text(value: object) -> str:

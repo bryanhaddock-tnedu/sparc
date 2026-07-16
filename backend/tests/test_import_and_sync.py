@@ -7,11 +7,23 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db.seed import _seed_buckets
-from app.models import ActualEntry, Base, Bucket, JiraProductMapping, JiraUserMapping, Product, ProductJiraSpace, SyncRun, TeamMember
+from app.models import (
+    ActualEntry,
+    Base,
+    Bucket,
+    JiraProductMapping,
+    JiraUserMapping,
+    JiraWorklogExclusion,
+    Product,
+    ProductJiraSpace,
+    SyncRun,
+    TeamMember,
+)
 from app.services.fiscal_year import get_fiscal_month
 from app.services.jira_rovo import (
     MockWorklog,
     _bucket_code_from_issue_fields,
+    list_latest_worklog_exclusions,
     map_jira_user,
     run_live_jira_rovo_sync,
     run_mock_jira_rovo_sync,
@@ -89,6 +101,19 @@ def test_mock_sync_tracks_run_and_unmapped_references():
         assert result["skipped_unmapped_worklogs"] == 1
         assert db.scalar(select(SyncRun).where(SyncRun.status == "completed")) is not None
         assert db.scalars(select(ActualEntry)).all()
+        assert len(db.scalars(select(JiraWorklogExclusion)).all()) == 1
+
+
+def test_worklog_exclusion_summary_marks_legacy_counts_without_details():
+    with session() as db:
+        db.add(SyncRun(source="jira", mode="live", status="completed", imported_count=10, skipped_count=2))
+        db.flush()
+
+        exclusions = list_latest_worklog_exclusions(db)
+
+        assert exclusions["excluded_worklog_count"] == 2
+        assert exclusions["details_available"] is False
+        assert exclusions["tickets"] == []
 
 
 def test_mock_sync_imports_after_mapping_unmapped_references():
@@ -344,12 +369,24 @@ def test_live_sync_skips_unclassified_work_type_and_deletes_existing_actual(monk
             )
         ]
         second = run_live_jira_rovo_sync(db, 2026)
+        exclusions = list_latest_worklog_exclusions(db)
 
         assert first["imported_worklogs"] == 1
         assert second["imported_worklogs"] == 0
         assert second["skipped_unmapped_worklogs"] == 1
         assert second["deleted_worklogs"] == 1
         assert db.scalar(select(ActualEntry).where(ActualEntry.source_worklog_id == "live-wl-1")) is None
+        assert exclusions["details_available"] is True
+        assert exclusions["excluded_worklog_count"] == 1
+        assert len(exclusions["tickets"]) == 1
+        ticket = exclusions["tickets"][0]
+        assert ticket["ticket_key"] == "LIVE-1"
+        assert ticket["ticket_summary"] == "Unclassified worklog"
+        assert ticket["worklog_count"] == 1
+        assert ticket["hours"] == Decimal("3.50")
+        assert ticket["jira_users"] == ["Live User"]
+        assert ticket["work_type_values"] == []
+        assert ticket["reason_codes"] == ["missing_work_type"]
 
 
 def test_jira_work_type_bucket_classifier_does_not_default_to_maintenance():

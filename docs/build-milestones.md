@@ -395,6 +395,8 @@ SPARC can fetch actual hours from Jira/Rovo through controlled server-side integ
   - unmapped references
   - errors
 - Present source-specific Sync History results and completion times instead of applying generic Imported/Skipped labels to different sync jobs.
+- Persist worklog-level exclusion evidence for each live Jira Actuals run and group the latest run by ticket in an Admin correction queue.
+- Show whether each correction belongs in Jira Work Type, SPARC Jira User mapping, or SPARC Product Settings, with the excluded hours, dates, and direct resolution path.
 
 **Acceptance Criteria**
 
@@ -403,6 +405,7 @@ SPARC can fetch actual hours from Jira/Rovo through controlled server-side integ
 - Jira/Rovo payloads are normalized before import.
 - Imports remain idempotent.
 - Unmapped users/products are surfaced without breaking sync.
+- Admins can identify tickets with missing or unrecognized Work Type inside SPARC without building a separate JQL report.
 
 **Dependencies**
 
