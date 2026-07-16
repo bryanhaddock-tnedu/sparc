@@ -490,6 +490,8 @@ Jira/Rovo:
 - `POST /api/integrations/jira-rovo/sync-live`
 - `POST /api/integrations/jira-rovo/roadmap/sync`
 - `GET /api/integrations/jira-rovo/roadmap/items`
+- `GET /api/integrations/jira-rovo/roadmap/forecast-recommendation-decisions`
+- `POST /api/integrations/jira-rovo/roadmap/forecast-recommendation-decisions`
 - `PUT /api/integrations/jira-rovo/roadmap/ticket-links/{ticket_key}`
 - `GET /api/integrations/jira-rovo/attribution-changes`
 - `GET /api/integrations/jira-rovo/unmapped-users`
@@ -516,6 +518,8 @@ Actual hours come from Jira through app-owned backend integration code.
 Local/demo environments may use the mock sync, but real environments should use the live Jira sync endpoint with credentials supplied only through server-side environment variables or Key Vault.
 
 Roadmap Items come from a separate roadmap sync. That sync must never create or overwrite ActualEntry rows. It only stores Roadmap Items and their relationships to directly linked Jira delivery work and its parent-hierarchy descendants so Product and Team Member pages can attribute actual hours for billing review.
+
+Forecast adjustment review on the Admin Jira Sync page is a full-fiscal-year Product + Bucket comparison of canonical Forecast hours to mapped Roadmap Actual hours. Applying a recommendation adds only the reviewed delta to an explicit Team Member and Fiscal Month Forecast line after verifying that the reviewed totals are still current. Dismissing a recommendation changes no Forecast or Actual data and hides that exact snapshot until its totals change. Every decision remains in immutable history.
 
 Roadmap Item inclusion is intentionally fiscal-year scoped. A Jira Product Discovery record must be in the configured roadmap project, use the `Idea` issue type, carry the exact fiscal-year label such as `FY27`, and be visible to the Jira integration account. Product mapping affects attribution after import; it does not determine whether the Idea is fetched.
 

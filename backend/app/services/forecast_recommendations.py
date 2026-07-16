@@ -26,13 +26,19 @@ def create_forecast_recommendation_decision(
     product_id: int,
     bucket_id: int,
     action: str,
+    expected_forecast_hours: Decimal | float | int,
+    expected_roadmap_actual_hours: Decimal | float | int,
     target_team_member_id: int | None = None,
     target_month_sequence: int | None = None,
     note: str | None = None,
 ) -> dict[str, object]:
-    snapshot = _recommendation_snapshot(db, fiscal_year=fiscal_year, product_id=product_id, bucket_id=bucket_id)
     if action not in {ACTION_APPLIED, ACTION_REJECTED}:
         raise ValueError("Forecast recommendation action must be applied or rejected")
+    snapshot = _recommendation_snapshot(db, fiscal_year=fiscal_year, product_id=product_id, bucket_id=bucket_id)
+    if not _reviewed_hours_match(snapshot["forecast_hours"], expected_forecast_hours) or not _reviewed_hours_match(
+        snapshot["roadmap_actual_hours"], expected_roadmap_actual_hours
+    ):
+        raise ValueError("Forecast recommendation changed since this queue loaded. Refresh and review it before deciding")
 
     applied_entry: ForecastEntry | None = None
     if action == ACTION_APPLIED:
@@ -44,8 +50,11 @@ def create_forecast_recommendation_decision(
             raise ValueError("Target team member is required to apply a forecast recommendation")
         if target_month_sequence is None:
             raise ValueError("Target fiscal month is required to apply a forecast recommendation")
-        if db.get(TeamMember, target_team_member_id) is None:
+        target_team_member = db.get(TeamMember, target_team_member_id)
+        if target_team_member is None:
             raise ValueError("Target team member not found")
+        if target_team_member.status != "active":
+            raise ValueError("Target team member must be active")
         get_fiscal_month(db, fiscal_year, target_month_sequence)
         existing_hours = _existing_target_forecast_hours(
             db,
@@ -142,6 +151,10 @@ def _recommendation_snapshot(db: Session, *, fiscal_year: int, product_id: int, 
         "suggested_forecast_hours": forecast_hours + suggested_delta_hours,
         "recommendation": _recommendation_label(forecast_hours, roadmap_actual_hours),
     }
+
+
+def _reviewed_hours_match(actual: Decimal | str, expected: Decimal | float | int) -> bool:
+    return abs(Decimal(str(actual)) - Decimal(str(expected))) < Decimal("0.005")
 
 
 def _recommendation_label(forecast_hours: Decimal, roadmap_actual_hours: Decimal) -> str:

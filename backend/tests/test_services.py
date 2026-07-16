@@ -21,6 +21,7 @@ from app.models import (
     Base,
     Bucket,
     ForecastEntry,
+    ForecastRecommendationDecision,
     JiraProductMapping,
     JiraProjectCatalog,
     Product,
@@ -2006,12 +2007,29 @@ def test_forecast_recommendation_apply_adds_hours_to_explicit_forecast_line():
         )
         db.flush()
 
+        with pytest.raises(ValueError, match="changed since this queue loaded"):
+            create_forecast_recommendation_decision(
+                db,
+                fiscal_year=2027,
+                product_id=product.id,
+                bucket_id=bucket.id,
+                action="applied",
+                expected_forecast_hours=0,
+                expected_roadmap_actual_hours=5,
+                target_team_member_id=member.id,
+                target_month_sequence=1,
+            )
+        assert db.scalar(select(ForecastEntry)) is None
+        assert db.scalar(select(ForecastRecommendationDecision)) is None
+
         decision = create_forecast_recommendation_decision(
             db,
             fiscal_year=2027,
             product_id=product.id,
             bucket_id=bucket.id,
             action="applied",
+            expected_forecast_hours=0,
+            expected_roadmap_actual_hours=6.0000000001,
             target_team_member_id=member.id,
             target_month_sequence=1,
             note="Use current roadmap actuals",
@@ -2077,6 +2095,8 @@ def test_forecast_recommendation_rejects_without_changing_forecast():
             product_id=product.id,
             bucket_id=bucket.id,
             action="rejected",
+            expected_forecast_hours=0,
+            expected_roadmap_actual_hours=4,
             note="No forecast change needed",
         )
 

@@ -435,6 +435,8 @@ export interface ForecastRecommendationDecisionPayload {
   product_id: number;
   bucket_id: number;
   action: ForecastRecommendationAction;
+  expected_forecast_hours: number;
+  expected_roadmap_actual_hours: number;
   target_team_member_id?: number | null;
   target_month_sequence?: number | null;
   note?: string | null;

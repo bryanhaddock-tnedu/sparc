@@ -1055,6 +1055,8 @@ class ForecastRecommendationDecisionRequest(BaseModel):
     product_id: int
     bucket_id: int
     action: Literal["applied", "rejected"]
+    expected_forecast_hours: Decimal = Field(ge=0)
+    expected_roadmap_actual_hours: Decimal = Field(ge=0)
     target_team_member_id: int | None = None
     target_month_sequence: int | None = None
     note: str | None = None

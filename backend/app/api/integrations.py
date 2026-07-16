@@ -169,6 +169,8 @@ def create_forecast_recommendation_decision_endpoint(
             product_id=payload.product_id,
             bucket_id=payload.bucket_id,
             action=payload.action,
+            expected_forecast_hours=payload.expected_forecast_hours,
+            expected_roadmap_actual_hours=payload.expected_roadmap_actual_hours,
             target_team_member_id=payload.target_team_member_id,
             target_month_sequence=payload.target_month_sequence,
             note=payload.note,

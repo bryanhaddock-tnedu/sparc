@@ -360,6 +360,13 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       setError("Choose a target Team Member and Fiscal Month before applying a forecast recommendation.");
       return;
     }
+    const targetMember = teamMembers.find((member) => member.id === Number(target.teamMemberId));
+    const confirmation =
+      action === "applied"
+        ? `Add ${formatHours(row.suggestedDeltaHours)} Forecast hours to ${targetMember?.name ?? "the selected Team Member"} in ${fiscalMonthLabel(fiscalYear, Number(target.monthSequence))} for ${row.product} / ${row.bucket}?\n\nFull-year Forecast will change from ${formatHours(row.forecastHours)} to ${formatHours(row.suggestedForecastHours)} hours. Mapped Roadmap Actual is ${formatHours(row.actualHours)} hours. Actual hours will not change.`
+        : `Dismiss the current ${row.product} / ${row.bucket} recommendation?\n\nForecast and Actual hours will not change. The recommendation will return if its full-year Forecast or mapped Roadmap Actual total changes.`;
+    if (!window.confirm(confirmation)) return;
+
     const submissionKey = `${row.id}:${action}`;
     setSubmittingForecastDecision(submissionKey);
     try {
@@ -368,6 +375,8 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
         product_id: row.productId,
         bucket_id: row.bucketId,
         action,
+        expected_forecast_hours: row.forecastHours,
+        expected_roadmap_actual_hours: row.actualHours,
         target_team_member_id: action === "applied" ? Number(target.teamMemberId) : null,
         target_month_sequence: action === "applied" ? Number(target.monthSequence) : null,
         note: target.note.trim() || null,
@@ -381,8 +390,8 @@ export function IntegrationsPage({ embedded = false }: { embedded?: boolean } = 
       }
       setNotice(
         action === "applied"
-          ? `Forecast recommendation applied for ${row.product} / ${row.bucket}.`
-          : `Forecast recommendation rejected for ${row.product} / ${row.bucket}.`,
+          ? `${formatHours(row.suggestedDeltaHours)} Forecast hours added for ${row.product} / ${row.bucket}.`
+          : `Current Forecast recommendation dismissed for ${row.product} / ${row.bucket}.`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to record forecast recommendation decision");
@@ -1161,7 +1170,9 @@ function ForecastRecommendationReviewSection({
   onDecision: (row: RoadmapForecastComparisonRow, action: ForecastRecommendationAction) => void;
   onTargetChange: (rowId: string, updates: Partial<ForecastRecommendationTarget>) => void;
 }) {
-  const actionableRows = rows.filter(isActionableForecastRecommendation);
+  const allActionableRows = rows.filter(isActionableForecastRecommendation);
+  const actionableRows = activeForecastRecommendationRows(rows, decisions);
+  const dismissedRows = allActionableRows.length - actionableRows.length;
   const activeTeamMembers = teamMembers.filter((member) => member.status === "active");
   const totals = actionableRows.reduce(
     (current, row) => ({
@@ -1176,13 +1187,15 @@ function ForecastRecommendationReviewSection({
     <section className="space-y-3 rounded-lg border bg-card p-4">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
         <div>
-          <h2 className="text-lg font-semibold">Forecast Review Queue</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Full FY Product/Bucket recommendations from mapped Roadmap Actuals.</p>
+          <h2 className="text-lg font-semibold">Forecast Adjustment Review</h2>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Full-year Product and bucket comparisons from mapped Roadmap Actuals. Add the proposed hours to one Team Member and month, or dismiss the current recommendation without changing Forecast. Billing filters above do not change this full-year review.
+          </p>
         </div>
         <div className="grid grid-cols-3 gap-2 sm:min-w-[24rem]">
-          <SummaryMetric label="Rows" value={String(totals.rows)} />
-          <SummaryMetric label="Actual Hrs" value={formatHours(totals.actualHours)} />
-          <SummaryMetric label="Suggested Add" value={formatHours(totals.suggestedDeltaHours)} tone={totals.suggestedDeltaHours ? "warn" : "default"} />
+          <SummaryMetric label="Pending" value={String(totals.rows)} />
+          <SummaryMetric label="Mapped Actual Hrs" value={formatHours(totals.actualHours)} />
+          <SummaryMetric label="Proposed Add" value={formatHours(totals.suggestedDeltaHours)} tone={totals.suggestedDeltaHours ? "warn" : "default"} />
         </div>
       </div>
       <div className="overflow-hidden rounded-lg border">
@@ -1192,11 +1205,11 @@ function ForecastRecommendationReviewSection({
               <TableRow>
                 <TableHead>Product</TableHead>
                 <TableHead>Bucket</TableHead>
-                <TableHead className="text-right">Forecast Hrs</TableHead>
-                <TableHead className="text-right">Actual Hrs</TableHead>
-                <TableHead className="text-right">Suggested Add</TableHead>
-                <TableHead>Target Team Member</TableHead>
-                <TableHead>Target Month</TableHead>
+                <TableHead className="text-right">Current Forecast</TableHead>
+                <TableHead className="text-right">Mapped Actual</TableHead>
+                <TableHead className="text-right">Add to Forecast</TableHead>
+                <TableHead>Forecast Owner</TableHead>
+                <TableHead>Forecast Month</TableHead>
                 <TableHead>Note</TableHead>
                 <TableHead>Decision</TableHead>
               </TableRow>
@@ -1222,6 +1235,7 @@ function ForecastRecommendationReviewSection({
                       <TableCell className="numeric-cell text-right font-semibold text-warning">{formatHours(row.suggestedDeltaHours)}</TableCell>
                       <TableCell>
                         <select
+                          aria-label={`Forecast owner for ${row.product} ${row.bucket}`}
                           className="h-9 w-full min-w-52 rounded-md border border-input bg-background px-2 text-sm"
                           value={target.teamMemberId}
                           onChange={(event) => onTargetChange(row.id, { teamMemberId: event.target.value })}
@@ -1229,13 +1243,14 @@ function ForecastRecommendationReviewSection({
                           <option value="">Select Team Member</option>
                           {activeTeamMembers.map((member) => (
                             <option key={member.id} value={member.id}>
-                              {member.name}
+                              {member.name} - {member.role}
                             </option>
                           ))}
                         </select>
                       </TableCell>
                       <TableCell>
                         <select
+                          aria-label={`Forecast month for ${row.product} ${row.bucket}`}
                           className="h-9 w-full min-w-36 rounded-md border border-input bg-background px-2 text-sm"
                           value={target.monthSequence}
                           onChange={(event) => onTargetChange(row.id, { monthSequence: event.target.value })}
@@ -1250,10 +1265,11 @@ function ForecastRecommendationReviewSection({
                       </TableCell>
                       <TableCell>
                         <textarea
+                          aria-label={`Decision note for ${row.product} ${row.bucket}`}
                           className="min-h-9 w-full min-w-56 resize-y rounded-md border border-input bg-background px-2 py-1 text-sm"
                           value={target.note}
                           onChange={(event) => onTargetChange(row.id, { note: event.target.value })}
-                          placeholder="Optional note"
+                          placeholder="Optional decision note"
                         />
                       </TableCell>
                       <TableCell>
@@ -1265,7 +1281,7 @@ function ForecastRecommendationReviewSection({
                             onClick={() => onDecision(row, "applied")}
                           >
                             <CheckCircle2 className="h-4 w-4" />
-                            {submittingKey === applyKey ? "Applying" : "Apply"}
+                            {submittingKey === applyKey ? "Adding" : "Add Hours"}
                           </Button>
                           <Button
                             disabled={submittingKey !== null}
@@ -1275,7 +1291,7 @@ function ForecastRecommendationReviewSection({
                             onClick={() => onDecision(row, "rejected")}
                           >
                             <XCircle className="h-4 w-4" />
-                            {submittingKey === rejectKey ? "Rejecting" : "Reject"}
+                            {submittingKey === rejectKey ? "Dismissing" : "Dismiss"}
                           </Button>
                         </div>
                       </TableCell>
@@ -1285,7 +1301,7 @@ function ForecastRecommendationReviewSection({
               ) : (
                 <TableRow>
                   <TableCell className="py-5 text-sm text-muted-foreground" colSpan={9}>
-                    No add/increase forecast recommendations for this fiscal year.
+                    No pending Forecast adjustments for this fiscal year.
                   </TableCell>
                 </TableRow>
               )}
@@ -1293,6 +1309,11 @@ function ForecastRecommendationReviewSection({
           </Table>
         </div>
       </div>
+      {dismissedRows ? (
+        <div className="text-sm text-muted-foreground">
+          {dismissedRows} current {dismissedRows === 1 ? "recommendation is" : "recommendations are"} dismissed and recorded below. A dismissed recommendation returns if its full-year totals change.
+        </div>
+      ) : null}
       <ForecastRecommendationDecisionHistory decisions={decisions} fiscalYear={fiscalYear} />
     </section>
   );
@@ -1307,7 +1328,7 @@ function ForecastRecommendationDecisionHistory({
 }) {
   return (
     <section className="overflow-hidden rounded-lg border">
-      <div className="border-b bg-secondary/50 px-3 py-2 text-sm font-semibold">Decision History</div>
+      <div className="border-b bg-secondary/50 px-3 py-2 text-sm font-semibold">Recent Decisions</div>
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -1315,7 +1336,7 @@ function ForecastRecommendationDecisionHistory({
               <TableHead>Decision</TableHead>
               <TableHead>Product</TableHead>
               <TableHead>Bucket</TableHead>
-              <TableHead className="text-right">Snapshot</TableHead>
+              <TableHead className="text-right">Decision Snapshot</TableHead>
               <TableHead>Target</TableHead>
               <TableHead>Note</TableHead>
               <TableHead>Decided</TableHead>
@@ -1331,8 +1352,9 @@ function ForecastRecommendationDecisionHistory({
                   <TableCell className="font-medium">{decision.product ?? "Unknown product"}</TableCell>
                   <TableCell>{decision.bucket ?? "Unknown bucket"}</TableCell>
                   <TableCell className="numeric-cell text-right">
-                    <div>{formatHours(decision.roadmap_actual_hours)} actual</div>
-                    <div className="text-xs text-muted-foreground">{formatHours(decision.forecast_hours)} forecast</div>
+                    <div>{formatHours(decision.roadmap_actual_hours)} mapped actual</div>
+                    <div className="text-xs text-muted-foreground">{formatHours(decision.forecast_hours)} prior forecast</div>
+                    <div className="text-xs text-warning">+{formatHours(decision.suggested_delta_hours)} proposed</div>
                   </TableCell>
                   <TableCell>
                     {decision.action === "applied" ? (
@@ -1351,7 +1373,7 @@ function ForecastRecommendationDecisionHistory({
                         </div>
                       </>
                     ) : (
-                      <span className="text-muted-foreground">No forecast change</span>
+                      <span className="text-muted-foreground">No Forecast change</span>
                     )}
                   </TableCell>
                   <TableCell className="max-w-72 truncate" title={decision.note ?? ""}>
@@ -1376,14 +1398,37 @@ function ForecastRecommendationDecisionHistory({
 
 function ForecastDecisionActionBadge({ action }: { action: ForecastRecommendationAction }) {
   return action === "applied" ? (
-    <Badge className="border-primary/40 text-primary">Applied</Badge>
+    <Badge className="border-primary/40 text-primary">Forecast added</Badge>
   ) : (
-    <Badge className="border-muted text-muted-foreground">Rejected</Badge>
+    <Badge className="border-muted text-muted-foreground">Dismissed</Badge>
   );
 }
 
 function isActionableForecastRecommendation(row: RoadmapForecastComparisonRow) {
   return row.suggestedDeltaHours > 0 && (row.recommendation === "add_forecast" || row.recommendation === "increase_forecast");
+}
+
+function activeForecastRecommendationRows(
+  rows: RoadmapForecastComparisonRow[],
+  decisions: ForecastRecommendationDecision[],
+) {
+  return rows.filter((row) => {
+    if (!isActionableForecastRecommendation(row)) return false;
+    const latestDecision = decisions.find(
+      (decision) => decision.product_id === row.productId && decision.bucket_id === row.bucketId,
+    );
+    return !(
+      latestDecision?.action === "rejected" &&
+      latestDecision.recommendation === row.recommendation &&
+      hoursMatch(latestDecision.forecast_hours, row.forecastHours) &&
+      hoursMatch(latestDecision.roadmap_actual_hours, row.actualHours) &&
+      hoursMatch(latestDecision.suggested_delta_hours, row.suggestedDeltaHours)
+    );
+  });
+}
+
+function hoursMatch(left: number, right: number) {
+  return Math.abs(left - right) < 0.005;
 }
 
 function RoadmapItemMappingWorkbench({
