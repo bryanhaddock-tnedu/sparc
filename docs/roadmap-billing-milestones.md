@@ -6,13 +6,13 @@ SPARC should use Jira roadmap data to explain and bill actual labor, not to repl
 
 All five implementation milestones are complete in stage. The active work is stakeholder acceptance against real Jira data, not another Roadmap data-model build.
 
-Remaining acceptance work:
+Stakeholder acceptance checklist:
 
-1. Review the remaining unmapped and ambiguous tickets after sync and distinguish genuine Jira gaps from competing Roadmap relationships.
-2. Verify ambiguous tickets list only their inferred competing Roadmap Items.
-3. Verify already-mapped tickets can be corrected, financial impact is confirmed, and manual corrections survive later Roadmap syncs.
-4. Verify Jira project-to-Product corrections move only applicable Jira Actuals and preserve Forecast and curated roster data.
-5. Verify filters, billing summaries, CSV exports, forecast comparison, applied/rejected recommendations, and immutable audit history with Florie.
+- [ ] Review the remaining unmapped and ambiguous tickets after sync and distinguish genuine Jira gaps from competing Roadmap relationships.
+- [ ] Verify ambiguous tickets list only their inferred competing Roadmap Items.
+- [x] Verify already-mapped tickets can be corrected, financial impact is confirmed, and manual corrections survive later Roadmap syncs. Florie accepted this flow on July 16, 2026.
+- [ ] Verify Jira project-to-Product corrections move only applicable Jira Actuals and preserve Forecast and curated roster data.
+- [ ] Verify filters, billing summaries, CSV exports, forecast comparison, applied/rejected recommendations, and immutable audit history with Florie.
 
 ## Milestone 1: Roadmap Actuals Foundation
 
