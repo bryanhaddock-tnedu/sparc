@@ -33,6 +33,8 @@ Entra authorization-code support is implemented, but end-to-end SSO remains exte
 - Cannot edit.
 - Can see hours and costs.
 - Cannot see bill rates.
+- Can see Team Member names in labor planning and analytics, but cannot open Team Member profiles.
+- Rate and rate-derived rows or columns are omitted from the interface rather than displaying a `Hidden` placeholder.
 - Cannot run admin-only operations such as sync, import, system scan, or user access changes.
 
 ### Program Area View Only
@@ -156,7 +158,7 @@ It must not scope by `RoadmapItem.program_area`.
 - Return authenticated user identity.
 - Return role.
 - Return assigned Program Areas.
-- Return capabilities such as `can_admin`, `can_edit_forecast`, `can_run_sync`, `can_view_rates`, `can_view_costs`, `can_view_hours`, and `can_view_named_people`.
+- Return capabilities such as `can_admin`, `can_edit_forecast`, `can_run_sync`, `can_view_rates`, `can_view_costs`, `can_view_hours`, `can_view_named_people`, and `can_view_team_member_profiles`.
 
 ### Milestone 6: Backend Permission And Scope Enforcement
 
@@ -172,6 +174,8 @@ It must not scope by `RoadmapItem.program_area`.
 
 - Remove bill rates from restricted API responses.
 - Remove bill rates from restricted exports.
+- Omit restricted rate fields and rate-derived columns from the interface instead of calling attention to them with placeholders.
+- Enforce Team Member profile access independently from permission to see named Team Member rows.
 - Add tests proving restricted users cannot retrieve rates.
 
 ### Milestone 8: Admin Access UI

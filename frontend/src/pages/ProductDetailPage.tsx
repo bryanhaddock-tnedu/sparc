@@ -7,13 +7,14 @@ import { BudgetTracker } from "../components/BudgetTracker";
 import { PageNav } from "../components/PageNav";
 import { ReportedValuesTable } from "../components/ReportedValuesTable";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
+import { TeamMemberNameLink } from "../components/TeamMemberNameLink";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useFiscalYear } from "../lib/fiscalYear";
-import { productDetailPath, teamMemberDetailPath } from "../lib/routes";
+import { productDetailPath } from "../lib/routes";
 import { formatBillRate } from "../lib/teamMembers";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type {
@@ -53,6 +54,7 @@ export function ProductDetailPage() {
   const canEditForecast = status?.capabilities.can_edit_forecast === true;
   const canViewHours = status?.capabilities.can_view_hours === true;
   const canViewNamedPeople = status?.capabilities.can_view_named_people === true;
+  const canViewRates = status?.capabilities.can_view_rates === true;
   const [summary, setSummary] = useState<ProductSummary | null>(null);
   const [tables, setTables] = useState<ProductBucketTables | null>(null);
   const [productSpaces, setProductSpaces] = useState<ProductJiraSpace[]>([]);
@@ -360,6 +362,7 @@ export function ProductDetailPage() {
         <ProductTeamSection
           assignments={productTeam}
           canEdit={canAdmin}
+          showRates={canViewRates}
           members={teamMembers}
           onAdd={addProductTeamMember}
           onRemove={removeProductTeamMember}
@@ -402,6 +405,7 @@ export function ProductDetailPage() {
                 onRemove={removeForecastLine}
                 readOnly={!canEditForecast}
                 savingCells={savingCells}
+                showRates={canViewRates}
               />
             ))
           ) : (
@@ -496,6 +500,7 @@ function ProductTeamSection({
   onAdd,
   onRemove,
   onUpdate,
+  showRates,
 }: {
   assignments: ProductTeamMember[];
   canEdit: boolean;
@@ -503,6 +508,7 @@ function ProductTeamSection({
   onAdd: (teamMemberId: number) => Promise<void>;
   onRemove: (assignmentId: number) => Promise<void>;
   onUpdate: (assignmentId: number, payload: { status?: string }) => Promise<void>;
+  showRates: boolean;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState("");
@@ -588,7 +594,7 @@ function ProductTeamSection({
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Team Member</th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Role</th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Team</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bill Rate</th>
+                    {showRates ? <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Bill Rate</th> : null}
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Status</th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">History</th>
                     {canEdit ? <th className="px-3 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">Actions</th> : null}
@@ -599,13 +605,13 @@ function ProductTeamSection({
                     assignments.map((assignment) => (
                       <tr key={assignment.id} className="border-b last:border-0">
                         <td className="px-3 py-3">
-                          <Link className="font-medium text-primary hover:underline" to={teamMemberDetailPath(assignment)}>
+                          <TeamMemberNameLink className="font-medium" linkClassName="text-primary hover:underline" member={assignment}>
                             {assignment.team_member}
-                          </Link>
+                          </TeamMemberNameLink>
                         </td>
                         <td className="px-3 py-3">{assignment.role}</td>
                         <td className="px-3 py-3">{assignment.team}</td>
-                        <td className="numeric-cell px-3 py-3">{formatBillRate(assignment.bill_rate, assignment.employment_type, { includeUnit: true })}</td>
+                        {showRates ? <td className="numeric-cell px-3 py-3">{formatBillRate(assignment.bill_rate, assignment.employment_type, { includeUnit: true })}</td> : null}
                         <td className="px-3 py-3">
                           {canEdit ? (
                             <select
@@ -778,6 +784,7 @@ function BucketSection({
   onRemove,
   readOnly,
   savingCells,
+  showRates,
 }: {
   bucket: BucketTable;
   deletingLines: Record<string, boolean>;
@@ -787,6 +794,7 @@ function BucketSection({
   onRemove: (bucket: BucketTable, row: BucketTableRow) => void;
   readOnly: boolean;
   savingCells: Record<string, boolean>;
+  showRates: boolean;
 }) {
   const monthlyTotals =
     bucket.rows[0]?.months.map((month, index) => {
@@ -849,9 +857,9 @@ function BucketSection({
                     <tr className="border-t align-middle">
                       <td rowSpan={4} className="sticky left-0 z-10 bg-card px-2 py-2 align-top">
                         <div className="flex items-start gap-1">
-                          <Link className="min-w-0 flex-1 truncate font-medium text-primary hover:underline" to={teamMemberDetailPath(row)}>
+                          <TeamMemberNameLink className="min-w-0 flex-1 truncate font-medium" linkClassName="text-primary hover:underline" member={row}>
                             {row.team_member}
-                          </Link>
+                          </TeamMemberNameLink>
                           {!readOnly ? (
                             <Button
                               aria-label={`Remove ${row.team_member} from ${bucket.name} forecast line`}
@@ -871,7 +879,9 @@ function BucketSection({
                             </Button>
                           ) : null}
                         </div>
-                        <div className="numeric-cell mt-1 truncate text-[11px] text-muted-foreground">{formatBillRate(row.bill_rate, "", { includeUnit: true })}</div>
+                        {showRates ? (
+                          <div className="numeric-cell mt-1 truncate text-[11px] text-muted-foreground">{formatBillRate(row.bill_rate, "", { includeUnit: true })}</div>
+                        ) : null}
                       </td>
                       <MetricLabel label="Forecast" />
                       {row.months.map((cell) => (

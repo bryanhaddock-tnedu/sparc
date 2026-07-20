@@ -15,6 +15,7 @@ import {
 import { PageNav } from "../components/PageNav";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { TeamMemberRankingsTable } from "../components/TeamMemberRankingsTable";
+import { TeamMemberNameLink } from "../components/TeamMemberNameLink";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -22,7 +23,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useFiscalYear } from "../lib/fiscalYear";
-import { teamMemberDetailPath } from "../lib/routes";
 import {
   buildTeamActualAnalytics,
   buildTeamMemberRankingRows,
@@ -68,6 +68,7 @@ export function TeamManagementPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const { status } = useAuth();
   const canAdmin = status?.capabilities.can_admin === true;
+  const canViewRates = status?.capabilities.can_view_rates === true;
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [storyMetrics, setStoryMetrics] = useState<TeamMemberStoryPointMetric[]>([]);
@@ -167,46 +168,50 @@ export function TeamManagementPage() {
   const columns = useMemo<ColumnDef<TeamMember>[]>(
     () => {
       const baseColumns: ColumnDef<TeamMember>[] = [
-      {
-        accessorKey: "name",
-        header: "Name",
-        cell: ({ row }) => (
-          <Link className="font-medium text-primary hover:underline" to={teamMemberDetailPath(row.original)}>
-            {row.original.name}
-          </Link>
-        ),
-      },
-      { accessorKey: "role", header: "Role" },
-      {
-        accessorKey: "bill_rate",
-        header: "Bill Rate",
-        cell: ({ row }) => (
-          <span className="numeric-cell whitespace-nowrap font-medium text-primary" title="Edit bill rate on the Team Member profile">
-            {formatBillRate(row.original.bill_rate, row.original.employment_type, { includeUnit: true })}
-          </span>
-        ),
-      },
-      { accessorKey: "employment_type", header: "Employment Type" },
-      {
-        accessorKey: "contracting_company",
-        header: "Contracting Company",
-        cell: ({ row }) => row.original.contracting_company ?? "",
-      },
-      {
-        accessorKey: "status",
-        header: "Status",
-        cell: ({ row }) => (
-          <Badge className={row.original.status === "active" ? "border-primary/40 text-primary" : "border-muted text-muted-foreground"}>
-            {row.original.status}
-          </Badge>
-        ),
-      },
-      {
-        accessorKey: "updated_at",
-        header: "Last Updated",
-        cell: ({ row }) => formatDate(row.original.updated_at),
-      },
+        {
+          accessorKey: "name",
+          header: "Name",
+          cell: ({ row }) => (
+            <TeamMemberNameLink className="font-medium" linkClassName="text-primary hover:underline" member={row.original}>
+              {row.original.name}
+            </TeamMemberNameLink>
+          ),
+        },
+        { accessorKey: "role", header: "Role" },
       ];
+      if (canViewRates) {
+        baseColumns.push({
+          accessorKey: "bill_rate",
+          header: "Bill Rate",
+          cell: ({ row }) => (
+            <span className="numeric-cell whitespace-nowrap font-medium text-primary" title="Edit bill rate on the Team Member profile">
+              {formatBillRate(row.original.bill_rate, row.original.employment_type, { includeUnit: true })}
+            </span>
+          ),
+        });
+      }
+      baseColumns.push(
+        { accessorKey: "employment_type", header: "Employment Type" },
+        {
+          accessorKey: "contracting_company",
+          header: "Contracting Company",
+          cell: ({ row }) => row.original.contracting_company ?? "",
+        },
+        {
+          accessorKey: "status",
+          header: "Status",
+          cell: ({ row }) => (
+            <Badge className={row.original.status === "active" ? "border-primary/40 text-primary" : "border-muted text-muted-foreground"}>
+              {row.original.status}
+            </Badge>
+          ),
+        },
+        {
+          accessorKey: "updated_at",
+          header: "Last Updated",
+          cell: ({ row }) => formatDate(row.original.updated_at),
+        },
+      );
       if (!canAdmin) return baseColumns;
       return [
         ...baseColumns,
@@ -236,7 +241,7 @@ export function TeamManagementPage() {
       },
       ];
     },
-    [canAdmin, rosterStatusUpdatingId, updateRosterStatus],
+    [canAdmin, canViewRates, rosterStatusUpdatingId, updateRosterStatus],
   );
 
   const table = useReactTable({
@@ -282,6 +287,7 @@ export function TeamManagementPage() {
         dimension={rankingDimension}
         onDimensionChange={setRankingDimension}
         rows={rankingRows}
+        showRates={canViewRates}
         title="All Team Member Rankings"
       />
 

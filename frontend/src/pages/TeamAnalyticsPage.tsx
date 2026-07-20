@@ -50,6 +50,7 @@ export function TeamAnalyticsPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const { status } = useAuth();
   const canEditForecast = status?.capabilities.can_edit_forecast === true;
+  const canViewRates = status?.capabilities.can_view_rates === true;
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [storyMetrics, setStoryMetrics] = useState<TeamMemberStoryPointMetric[]>([]);
@@ -149,6 +150,7 @@ export function TeamAnalyticsPage() {
             dimension={rankingDimension}
             onDimensionChange={setRankingDimension}
             rows={rankingRows}
+            showRates={canViewRates}
             showTeam={false}
             title="Team Member Rankings"
           />
@@ -622,7 +624,7 @@ function RoadmapForecastPlanner({
                           return (
                           <TableRow key={`${groupKey}:${memberId}`}>
                             <TableCell className="truncate px-2 font-medium">
-                              <TeamMemberNameLink className="text-primary hover:underline" member={memberForId(memberId, plan.team_members) ?? { id: memberId }}>
+                              <TeamMemberNameLink linkClassName="text-primary hover:underline" member={memberForId(memberId, plan.team_members) ?? { id: memberId }}>
                                 {memberName(memberId, plan.team_members)}
                               </TeamMemberNameLink>
                               {!memberIsActive ? <div className="text-[10px] font-normal text-muted-foreground">Inactive</div> : null}

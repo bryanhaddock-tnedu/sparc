@@ -1,6 +1,6 @@
 # SPARC Build Milestones
 
-SPARC is the internal labor forecasting and cost intelligence app for this project. This is the living milestone tracker; historical completion notes remain in the milestone bodies, while the status and active backlog below describe the application as deployed to stage on July 16, 2026.
+SPARC is the internal labor forecasting and cost intelligence app for this project. This is the living milestone tracker; historical completion notes remain in the milestone bodies, while the status and active backlog below describe the application as of July 20, 2026.
 
 ## Current State
 
@@ -8,6 +8,7 @@ SPARC is the internal labor forecasting and cost intelligence app for this proje
 - Actuals Intelligence Release: complete for the current Jira/Roadmap scope and running in stage.
 - Pilot Readiness Release: in progress.
 - SPARC-local users, roles, Program Area assignments, backend authorization, redaction, and local test login are implemented.
+- Leadership rate fields are omitted from the interface, and Leadership can see Team Member names without receiving Team Member profile access.
 - Entra application code is implemented; App Registration values and stage secret configuration remain external dependencies for end-to-end SSO.
 - Roadmap billing milestones 1 through 5 are implemented and awaiting final stakeholder acceptance against real stage data.
 
@@ -15,7 +16,7 @@ SPARC is the internal labor forecasting and cost intelligence app for this proje
 
 1. Complete Florie's stage acceptance of the simplified Forecast Adjustment Review scope, decision lifecycle, and confirmation flow.
 2. Complete Florie's stage acceptance of corrected Team Product Forecast ownership, Team Actual totals, save behavior, and Team Member line management.
-3. Complete role-based stage acceptance for Admin, Leadership View Only, Program Area View Only, and a Program Area user with no assignments.
+3. Complete role-based stage acceptance for Admin, Leadership View Only, Program Area View Only, and a Program Area user with no assignments, including Leadership rate omission and blocked Team Member profile navigation.
 4. Prevent disabling or demoting the final active SPARC Admin and add the explicit no-Program-Area state.
 5. Add browser-level role/login regression coverage, repair ESLint configuration, and add backend tests, migration checks, and stage smoke tests to CI.
 6. Complete Roadmap billing acceptance with real gaps, remapping, sync persistence, financial-impact confirmation, audit history, summaries, exports, and forecast recommendation decisions.
@@ -211,7 +212,7 @@ Managers can bring in real team member data from spreadsheets, review it, and ke
 - Add upload, preview, validation, and confirmation steps.
 - Show imported, updated, skipped, and failed row counts.
 - Let managers edit bill rate and status after import.
-- Keep Team Member names clickable to detail views.
+- Keep Team Member names clickable to detail views for roles with Team Member profile access.
 
 **Acceptance Criteria**
 

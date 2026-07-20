@@ -11,7 +11,7 @@ from app.models import Base
 from app.services import auth
 from app.services import entra_auth
 from app.services.entra_auth import ENTRA_STATE_COOKIE_NAME, EntraIdentity
-from app.services.access_control import authenticate_entra_user, authenticated_user_from_app_user, create_app_user, update_app_user
+from app.services.access_control import UserRole, authenticate_entra_user, authenticated_user_from_app_user, create_app_user, role_capabilities, update_app_user
 
 
 def test_login_sets_signed_cookie_and_authenticates_request(monkeypatch):
@@ -59,6 +59,15 @@ def test_email_user_login_returns_role_and_program_area_scope(monkeypatch):
     assert status["capabilities"]["can_admin"] is False
     assert status["capabilities"]["can_view_rates"] is False
     assert status["capabilities"]["can_view_named_people"] is False
+
+
+def test_leadership_can_see_names_without_team_member_profile_access():
+    capabilities = role_capabilities(UserRole.LEADERSHIP_VIEW_ONLY)
+
+    assert capabilities["can_view_named_people"] is True
+    assert capabilities["can_view_team_member_profiles"] is False
+    assert capabilities["can_view_rates"] is False
+    assert role_capabilities(UserRole.ADMIN)["can_view_team_member_profiles"] is True
 
 
 def test_update_app_user_changes_role_and_program_area_scope():

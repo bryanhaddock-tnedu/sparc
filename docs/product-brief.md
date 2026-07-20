@@ -101,7 +101,7 @@ Entra authenticates users; SPARC authorizes users locally.
 Initial SPARC roles:
 
 - Admin: can view and edit everything; can see hours, costs, and bill rates; can run admin, sync, import, and configuration operations.
-- Leadership View Only: can view all Program Areas; cannot edit; can see hours and costs; cannot see bill rates.
+- Leadership View Only: can view all Program Areas; cannot edit; can see hours, costs, and Team Member names in labor views; cannot see bill rates or open Team Member profiles. Rate fields and rate-derived columns must be omitted rather than labeled as hidden.
 - Program Area View Only: can view only assigned Program Area(s); cannot edit; cannot see bill rates; can be assigned multiple Program Areas.
 
 Program Area assignment rows apply only to Program Area View Only users. Admin and Leadership View Only users see all Program Areas by role. Changing a user from Program Area View Only to either broader role must clear the user's stored Program Area assignments atomically; changing unrelated fields must preserve unchanged assignments without deleting and recreating them.
@@ -379,6 +379,7 @@ Rules:
 - Invalid Forecast input must remain unsaved and visibly invalid; it must never be coerced to zero.
 - Inactive Products and inactive Team Members may remain visible for history but cannot receive new Team Forecast entries.
 - Leadership viewers may see named Team planning rows and aggregate hours/costs but must not receive bill rates from the Team planning API.
+- Seeing a Team Member name is separate from profile access. Leadership names render as plain text, direct Team Member profile routes and APIs are denied, and rate or rate-derived fields are omitted instead of displaying a `Hidden` placeholder.
 
 ## Enterprise Reports Page Requirements
 

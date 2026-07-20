@@ -1,11 +1,9 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-
-import { teamMemberDetailPath } from "../lib/routes";
 import { TEAM_RANKING_DIMENSIONS, type TeamMemberRankingRow, type TeamRankingDimension } from "../lib/teamAnalytics";
 import { formatBillRate, isContractorEmploymentType, isFteEmploymentType, isVendorEmploymentType } from "../lib/teamMembers";
 import { formatCurrency, formatHours } from "../lib/utils";
 import { Badge } from "./ui/badge";
+import { TeamMemberNameLink } from "./TeamMemberNameLink";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 
 type EmploymentTypeFilter = "all" | "fte" | "contractor" | "vendor";
@@ -16,6 +14,7 @@ type TeamMemberRankingsTableProps = {
   emptyMessage?: string;
   onDimensionChange: (dimension: TeamRankingDimension) => void;
   rows: TeamMemberRankingRow[];
+  showRates?: boolean;
   showTeam?: boolean;
   title: string;
 };
@@ -26,6 +25,7 @@ export function TeamMemberRankingsTable({
   emptyMessage = "No ranking data available yet.",
   onDimensionChange,
   rows,
+  showRates = false,
   showTeam = true,
   title,
 }: TeamMemberRankingsTableProps) {
@@ -90,8 +90,8 @@ export function TeamMemberRankingsTable({
             <col className={showTeam ? "w-[15%]" : "w-[23%]"} />
             <col className={showTeam ? "w-[10%]" : "w-[12%]"} />
             {showTeam ? <col className="w-[10%]" /> : null}
-            <col className="w-[7%]" />
-            <col className="w-[11%]" />
+            {showRates ? <col className="w-[7%]" /> : null}
+            {showRates ? <col className="w-[11%]" /> : null}
             <col className={showTeam ? "w-[12%]" : "w-[13%]"} />
             <col className={showTeam ? "w-[8%]" : "w-[7%]"} />
             <col className={showTeam ? "w-[10%]" : "w-[11%]"} />
@@ -104,8 +104,8 @@ export function TeamMemberRankingsTable({
               <TableHead>Team Member</TableHead>
               <TableHead>Role / Type</TableHead>
               {showTeam ? <TableHead>Team</TableHead> : null}
-              <TableHead className="text-right">Rate</TableHead>
-              <TableHead className="text-right">Annual Cap</TableHead>
+              {showRates ? <TableHead className="text-right">Rate</TableHead> : null}
+              {showRates ? <TableHead className="text-right">Annual Cap</TableHead> : null}
               <TableHead className="text-right">Forecast</TableHead>
               <TableHead className="text-right">Coverage</TableHead>
               <TableHead className="text-right">FYTD Actual</TableHead>
@@ -122,9 +122,9 @@ export function TeamMemberRankingsTable({
                 <TableRow key={row.memberId}>
                   <TableCell className="numeric-cell px-2 text-muted-foreground">{index + 1}</TableCell>
                   <TableCell className="min-w-0">
-                    <Link className="block truncate font-medium text-primary hover:underline" title={row.name} to={teamMemberDetailPath(row)}>
+                    <TeamMemberNameLink className="block truncate font-medium" linkClassName="text-primary hover:underline" member={row} title={row.name}>
                       {row.name}
-                    </Link>
+                    </TeamMemberNameLink>
                     {row.status !== "active" ? <Badge className="ml-2 border-muted text-muted-foreground">{row.status}</Badge> : null}
                   </TableCell>
                   <TableCell className="min-w-0">
@@ -138,19 +138,21 @@ export function TeamMemberRankingsTable({
                       {row.team}
                     </TableCell>
                   ) : null}
-                  <TableCell className="numeric-cell text-right font-medium text-primary">{formatBillRate(row.billRate, row.employmentType)}</TableCell>
-                  <TableCell className="numeric-cell text-right">
-                    <div className="font-medium">{formatOptionalCurrency(row.annualCostCap)}</div>
-                    <div className="text-xs text-muted-foreground">{formatHours(row.annualCapacityHours)} hrs</div>
-                  </TableCell>
+                  {showRates ? <TableCell className="numeric-cell text-right font-medium text-primary">{formatBillRate(row.billRate, row.employmentType)}</TableCell> : null}
+                  {showRates ? (
+                    <TableCell className="numeric-cell text-right">
+                      <div className="font-medium">{formatOptionalCurrency(row.annualCostCap)}</div>
+                      <div className="text-xs text-muted-foreground">{formatHours(row.annualCapacityHours)} hrs</div>
+                    </TableCell>
+                  ) : null}
                   <TableCell className="numeric-cell text-right">
                     <div className="font-semibold text-primary">{formatHours(row.fyForecastHours)} hrs</div>
-                    <div className="text-xs text-muted-foreground">{formatOptionalCurrency(row.fyForecastCost)}</div>
+                    {row.fyForecastCost == null ? null : <div className="text-xs text-muted-foreground">{formatOptionalCurrency(row.fyForecastCost)}</div>}
                   </TableCell>
                   <TableCell className="numeric-cell text-right">{formatPercent(row.forecastCapCoveragePercent)}</TableCell>
                   <TableCell className="numeric-cell text-right">
                     <div>{formatHours(row.fytdActualHours)} hrs</div>
-                    <div className="text-xs text-muted-foreground">{formatOptionalCurrency(row.fytdActualCost)}</div>
+                    {row.fytdActualCost == null ? null : <div className="text-xs text-muted-foreground">{formatOptionalCurrency(row.fytdActualCost)}</div>}
                   </TableCell>
                   <TableCell className="numeric-cell text-right">
                     <div>{row.ticketsTouched} tickets</div>
@@ -163,7 +165,7 @@ export function TeamMemberRankingsTable({
               ))
             ) : (
               <TableRow>
-                <TableCell className="py-5 text-muted-foreground" colSpan={showTeam ? 11 : 10}>
+                <TableCell className="py-5 text-muted-foreground" colSpan={(showTeam ? 11 : 10) - (showRates ? 0 : 2)}>
                   {emptyMessage}
                 </TableCell>
               </TableRow>
@@ -246,7 +248,7 @@ function formatRankingValue(row: TeamMemberRankingRow, dimension: TeamRankingDim
 }
 
 function formatOptionalCurrency(value: number | null) {
-  return value == null ? "Hidden" : formatCurrency(value);
+  return value == null ? null : formatCurrency(value);
 }
 
 function rankingValueDetail(dimension: TeamRankingDimension) {

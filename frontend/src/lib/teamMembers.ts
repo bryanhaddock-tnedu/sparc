@@ -17,7 +17,7 @@ export function isContractorEmploymentType(value: string) {
 }
 
 export function formatBillRate(billRate: number | null | undefined, employmentType: string, options?: { includeUnit?: boolean }) {
-  if (billRate == null) return "Hidden";
+  if (billRate == null) return "";
   if (isFteEmploymentType(employmentType) && billRate <= 0) return "Not set";
   return `${formatCurrency(billRate)}${options?.includeUnit ? "/hr" : ""}`;
 }

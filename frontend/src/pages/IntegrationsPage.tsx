@@ -1381,7 +1381,7 @@ function ForecastRecommendationDecisionHistory({
                       <>
                         <div>
                           {decision.target_team_member_id ? (
-                            <TeamMemberNameLink className="font-medium text-primary hover:underline" member={{ team_member_id: decision.target_team_member_id }}>
+                            <TeamMemberNameLink className="font-medium" linkClassName="text-primary hover:underline" member={{ team_member_id: decision.target_team_member_id }}>
                               {decision.target_team_member ?? "Unknown Team Member"}
                             </TeamMemberNameLink>
                           ) : (

@@ -30,7 +30,7 @@ export default function App() {
               <Route
                 path="/team-members/:teamMemberRef"
                 element={
-                  <RequireCapability capability="can_view_named_people" message="Named Team Member details are not available for your role.">
+                  <RequireCapability capability="can_view_team_member_profiles" message="Team Member profiles are not available for your role.">
                     <TeamMemberDetailPage />
                   </RequireCapability>
                 }

@@ -2,12 +2,13 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { productDetailPath, teamMemberDetailPath } from "../lib/routes";
+import { productDetailPath } from "../lib/routes";
 import { formatHours } from "../lib/utils";
 import type { ReportedValueRow } from "../types/api";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { TeamMemberNameLink } from "./TeamMemberNameLink";
 
 export function ReportedValuesTable({
   rows,
@@ -94,9 +95,9 @@ export function ReportedValuesTable({
                       ) : null}
                       {showTeamMember ? (
                         <TableCell>
-                          <Link className="font-medium text-primary hover:underline" to={teamMemberDetailPath(row)}>
+                          <TeamMemberNameLink className="font-medium" linkClassName="text-primary hover:underline" member={row}>
                             {row.team_member}
-                          </Link>
+                          </TeamMemberNameLink>
                         </TableCell>
                       ) : null}
                       <TableCell>{row.bucket}</TableCell>

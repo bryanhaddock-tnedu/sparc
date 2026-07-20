@@ -397,7 +397,7 @@ function AllocationAudit({ rows }: { rows: EstimatedIssueAllocation[] }) {
                     </TableCell>
                     <TableCell>{row.jira_project_key}</TableCell>
                     <TableCell>
-                      <TeamMemberNameLink className="font-medium text-primary hover:underline" member={row}>
+                      <TeamMemberNameLink className="font-medium" linkClassName="text-primary hover:underline" member={row}>
                         {row.team_member}
                       </TeamMemberNameLink>
                     </TableCell>

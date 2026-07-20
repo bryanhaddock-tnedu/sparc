@@ -1425,7 +1425,7 @@ function buildMemberForecastLines(
 }
 
 function formatDerivedCurrency(value: number, hidden: boolean) {
-  return hidden ? "Hidden" : formatCurrency(value);
+  return hidden ? "" : formatCurrency(value);
 }
 
 function memberForecastLineKey(productId: number, bucketId: number) {

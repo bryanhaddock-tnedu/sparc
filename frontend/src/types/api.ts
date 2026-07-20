@@ -46,6 +46,7 @@ export interface AuthCapabilities {
   can_view_costs?: boolean;
   can_view_hours?: boolean;
   can_view_named_people?: boolean;
+  can_view_team_member_profiles?: boolean;
   can_view_reports?: boolean;
 }
 

@@ -1,9 +1,10 @@
 import { Link } from "react-router-dom";
 
-import { productDetailPath, teamMemberDetailPath } from "../lib/routes";
+import { productDetailPath } from "../lib/routes";
 import { formatCurrency, formatHours } from "../lib/utils";
 import type { RoadmapActualRow } from "../types/api";
 import { Badge } from "./ui/badge";
+import { TeamMemberNameLink } from "./TeamMemberNameLink";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 
 type RoadmapActualsTableProps = {
@@ -81,9 +82,9 @@ export function RoadmapActualsTable({
                     ) : null}
                     {showTeamMember ? (
                       <TableCell>
-                        <Link className="font-medium text-primary hover:underline" to={teamMemberDetailPath(row)}>
+                        <TeamMemberNameLink className="font-medium" linkClassName="text-primary hover:underline" member={row}>
                           {row.team_member}
-                        </Link>
+                        </TeamMemberNameLink>
                       </TableCell>
                     ) : null}
                     <TableCell>{row.bucket}</TableCell>

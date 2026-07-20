@@ -16,7 +16,7 @@ from app.schemas import (
 )
 from app.services.aggregations import serialize_team_member, team_member_products
 from app.services.access_control import AuthenticatedUser, role_capabilities
-from app.services.auth import require_admin, require_named_people_access
+from app.services.auth import require_admin, require_named_people_access, require_team_member_profile_access
 from app.services.roadmap import roadmap_actual_rows
 from app.services.slugs import product_url_slug, resolve_team_member_ref, unique_team_member_slug
 from app.services.team_import import import_team_members
@@ -62,7 +62,7 @@ async def import_team_member_file(file: UploadFile, db: Session = Depends(get_db
 def get_team_member(
     team_member_ref: str,
     db: Session = Depends(get_db),
-    user: AuthenticatedUser = Depends(require_named_people_access),
+    user: AuthenticatedUser = Depends(require_team_member_profile_access),
 ) -> dict[str, object]:
     member = _resolve_team_member_or_404(db, team_member_ref)
     if member.slug is None:
@@ -95,7 +95,7 @@ def get_team_member_product_rows(
     team_member_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
-    user: AuthenticatedUser = Depends(require_named_people_access),
+    user: AuthenticatedUser = Depends(require_team_member_profile_access),
 ) -> dict[str, object]:
     member = _resolve_team_member_or_404(db, team_member_ref)
     try:
@@ -109,7 +109,7 @@ def get_team_member_actual_worklogs(
     team_member_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
-    _user: AuthenticatedUser = Depends(require_named_people_access),
+    _user: AuthenticatedUser = Depends(require_team_member_profile_access),
 ) -> list[dict[str, object]]:
     member = _resolve_team_member_or_404(db, team_member_ref)
 
@@ -155,7 +155,7 @@ def get_team_member_roadmap_actuals(
     team_member_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
-    _user: AuthenticatedUser = Depends(require_named_people_access),
+    _user: AuthenticatedUser = Depends(require_team_member_profile_access),
 ) -> list[dict[str, object]]:
     member = _resolve_team_member_or_404(db, team_member_ref)
     return roadmap_actual_rows(db, fiscal_year, team_member_id=member.id)

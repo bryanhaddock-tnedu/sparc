@@ -5,12 +5,12 @@ from fastapi.routing import APIRoute
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api import forecasts as forecasts_api, integrations as integrations_api, products as products_api, teams as teams_api
+from app.api import forecasts as forecasts_api, integrations as integrations_api, products as products_api, team_members as team_members_api, teams as teams_api
 from app.db.seed import _seed_buckets
 from app.models import Base, Bucket, Product, TeamMember
 from app.services.access_control import AuthenticatedUser, UserRole
 from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_summary, dashboard_work_type_breakdown, product_bucket_tables, product_summary
-from app.services.auth import require_admin, require_hours_access, require_labor_detail_access, require_named_people_access
+from app.services.auth import require_admin, require_hours_access, require_labor_detail_access, require_named_people_access, require_team_member_profile_access
 from app.services.fiscal_year import get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
 from app.services.reporting import build_labor_cost_report
@@ -156,6 +156,25 @@ def test_product_labor_detail_routes_require_explicit_capabilities(path, method,
     )
 
     assert any(dependency.call is required_dependency for dependency in route.dependant.dependencies)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/team-members/{team_member_ref}",
+        "/team-members/{team_member_ref}/products",
+        "/team-members/{team_member_ref}/actual-worklogs",
+        "/team-members/{team_member_ref}/roadmap-actuals",
+    ],
+)
+def test_team_member_profile_routes_require_profile_access(path):
+    route = next(
+        route
+        for route in team_members_api.router.routes
+        if isinstance(route, APIRoute) and route.path == path and "GET" in route.methods
+    )
+
+    assert any(dependency.call is require_team_member_profile_access for dependency in route.dependant.dependencies)
 
 
 def _authenticated_user(role: UserRole, program_areas: tuple[str, ...] = ()) -> AuthenticatedUser:
