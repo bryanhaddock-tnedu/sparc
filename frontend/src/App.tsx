@@ -38,7 +38,7 @@ export default function App() {
               <Route
                 path="/teams/:teamSlug"
                 element={
-                  <RequireCapability capability="can_view_named_people" message="Team analytics are not available for your role.">
+                  <RequireCapability capability="can_view_team_pages" message="Team analytics are not available for your role.">
                     <TeamAnalyticsPage />
                   </RequireCapability>
                 }
@@ -46,7 +46,7 @@ export default function App() {
               <Route
                 path="/team"
                 element={
-                  <RequireCapability capability="can_view_named_people" message="Team Management is not available for your role.">
+                  <RequireCapability capability="can_view_team_pages" message="Team Management is not available for your role.">
                     <TeamManagementPage />
                   </RequireCapability>
                 }

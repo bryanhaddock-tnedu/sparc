@@ -101,7 +101,7 @@ Entra authenticates users; SPARC authorizes users locally.
 Initial SPARC roles:
 
 - Admin: can view and edit everything; can see hours, costs, and bill rates; can run admin, sync, import, and configuration operations.
-- Leadership View Only: can view all Program Areas; cannot edit; can see hours, costs, and Team Member names in labor views; cannot see bill rates or open Team Member profiles. Rate fields and rate-derived columns must be omitted rather than labeled as hidden.
+- Leadership View Only: can view all Program Areas; cannot edit; can see hours, costs, and Team Member names in permitted labor views; cannot see bill rates, open Team Member profiles, or access Team Management and Team Analytics pages. Rate fields and rate-derived columns must be omitted rather than labeled as hidden.
 - Program Area View Only: can view only assigned Program Area(s); cannot edit; cannot see bill rates; can be assigned multiple Program Areas.
 
 Program Area assignment rows apply only to Program Area View Only users. Admin and Leadership View Only users see all Program Areas by role. Changing a user from Program Area View Only to either broader role must clear the user's stored Program Area assignments atomically; changing unrelated fields must preserve unchanged assignments without deleting and recreating them.
@@ -139,6 +139,8 @@ Build these primary routes:
 - `/team-members/:teamMemberSlug` — Team Member Detail
 - `/team` — Team Management
 - `/reports` — Enterprise Reports
+
+Team Management and Team Analytics routes are Admin-only. Leadership may still use Team as a report dimension and see Team Member names in permitted Product and Report views without receiving links into restricted Team or Team Member pages.
 
 ## Dashboard Requirements
 
@@ -315,7 +317,7 @@ Rules:
 
 ## Team Management Page Requirements
 
-Team Management should be a searchable, sortable roster grouped by Team. Each Team group should render its own roster table and link to a team-specific analytics page.
+Team Management is an Admin-only page. It should be a searchable, sortable roster grouped by Team. Each Team group should render its own roster table and link to a team-specific analytics page.
 
 The page should also include an all-Team-Member ranking table with a dimension selector for hours, ticket, and story point signals. These rankings are context signals only; they must not be labeled as performance scores.
 
@@ -346,7 +348,7 @@ Rules:
 
 ## Team Analytics Page Requirements
 
-Team Analytics should summarize one Team at a time.
+Team Analytics is an Admin-only page and should summarize one Team at a time.
 
 The page should include:
 
@@ -378,8 +380,8 @@ Rules:
 - Saving one or more Team Forecast cells updates only the submitted cells and must never clear untouched fiscal months.
 - Invalid Forecast input must remain unsaved and visibly invalid; it must never be coerced to zero.
 - Inactive Products and inactive Team Members may remain visible for history but cannot receive new Team Forecast entries.
-- Leadership viewers may see named Team planning rows and aggregate hours/costs but must not receive bill rates from the Team planning API.
-- Seeing a Team Member name is separate from profile access. Leadership names render as plain text, direct Team Member profile routes and APIs are denied, and rate or rate-derived fields are omitted instead of displaying a `Hidden` placeholder.
+- Team Management, Team Analytics, and the Team planning API are Admin-only.
+- Seeing a Team Member or Team name in a permitted Product or Report view is separate from page access. Leadership names render as plain text, direct Team and Team Member routes and APIs are denied, and rate or rate-derived fields are omitted instead of displaying a `Hidden` placeholder.
 
 ## Enterprise Reports Page Requirements
 

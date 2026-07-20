@@ -17,7 +17,7 @@ const navLinks: Array<{ key: PageNavKey; label: string; href: string; icon: Luci
 export function PageNav({ current }: { current?: PageNavKey }) {
   const { status } = useAuth();
   const canAdmin = status?.capabilities.can_admin === true;
-  const canViewNamedPeople = status?.capabilities.can_view_named_people === true;
+  const canViewTeamPages = status?.capabilities.can_view_team_pages === true;
   const canViewReports = status?.capabilities.can_view_reports === true;
 
   return (
@@ -27,7 +27,7 @@ export function PageNav({ current }: { current?: PageNavKey }) {
           (link) =>
             link.key !== current &&
             (link.key !== "admin" || canAdmin) &&
-            (link.key !== "team" || canViewNamedPeople) &&
+            (link.key !== "team" || canViewTeamPages) &&
             (link.key !== "reports" || canViewReports),
         )
         .map((link) => {

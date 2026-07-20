@@ -57,6 +57,7 @@ def role_capabilities(role: UserRole) -> dict[str, bool]:
             "can_view_hours": True,
             "can_view_named_people": True,
             "can_view_team_member_profiles": True,
+            "can_view_team_pages": True,
             "can_view_reports": True,
         }
     if role == UserRole.LEADERSHIP_VIEW_ONLY:
@@ -69,6 +70,7 @@ def role_capabilities(role: UserRole) -> dict[str, bool]:
             "can_view_hours": True,
             "can_view_named_people": True,
             "can_view_team_member_profiles": False,
+            "can_view_team_pages": False,
             "can_view_reports": True,
         }
     return {
@@ -80,6 +82,7 @@ def role_capabilities(role: UserRole) -> dict[str, bool]:
         "can_view_hours": False,
         "can_view_named_people": False,
         "can_view_team_member_profiles": False,
+        "can_view_team_pages": False,
         "can_view_reports": False,
     }
 

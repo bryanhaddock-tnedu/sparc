@@ -61,13 +61,15 @@ def test_email_user_login_returns_role_and_program_area_scope(monkeypatch):
     assert status["capabilities"]["can_view_named_people"] is False
 
 
-def test_leadership_can_see_names_without_team_member_profile_access():
+def test_leadership_can_see_names_without_team_member_or_team_page_access():
     capabilities = role_capabilities(UserRole.LEADERSHIP_VIEW_ONLY)
 
     assert capabilities["can_view_named_people"] is True
     assert capabilities["can_view_team_member_profiles"] is False
+    assert capabilities["can_view_team_pages"] is False
     assert capabilities["can_view_rates"] is False
     assert role_capabilities(UserRole.ADMIN)["can_view_team_member_profiles"] is True
+    assert role_capabilities(UserRole.ADMIN)["can_view_team_pages"] is True
 
 
 def test_update_app_user_changes_role_and_program_area_scope():

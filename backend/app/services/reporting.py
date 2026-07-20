@@ -69,10 +69,13 @@ def build_labor_cost_report(
     user: AuthenticatedUser | None = None,
 ) -> dict[str, object]:
     normalized_dimensions = normalize_labor_cost_dimensions(*dimensions)
-    if user is not None and not role_capabilities(user.role).get("can_view_reports", False):
+    capabilities = role_capabilities(user.role) if user is not None else {}
+    if user is not None and not capabilities.get("can_view_reports", False):
         raise PermissionError("Reports are not available for this role")
-    if user is not None and "person" in normalized_dimensions and not role_capabilities(user.role).get("can_view_named_people", False):
+    if user is not None and "person" in normalized_dimensions and not capabilities.get("can_view_named_people", False):
         raise PermissionError("Person-level reports are not available for this role")
+    can_link_people = user is None or capabilities.get("can_view_team_member_profiles", False)
+    can_link_teams = user is None or capabilities.get("can_view_team_pages", False)
     normalized_sort_metric = normalize_labor_cost_metric(sort_metric)
     source_rows = [
         row
@@ -85,7 +88,16 @@ def build_labor_cost_report(
     grouped: dict[tuple[tuple[str, str, str | None], ...], dict[str, object]] = {}
     for source_row in source_rows:
         member = members.get(int(source_row["team_member_id"]))
-        dimension_values = tuple(_dimension_value(dimension, source_row, member) for dimension in normalized_dimensions)
+        dimension_values = tuple(
+            _dimension_value(
+                dimension,
+                source_row,
+                member,
+                can_link_people=can_link_people,
+                can_link_teams=can_link_teams,
+            )
+            for dimension in normalized_dimensions
+        )
         if dimension_values not in grouped:
             grouped[dimension_values] = {
                 "dimension_values": [
@@ -191,9 +203,17 @@ def build_labor_cost_report_workbook(
     return output
 
 
-def _dimension_value(dimension: str, row: dict[str, object], member: TeamMember | None) -> tuple[str, str, str | None]:
+def _dimension_value(
+    dimension: str,
+    row: dict[str, object],
+    member: TeamMember | None,
+    *,
+    can_link_people: bool,
+    can_link_teams: bool,
+) -> tuple[str, str, str | None]:
     if dimension == "person":
-        return ("person", str(row["team_member"]), f"/team-members/{row['team_member_slug']}")
+        href = f"/team-members/{row['team_member_slug']}" if can_link_people else None
+        return ("person", str(row["team_member"]), href)
     if dimension == "role":
         role = member.role if member is not None and member.role else "Unassigned"
         return ("role", role, None)
@@ -202,7 +222,8 @@ def _dimension_value(dimension: str, row: dict[str, object], member: TeamMember 
         return ("employment_type", employment_type, None)
     if dimension == "team":
         team = member.team if member is not None and member.team else "Unassigned"
-        return ("team", team, f"/teams/{slugify(team, fallback='unassigned')}")
+        href = f"/teams/{slugify(team, fallback='unassigned')}" if can_link_teams else None
+        return ("team", team, href)
     if dimension == "product":
         return ("product", str(row["product"]), f"/products/{row['product_slug']}")
     if dimension == "bucket":

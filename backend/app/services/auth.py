@@ -109,6 +109,12 @@ def require_team_member_profile_access(user: AuthenticatedUser = Depends(current
     return user
 
 
+def require_team_page_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
+    if not role_capabilities(user.role).get("can_view_team_pages"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Team page access required")
+    return user
+
+
 def require_hours_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
     if not role_capabilities(user.role).get("can_view_hours"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Labor hours access required")

@@ -41,6 +41,7 @@ export function ReportsPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const { status } = useAuth();
   const canViewNamedPeople = status?.capabilities.can_view_named_people === true;
+  const canViewTeamMemberProfiles = status?.capabilities.can_view_team_member_profiles === true;
   const [leadDimension, setLeadDimension] = useState<LaborCostReportDimension>("product");
   const [secondDimension, setSecondDimension] = useState<LaborCostReportOptionalDimension>("bucket");
   const [thirdDimension, setThirdDimension] = useState<LaborCostReportOptionalDimension>("role");
@@ -140,8 +141,7 @@ export function ReportsPage() {
                 Labor Cost Report
               </CardTitle>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                Pivot forecast and actual cost by Product, Bucket, Role, Employment Type, Person, and Team. Product and Person values link back to their detail
-                pages.
+                Pivot forecast and actual cost by Product, Bucket, Role, Employment Type, Person, and Team. {canViewTeamMemberProfiles ? "Product and Person values" : "Product values"} link back to their detail pages.
               </p>
             </div>
             <Button onClick={() => void exportReport()} disabled={exporting || loading || !report}>

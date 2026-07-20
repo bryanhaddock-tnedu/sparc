@@ -10,7 +10,7 @@ from app.db.seed import _seed_buckets
 from app.models import Base, Bucket, Product, TeamMember
 from app.services.access_control import AuthenticatedUser, UserRole
 from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_summary, dashboard_work_type_breakdown, product_bucket_tables, product_summary
-from app.services.auth import require_admin, require_hours_access, require_labor_detail_access, require_named_people_access, require_team_member_profile_access
+from app.services.auth import require_admin, require_hours_access, require_labor_detail_access, require_named_people_access, require_team_member_profile_access, require_team_page_access
 from app.services.fiscal_year import get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
 from app.services.reporting import build_labor_cost_report
@@ -91,6 +91,21 @@ def test_leadership_user_can_request_labor_reports():
     assert report["totals"]["forecast_cost"] == 3000
 
 
+def test_leadership_report_keeps_team_and_person_values_without_restricted_links():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        _seed_access_scope_data(db)
+        user = _authenticated_user(UserRole.LEADERSHIP_VIEW_ONLY)
+
+        report = build_labor_cost_report(db, 2027, dimensions=["person", "team", "product"], user=user)
+
+    dimension_values = [value for row in report["rows"] for value in row["dimension_values"]]
+    assert all(value["href"] is None for value in dimension_values if value["key"] in {"person", "team"})
+    assert all(str(value["href"]).startswith("/products/") for value in dimension_values if value["key"] == "product")
+
+
 def test_restricted_rate_viewer_gets_named_rows_without_bill_rates():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -129,6 +144,16 @@ def test_forecast_detail_route_requires_named_people_access():
     )
 
     assert any(dependency.call is require_named_people_access for dependency in route.dependant.dependencies)
+
+
+def test_team_forecast_plan_route_requires_team_page_access():
+    route = next(
+        route
+        for route in teams_api.router.routes
+        if isinstance(route, APIRoute) and route.path == "/teams/{team_ref}/roadmap-forecast-plan" and "GET" in route.methods
+    )
+
+    assert any(dependency.call is require_team_page_access for dependency in route.dependant.dependencies)
 
 
 def test_jira_actual_exclusion_queue_requires_admin_access():

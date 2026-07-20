@@ -5,7 +5,7 @@ from app.api.errors import bad_request
 from app.db.session import get_db
 from app.schemas import RoadmapForecastAllocationBatchUpsert, TeamRoadmapForecastPlanResponse
 from app.services.access_control import AuthenticatedUser, role_capabilities
-from app.services.auth import require_admin, require_named_people_access
+from app.services.auth import require_admin, require_team_page_access
 from app.services.roadmap_forecasting import team_roadmap_forecast_plan, upsert_team_roadmap_forecast_allocations
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -16,7 +16,7 @@ def get_team_roadmap_forecast_plan(
     team_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
-    viewer: AuthenticatedUser = Depends(require_named_people_access),
+    viewer: AuthenticatedUser = Depends(require_team_page_access),
 ) -> dict[str, object]:
     return team_roadmap_forecast_plan(
         db,
