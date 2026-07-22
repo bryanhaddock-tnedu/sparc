@@ -226,7 +226,10 @@ def dashboard_products(
                 ),
             }
         )
-    return _redact_dashboard_product_hours(rows, user) if redact_for_user else rows
+    if not redact_for_user:
+        return rows
+    _redact_dashboard_product_labor_details(rows, user)
+    return _redact_dashboard_product_hours(rows, user)
 
 
 def dashboard_summary(db: Session, fiscal_year: int, user: AuthenticatedUser | None = None) -> dict[str, object]:
@@ -254,6 +257,7 @@ def dashboard_summary(db: Session, fiscal_year: int, user: AuthenticatedUser | N
         (summary["projected_spend"] / summary["budget_amount"] * 100) if summary["budget_amount"] else 0,
         1,
     )
+    _redact_dashboard_summary_labor_details(summary, user)
     return _redact_dashboard_summary_hours(summary, user)
 
 
@@ -355,6 +359,23 @@ def dashboard_labor_mix(
 
 def _can_view_dashboard_hours(user: AuthenticatedUser | None) -> bool:
     return True if user is None else role_capabilities(user.role).get("can_view_hours", False)
+
+
+def _can_view_labor_details(user: AuthenticatedUser | None) -> bool:
+    return True if user is None else role_capabilities(user.role).get("can_view_labor_details", False)
+
+
+def _redact_dashboard_summary_labor_details(summary: dict[str, object], user: AuthenticatedUser | None) -> dict[str, object]:
+    if not _can_view_labor_details(user):
+        summary["team_member_count"] = None
+    return summary
+
+
+def _redact_dashboard_product_labor_details(rows: list[dict[str, object]], user: AuthenticatedUser | None) -> list[dict[str, object]]:
+    if not _can_view_labor_details(user):
+        for row in rows:
+            row["team_members"] = None
+    return rows
 
 
 def _redact_dashboard_summary_hours(summary: dict[str, object], user: AuthenticatedUser | None) -> dict[str, object]:

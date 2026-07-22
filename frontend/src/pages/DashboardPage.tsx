@@ -38,6 +38,7 @@ export function DashboardPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const { status } = useAuth();
   const canViewHours = status?.capabilities.can_view_hours === true;
+  const canViewLaborDetails = status?.capabilities.can_view_labor_details === true;
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [products, setProducts] = useState<ProductSummaryRow[]>([]);
   const [workTypes, setWorkTypes] = useState<DashboardWorkTypeRow[]>([]);
@@ -167,7 +168,7 @@ export function DashboardPage() {
             <h2 className="text-lg font-semibold">Product Summary</h2>
             <p className="mt-1 text-sm text-muted-foreground">{selectedScopeLabel} product totals.</p>
           </div>
-          <ProductSummaryTable rows={productRows} canViewHours={canViewHours} />
+          <ProductSummaryTable rows={productRows} canViewHours={canViewHours} canViewLaborDetails={canViewLaborDetails} />
         </section>
       </div>
     </div>

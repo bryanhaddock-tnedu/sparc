@@ -11,7 +11,8 @@ from app.models import Base
 from app.services import auth
 from app.services import entra_auth
 from app.services.entra_auth import ENTRA_STATE_COOKIE_NAME, EntraIdentity
-from app.services.access_control import UserRole, authenticate_entra_user, authenticated_user_from_app_user, create_app_user, role_capabilities, update_app_user
+from app.services.access_control import AuthenticatedUser, UserRole, authenticate_entra_user, authenticated_user_from_app_user, create_app_user, role_capabilities, update_app_user
+from app.services.auth import require_labor_detail_access
 
 
 def test_login_sets_signed_cookie_and_authenticates_request(monkeypatch):
@@ -65,11 +66,34 @@ def test_leadership_can_see_names_without_team_member_or_team_page_access():
     capabilities = role_capabilities(UserRole.LEADERSHIP_VIEW_ONLY)
 
     assert capabilities["can_view_named_people"] is True
+    assert capabilities["can_view_labor_details"] is False
     assert capabilities["can_view_team_member_profiles"] is False
     assert capabilities["can_view_team_pages"] is False
     assert capabilities["can_view_rates"] is False
     assert role_capabilities(UserRole.ADMIN)["can_view_team_member_profiles"] is True
     assert role_capabilities(UserRole.ADMIN)["can_view_team_pages"] is True
+    assert role_capabilities(UserRole.ADMIN)["can_view_labor_details"] is True
+
+
+def test_labor_detail_dependency_denies_leadership_and_allows_admin():
+    leadership = AuthenticatedUser(
+        id=1,
+        email="leader@example.org",
+        display_name="Leader",
+        role=UserRole.LEADERSHIP_VIEW_ONLY,
+    )
+    admin = AuthenticatedUser(
+        id=2,
+        email="admin@example.org",
+        display_name="Admin",
+        role=UserRole.ADMIN,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        require_labor_detail_access(leadership)
+
+    assert exc_info.value.status_code == 403
+    assert require_labor_detail_access(admin) is admin
 
 
 def test_update_app_user_changes_role_and_program_area_scope():

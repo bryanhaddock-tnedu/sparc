@@ -1,7 +1,7 @@
 export interface DashboardSummary {
   fiscal_year: number;
   product_count: number;
-  team_member_count: number;
+  team_member_count: number | null;
   budget_amount: number;
   projected_spend: number;
   budget_remaining: number;
@@ -46,6 +46,7 @@ export interface AuthCapabilities {
   can_view_costs?: boolean;
   can_view_hours?: boolean;
   can_view_named_people?: boolean;
+  can_view_labor_details?: boolean;
   can_view_team_member_profiles?: boolean;
   can_view_team_pages?: boolean;
   can_view_reports?: boolean;
@@ -172,7 +173,7 @@ export interface ProductSummaryRow {
   product: string;
   product_slug: string;
   jira_space_key: string | null;
-  team_members: number;
+  team_members: number | null;
   budget_amount: number;
   projected_spend: number;
   budget_remaining: number;

@@ -1,6 +1,6 @@
 # SPARC Build Milestones
 
-SPARC is the internal labor forecasting and cost intelligence app for this project. This is the living milestone tracker; historical completion notes remain in the milestone bodies, while the status and active backlog below describe the application as of July 20, 2026.
+SPARC is the internal labor forecasting and cost intelligence app for this project. This is the living milestone tracker; historical completion notes remain in the milestone bodies, while the status and active backlog below describe the application as of July 22, 2026.
 
 ## Current State
 
@@ -8,8 +8,8 @@ SPARC is the internal labor forecasting and cost intelligence app for this proje
 - Actuals Intelligence Release: complete for the current Jira/Roadmap scope and running in stage.
 - Pilot Readiness Release: in progress.
 - SPARC-local users, roles, Program Area assignments, backend authorization, redaction, and local test login are implemented.
-- Leadership rate fields are omitted from the interface, and Leadership can see Team Member names without receiving Team Member profile access.
-- Team Management and Team Analytics are Admin-only; Leadership report values do not link into restricted Team or Team Member pages.
+- Leadership rate fields are omitted from the interface, and Leadership can see Team Member names as plain-text Report dimensions without receiving Team Member profile access.
+- Team Management, Team Analytics, Product Team rostering, Product-by-Bucket Forecast matrices, and raw labor-detail APIs are Admin-only. Leadership retains aggregate Product and Report visibility.
 - Entra application code is implemented; App Registration values and stage secret configuration remain external dependencies for end-to-end SSO.
 - Roadmap billing milestones 1 through 5 are implemented and awaiting final stakeholder acceptance against real stage data.
 
@@ -17,13 +17,12 @@ SPARC is the internal labor forecasting and cost intelligence app for this proje
 
 1. Complete Florie's stage acceptance of the simplified Forecast Adjustment Review scope, decision lifecycle, and confirmation flow.
 2. Complete Florie's stage acceptance of corrected Team Product Forecast ownership, Team Actual totals, save behavior, and Team Member line management.
-3. Complete role-based stage acceptance for Admin, Leadership View Only, Program Area View Only, and a Program Area user with no assignments, including Leadership rate omission and removal of Team and Team Member page access.
-4. Resolve the pending stakeholder decision on Leadership visibility for Product-by-Bucket Forecast and Product Team rostering. Preserve the current Product Detail behavior until Bryan, Florie, and Vijay approve a change.
-5. Prevent disabling or demoting the final active SPARC Admin and add the explicit no-Program-Area state.
-6. Add browser-level role/login regression coverage, repair ESLint configuration, and add backend tests, migration checks, and stage smoke tests to CI.
-7. Complete Roadmap billing acceptance with real gaps, remapping, sync persistence, financial-impact confirmation, audit history, summaries, exports, and forecast recommendation decisions.
-8. Complete pilot runbooks, backup/restore notes, known limitations, onboarding, and repeatable stakeholder validation.
-9. Configure and validate Entra SSO after DevOps supplies the external registration and secret values.
+3. Complete role-based stage acceptance for Admin, Leadership View Only, Program Area View Only, and a Program Area user with no assignments, including Leadership rate omission and removal of Team, Team Member, Product Team, Product-by-Bucket Forecast, and raw labor-detail access.
+4. Prevent disabling or demoting the final active SPARC Admin and add the explicit no-Program-Area state.
+5. Add browser-level role/login regression coverage, repair ESLint configuration, and add backend tests, migration checks, and stage smoke tests to CI.
+6. Complete Roadmap billing acceptance with real gaps, remapping, sync persistence, financial-impact confirmation, audit history, summaries, exports, and forecast recommendation decisions.
+7. Complete pilot runbooks, backup/restore notes, known limitations, onboarding, and repeatable stakeholder validation.
+8. Configure and validate Entra SSO after DevOps supplies the external registration and secret values.
 
 ## Build Principles
 

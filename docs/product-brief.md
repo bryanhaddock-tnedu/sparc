@@ -52,7 +52,7 @@ Use a monorepo:
 
 - Keep navigation contextual.
 - Maintain only a Dashboard link as persistent navigation.
-- Products and Team Members must be clickable wherever they appear.
+- Products and Team Members must be clickable wherever the viewer has access to the destination page.
 - Dashboard summarizes Products.
 - Product Detail is the main analytical page.
 - Team Member Detail shows the inverse view across Products.
@@ -101,7 +101,7 @@ Entra authenticates users; SPARC authorizes users locally.
 Initial SPARC roles:
 
 - Admin: can view and edit everything; can see hours, costs, and bill rates; can run admin, sync, import, and configuration operations.
-- Leadership View Only: can view all Program Areas; cannot edit; can see hours, costs, and Team Member names in permitted labor views; cannot see bill rates, open Team Member profiles, or access Team Management and Team Analytics pages. Rate fields and rate-derived columns must be omitted rather than labeled as hidden.
+- Leadership View Only: can view all Program Areas; cannot edit; can see aggregate hours and costs plus Team Member names as plain-text Report dimensions; cannot see bill rates, detailed Product labor, Product Team rostering, Product-by-Bucket Forecast tables, Team Member profiles, Team Management, or Team Analytics. Restricted fields and sections must be omitted rather than labeled as hidden.
 - Program Area View Only: can view only assigned Program Area(s); cannot edit; cannot see bill rates; can be assigned multiple Program Areas.
 
 Program Area assignment rows apply only to Program Area View Only users. Admin and Leadership View Only users see all Program Areas by role. Changing a user from Program Area View Only to either broader role must clear the user's stored Program Area assignments atomically; changing unrelated fields must preserve unchanged assignments without deleting and recreating them.
@@ -126,7 +126,7 @@ Each Product has three buckets:
 2. Enhance
 3. Maintenance
 
-Product Detail pages must organize detailed labor data by these buckets.
+Admin Product Detail pages must organize detailed labor data by these buckets. Leadership and Program Area views retain only the aggregate Product information permitted by their role.
 
 ## Required Pages
 
@@ -179,6 +179,8 @@ Optional columns if useful:
 ## Product Detail Page Requirements
 
 Each Product Detail page should include:
+
+Leadership View Only receives the Product header, Budget Tracker, aggregate Product snapshot, and aggregate actual-hours bucket distribution. Product Team, role-cost breakdown, Product-by-Bucket Forecast matrices, Reported Values, and their raw supporting APIs are Admin-only. Program Area View Only receives the same high-level Product page further redacted by its no-hours capability. These visibility rules must not delete or alter Product Team, Forecast, Actual, Estimate, Roadmap, or Jira data.
 
 1. Product header
    - Product name

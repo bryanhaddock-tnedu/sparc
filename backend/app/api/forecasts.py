@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.models import FiscalMonth, ForecastEntry
 from app.schemas import ApiMessage, ForecastBatchUpsert, ForecastResponse, ForecastUpsert
 from app.services.access_control import AuthenticatedUser, can_view_product_office
-from app.services.auth import require_named_people_access, require_write_access
+from app.services.auth import require_labor_detail_access, require_write_access
 from app.services.costs import round_hours
 from app.services.forecasting import remove_empty_forecast_line, upsert_forecast_entry
 
@@ -20,7 +20,7 @@ def list_forecasts(
     team_member_id: int | None = None,
     fiscal_year: int | None = None,
     db: Session = Depends(get_db),
-    user: AuthenticatedUser = Depends(require_named_people_access),
+    user: AuthenticatedUser = Depends(require_labor_detail_access),
 ) -> list[dict[str, object]]:
     statement = select(ForecastEntry).options(
         joinedload(ForecastEntry.product),

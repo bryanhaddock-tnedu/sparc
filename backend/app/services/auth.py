@@ -122,8 +122,7 @@ def require_hours_access(user: AuthenticatedUser = Depends(current_user)) -> Aut
 
 
 def require_labor_detail_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
-    capabilities = role_capabilities(user.role)
-    if not capabilities.get("can_view_hours") or not capabilities.get("can_view_named_people"):
+    if not role_capabilities(user.role).get("can_view_labor_details"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Detailed labor access required")
     return user
 

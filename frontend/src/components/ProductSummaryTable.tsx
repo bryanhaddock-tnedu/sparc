@@ -53,6 +53,7 @@ const numericColumns = new Set<ProductSortId>([
 ]);
 
 const hourColumnIds = new Set<ProductSortId>(["forecasted_hours", "fytd_hours"]);
+const laborDetailColumnIds = new Set<ProductSortId>(["team_members"]);
 
 type ProductSummaryColumn = ColumnDef<ProductSummaryRow> & { accessorKey: ProductSortId };
 
@@ -111,10 +112,32 @@ const columns: ProductSummaryColumn[] = [
   },
 ];
 
-export function ProductSummaryTable({ rows, canViewHours = true }: { rows: ProductSummaryRow[]; canViewHours?: boolean }) {
+export function ProductSummaryTable({
+  rows,
+  canViewHours = true,
+  canViewLaborDetails = true,
+}: {
+  rows: ProductSummaryRow[];
+  canViewHours?: boolean;
+  canViewLaborDetails?: boolean;
+}) {
   const [sorting, setSorting] = useState<SortingState>(defaultSorting);
-  const availableSortOptions = useMemo(() => sortOptions.filter((option) => canViewHours || !hourColumnIds.has(option.id)), [canViewHours]);
-  const visibleColumns = useMemo(() => columns.filter((column) => canViewHours || !hourColumnIds.has(column.accessorKey)), [canViewHours]);
+  const availableSortOptions = useMemo(
+    () =>
+      sortOptions.filter(
+        (option) => (canViewHours || !hourColumnIds.has(option.id)) && (canViewLaborDetails || !laborDetailColumnIds.has(option.id)),
+      ),
+    [canViewHours, canViewLaborDetails],
+  );
+  const visibleColumns = useMemo(
+    () =>
+      columns.filter(
+        (column) =>
+          (canViewHours || !hourColumnIds.has(column.accessorKey)) &&
+          (canViewLaborDetails || !laborDetailColumnIds.has(column.accessorKey)),
+      ),
+    [canViewHours, canViewLaborDetails],
+  );
   const activeSortSummary = useMemo(() => {
     return sorting
       .map((sort) => {
@@ -127,12 +150,15 @@ export function ProductSummaryTable({ rows, canViewHours = true }: { rows: Produ
   }, [availableSortOptions, sorting]);
 
   useEffect(() => {
-    if (canViewHours) return;
     setSorting((current) => {
-      const filtered = current.filter((sort) => !hourColumnIds.has(sort.id as ProductSortId));
+      const filtered = current.filter(
+        (sort) =>
+          (canViewHours || !hourColumnIds.has(sort.id as ProductSortId)) &&
+          (canViewLaborDetails || !laborDetailColumnIds.has(sort.id as ProductSortId)),
+      );
       return filtered.length ? filtered : defaultSorting;
     });
-  }, [canViewHours]);
+  }, [canViewHours, canViewLaborDetails]);
 
   const table = useReactTable({
     data: rows,

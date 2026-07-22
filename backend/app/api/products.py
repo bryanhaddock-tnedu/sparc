@@ -48,7 +48,6 @@ from app.services.auth import (
     require_admin,
     require_hours_access,
     require_labor_detail_access,
-    require_named_people_access,
 )
 from app.services.jira_projects import (
     add_product_jira_space,
@@ -188,7 +187,7 @@ def delete_product(product_ref: str, db: Session = Depends(get_db), _admin=Depen
 def list_product_team_members(
     product_ref: str,
     db: Session = Depends(get_db),
-    user: AuthenticatedUser = Depends(require_named_people_access),
+    user: AuthenticatedUser = Depends(require_labor_detail_access),
 ) -> list[dict[str, object]]:
     product = _resolve_product_or_404(db, product_ref)
     _require_product_visible(product, user)
@@ -437,7 +436,7 @@ def get_bucket_tables(
     metric: str = "hours",
     data_type: str = "forecast",
     db: Session = Depends(get_db),
-    user: AuthenticatedUser = Depends(require_named_people_access),
+    user: AuthenticatedUser = Depends(require_labor_detail_access),
 ) -> dict[str, object]:
     _ = metric, data_type
     product = _resolve_product_or_404(db, product_ref)

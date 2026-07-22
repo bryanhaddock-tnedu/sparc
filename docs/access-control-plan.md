@@ -33,8 +33,9 @@ Entra authorization-code support is implemented, but end-to-end SSO remains exte
 - Cannot edit.
 - Can see hours and costs.
 - Cannot see bill rates.
-- Can see Team Member names in permitted Product and Report views, but cannot open Team Member profiles.
-- Cannot access Team Management, Team Analytics, or Team planning APIs. Team and Person values may remain available as plain-text report dimensions.
+- Can see Team Member names as plain-text Team and Person report dimensions, but cannot open Team Member profiles.
+- Cannot access detailed Product labor, Product Team rostering, Product-by-Bucket Forecast tables, Reported Values, Team Management, Team Analytics, or their supporting raw labor-detail APIs.
+- Retains aggregate Product budget, hours, costs, actual-hours bucket distribution, and Product navigation.
 - Rate and rate-derived rows or columns are omitted from the interface rather than displaying a `Hidden` placeholder.
 - Cannot run admin-only operations such as sync, import, system scan, or user access changes.
 
@@ -159,7 +160,7 @@ It must not scope by `RoadmapItem.program_area`.
 - Return authenticated user identity.
 - Return role.
 - Return assigned Program Areas.
-- Return capabilities such as `can_admin`, `can_edit_forecast`, `can_run_sync`, `can_view_rates`, `can_view_costs`, `can_view_hours`, `can_view_named_people`, `can_view_team_member_profiles`, and `can_view_team_pages`.
+- Return capabilities such as `can_admin`, `can_edit_forecast`, `can_run_sync`, `can_view_rates`, `can_view_costs`, `can_view_hours`, `can_view_named_people`, `can_view_labor_details`, `can_view_team_member_profiles`, and `can_view_team_pages`.
 
 ### Milestone 6: Backend Permission And Scope Enforcement
 
@@ -178,6 +179,7 @@ It must not scope by `RoadmapItem.program_area`.
 - Omit restricted rate fields and rate-derived columns from the interface instead of calling attention to them with placeholders.
 - Enforce Team Member profile access independently from permission to see named Team Member rows.
 - Enforce Team-page access independently from permission to use Team and Person as report dimensions.
+- Enforce raw labor-detail access independently from aggregate Product and Report visibility.
 - Add tests proving restricted users cannot retrieve rates.
 
 ### Milestone 8: Admin Access UI

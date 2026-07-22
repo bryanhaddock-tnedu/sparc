@@ -576,7 +576,7 @@ class ForecastResponse(BaseModel):
 class DashboardSummaryResponse(BaseModel):
     fiscal_year: int
     product_count: int
-    team_member_count: int
+    team_member_count: int | None
     budget_amount: float
     projected_spend: float
     budget_remaining: float
@@ -641,7 +641,7 @@ class ProductSummaryRowResponse(BaseModel):
     product: str
     product_slug: str
     jira_space_key: str | None
-    team_members: int
+    team_members: int | None
     budget_amount: float
     projected_spend: float
     budget_remaining: float

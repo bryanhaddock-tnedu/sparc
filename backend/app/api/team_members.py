@@ -16,7 +16,7 @@ from app.schemas import (
 )
 from app.services.aggregations import serialize_team_member, team_member_products
 from app.services.access_control import AuthenticatedUser, role_capabilities
-from app.services.auth import require_admin, require_named_people_access, require_team_member_profile_access
+from app.services.auth import require_admin, require_labor_detail_access, require_team_member_profile_access
 from app.services.roadmap import roadmap_actual_rows
 from app.services.slugs import product_url_slug, resolve_team_member_ref, unique_team_member_slug
 from app.services.team_import import import_team_members
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/team-members", tags=["team members"])
 @router.get("", response_model=list[TeamMemberResponse])
 def list_team_members(
     db: Session = Depends(get_db),
-    user: AuthenticatedUser = Depends(require_named_people_access),
+    user: AuthenticatedUser = Depends(require_labor_detail_access),
 ) -> list[dict[str, object]]:
     members = db.scalars(select(TeamMember).order_by(TeamMember.name)).all()
     return [serialize_team_member(member, can_view_rates=_can_view_rates(user)) for member in members]

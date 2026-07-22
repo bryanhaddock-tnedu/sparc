@@ -53,7 +53,7 @@ export function ProductDetailPage() {
   const canAdmin = status?.capabilities.can_admin === true;
   const canEditForecast = status?.capabilities.can_edit_forecast === true;
   const canViewHours = status?.capabilities.can_view_hours === true;
-  const canViewNamedPeople = status?.capabilities.can_view_named_people === true;
+  const canViewLaborDetails = status?.capabilities.can_view_labor_details === true;
   const canViewRates = status?.capabilities.can_view_rates === true;
   const [summary, setSummary] = useState<ProductSummary | null>(null);
   const [tables, setTables] = useState<ProductBucketTables | null>(null);
@@ -78,7 +78,7 @@ export function ProductDetailPage() {
     const summaryResult = await api.productSummary(productRef, fiscalYear);
     const resolvedProductId = summaryResult.product.id;
     const distributionResult = canViewHours ? await api.bucketDistribution(resolvedProductId, fiscalYear) : [];
-    const [tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = canViewNamedPeople
+    const [tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = canViewLaborDetails
       ? await Promise.all([
           api.productBucketTables(resolvedProductId, fiscalYear),
           canAdmin ? api.productJiraSpaces(resolvedProductId) : Promise.resolve([]),
@@ -106,7 +106,7 @@ export function ProductDetailPage() {
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load product"))
       .finally(() => setLoading(false));
-  }, [productRef, fiscalYear, canAdmin, canViewHours, canViewNamedPeople]);
+  }, [productRef, fiscalYear, canAdmin, canViewHours, canViewLaborDetails]);
 
   useEffect(() => {
     if (!forecastLineBucketId && tables?.buckets[0]) {
@@ -323,7 +323,7 @@ export function ProductDetailPage() {
           actualSpend={summary.fytd_cost}
           contextLabel={`${summary.product.name} budget, forecast, and actuals`}
         />
-        {canViewNamedPeople ? <ProductRoleCostCard summary={roleCostSummary} /> : null}
+        {canViewLaborDetails ? <ProductRoleCostCard summary={roleCostSummary} /> : null}
         <div className={canViewHours ? "grid gap-4 xl:grid-cols-[360px_1fr]" : "grid gap-4"}>
           {canViewHours ? <div className="rounded-lg border bg-card p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase text-muted-foreground">FYTD Actualized Hours</h2>
@@ -358,7 +358,7 @@ export function ProductDetailPage() {
         </div>
       </section>
 
-      {canViewNamedPeople ? (
+      {canViewLaborDetails ? (
         <ProductTeamSection
           assignments={productTeam}
           canEdit={canAdmin}
@@ -368,11 +368,7 @@ export function ProductDetailPage() {
           onRemove={removeProductTeamMember}
           onUpdate={updateProductTeamMember}
         />
-      ) : (
-        <section className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-          Named Team Member rows are hidden for your role. Product totals above remain scoped to your assigned Program Area.
-        </section>
-      )}
+      ) : null}
 
       {canEditForecast && tables ? (
         <ForecastLineSection
@@ -391,7 +387,7 @@ export function ProductDetailPage() {
         />
       ) : null}
 
-      {canViewNamedPeople && tables ? (
+      {canViewLaborDetails && tables ? (
         <section className="space-y-5">
           {visibleBuckets.length ? (
             visibleBuckets.map((bucket) => (
@@ -416,7 +412,7 @@ export function ProductDetailPage() {
         </section>
       ) : null}
 
-      {canViewNamedPeople ? <ReportedValuesTable rows={reportedRows} showTeamMember /> : null}
+      {canViewLaborDetails ? <ReportedValuesTable rows={reportedRows} showTeamMember /> : null}
     </div>
   );
 }
