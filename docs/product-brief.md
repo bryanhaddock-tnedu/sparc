@@ -663,6 +663,32 @@ Import behavior:
 5. Set created_at and updated_at.
 6. Allow records to be edited after import.
 
+## Environment Data Transfer
+
+The Admin Data package moves SPARC-owned current state between environments. It is not a PostgreSQL backup.
+
+Portable current state includes:
+
+- Buckets and estimation profiles.
+- Team Members, including rates, employment type, and status.
+- Products, Program Area/Division values, fiscal-year budgets, and Product Team assignments.
+- Canonical Product/Jira project associations and Jira user/Team Member associations.
+- Canonical Forecast entries.
+- Manual Roadmap Item Product/Bucket overrides.
+- Manual Jira ticket/Roadmap Item associations.
+- Optional sanitized user access definitions: email, display name, SPARC role, active status, and Program Area assignments.
+
+The package must not contain password hashes, Entra identity links, login history, Jira-fetched Actuals, Jira/Roadmap refresh rows, generated estimates, sync history, or audit/event history. DevOps-managed PostgreSQL backups remain responsible for full same-environment disaster recovery.
+
+Roadmap transfer is a two-pass operation because the package stores only SPARC's manual overlay:
+
+1. Import base SPARC data.
+2. Run Jira Roadmap sync to recreate Jira-owned Roadmap Items and relationships.
+3. Import Roadmap Item overrides and ticket mappings.
+4. Run Jira Actuals sync to recreate Actual labor facts.
+
+Imports must be idempotent and use natural keys rather than source database IDs. Newly imported user definitions have no password or Entra identity and cannot use local login until separately activated in the target environment.
+
 ## Testing Requirements
 
 Backend tests:

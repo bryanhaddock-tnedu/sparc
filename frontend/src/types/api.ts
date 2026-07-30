@@ -95,6 +95,7 @@ export interface AdminDataExportOption {
   label: string;
   description: string;
   default_selected: boolean;
+  import_phase: "base" | "after_roadmap_sync";
 }
 
 export interface AdminDataImportDatasetResult {
@@ -115,7 +116,14 @@ export interface AdminDataImportError {
 export interface AdminDataImportResult {
   datasets: AdminDataImportDatasetResult[];
   errors: AdminDataImportError[];
+  warnings: AdminDataImportError[];
   excluded_jira_refresh_data: string[];
+  package: {
+    package_id: string | null;
+    version: number;
+    generated_at: string | null;
+    row_counts: Record<string, number>;
+  } | null;
 }
 
 export interface DashboardWorkTypeRow {

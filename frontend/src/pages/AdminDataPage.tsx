@@ -13,7 +13,7 @@ import type { AdminDataExportOption, AdminDataImportResult } from "../types/api"
 const EXCLUDED_PACKAGE_DATA = [
   "Actual Jira worklogs and sync history",
   "Jira catalog, Roadmap, and generated estimate caches",
-  "SPARC user credentials and Program Area access grants",
+  "SPARC passwords, Entra identity links, and login history",
   "Forecast recommendation audit history",
   "Attribution correction audit history",
 ];
@@ -108,13 +108,16 @@ export function AdminDataPage({ embedded = false }: { embedded?: boolean } = {})
 
       <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Card>
-          <CardHeader className="space-y-1">
-            <CardTitle className="flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5" />
-              Data Package Checklist
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">Checked items are included in exports and processed during imports.</p>
-          </CardHeader>
+            <CardHeader className="space-y-1">
+              <CardTitle className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5" />
+                Data Package Checklist
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">Checked items are included in exports and processed during imports.</p>
+              <p className="text-sm text-muted-foreground">
+                Import base data first. Run Jira Roadmap sync before importing Roadmap overrides and ticket mappings.
+              </p>
+            </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid gap-3 md:grid-cols-2">
               {options.map((option) => (
@@ -126,7 +129,11 @@ export function AdminDataPage({ embedded = false }: { embedded?: boolean } = {})
                     onChange={() => toggleOption(option.key)}
                   />
                   <span>
-                    <span className="block text-sm font-semibold">{option.label}</span>
+                    <span className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                      {option.label}
+                      {option.import_phase === "after_roadmap_sync" ? <Badge>After Roadmap Sync</Badge> : null}
+                      {!option.default_selected ? <Badge>Optional</Badge> : null}
+                    </span>
                     <span className="mt-1 block text-sm text-muted-foreground">{option.description}</span>
                   </span>
                 </label>
@@ -187,11 +194,18 @@ function ImportSummary({ result }: { result: AdminDataImportResult }) {
   return (
     <section className="space-y-3">
       <h2 className="text-lg font-semibold">Import Summary</h2>
+      {result.package ? (
+        <div className="text-sm text-muted-foreground">
+          Package {result.package.package_id ?? "without ID"} | format v{result.package.version}
+          {result.package.generated_at ? ` | generated ${new Date(result.package.generated_at).toLocaleString()}` : ""}
+        </div>
+      ) : null}
       <div className="overflow-hidden rounded-lg border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Data Set</TableHead>
+              <TableHead className="numeric-cell">Package Rows</TableHead>
               <TableHead className="numeric-cell">Created</TableHead>
               <TableHead className="numeric-cell">Updated</TableHead>
               <TableHead className="numeric-cell">Skipped</TableHead>
@@ -202,6 +216,7 @@ function ImportSummary({ result }: { result: AdminDataImportResult }) {
             {result.datasets.map((row) => (
               <TableRow key={row.key}>
                 <TableCell className="font-medium">{row.label}</TableCell>
+                <TableCell className="numeric-cell">{result.package?.row_counts[row.key] ?? "-"}</TableCell>
                 <TableCell className="numeric-cell">{row.created}</TableCell>
                 <TableCell className="numeric-cell">{row.updated}</TableCell>
                 <TableCell className="numeric-cell">{row.skipped}</TableCell>
@@ -211,6 +226,18 @@ function ImportSummary({ result }: { result: AdminDataImportResult }) {
           </TableBody>
         </Table>
       </div>
+      {result.warnings.length ? (
+        <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">
+          <div className="font-semibold text-warning">Import warnings</div>
+          <ul className="mt-2 space-y-1 text-warning">
+            {result.warnings.slice(0, 8).map((warning) => (
+              <li key={`${warning.sheet}-${warning.row}-${warning.message}`}>
+                {warning.sheet} row {warning.row}: {warning.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {result.errors.length ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm">
           <div className="font-semibold text-destructive">Rows needing attention</div>

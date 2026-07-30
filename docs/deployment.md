@@ -82,6 +82,22 @@ Every user interface change should bump the JavaScript/interface version before 
 
 The frontend embeds the package version when `VITE_BUILD_VERSION` is unset or `local`. The packaged FastAPI app also exposes `frontend/public/app-version.json` through `/api/app-version` when no explicit `SPARC_BUILD_VERSION` is provided. Browser sessions check that endpoint at startup, once per minute, and whenever a tab becomes visible or focused; a version change reloads the page with cache-busting parameters so tabs left open across a deployment do not keep stale JavaScript.
 
+## Stage And Production Promotion
+
+`develop` is the stage deployment branch. Production is deployed from the separate branch configured by DevOps. A production promotion must move the exact stage-tested commit SHA to that branch; do not rebuild production from an untested working tree or add production-only code changes.
+
+Promotion sequence:
+
+1. Complete tests and push the change to `develop`.
+2. Verify the exact commit SHA and interface version in stage.
+3. Record stage acceptance.
+4. Move that exact SHA to the DevOps-configured production branch.
+5. Push the production branch and follow that SHA through the production deployment.
+6. Run migrations before the production app starts.
+7. Verify production readiness, liveness, backend SHA, and interface version.
+
+The production branch name must be confirmed from DevOps configuration before the first Codex-managed production push. Do not infer or invent it.
+
 ## Migration Rule
 
 Stage data lives in Azure PostgreSQL. Do not reset or seed stage with local/demo data.
@@ -105,7 +121,20 @@ alembic upgrade head
 
 The app image already contains `alembic.ini` and the migration files. In Kubernetes, run the migration command as a one-off job using the same image and the same `DATABASE_URL` secret used by the app container.
 
-The database should not be initialized with local/demo data. After first deployment, load SPARC-owned setup/planning data through the app's Admin Data import workflow, then run Jira Sync from the app to populate Jira-sourced actuals.
+The database should not be initialized with local/demo data. After first deployment, transfer SPARC-owned state and recreate Jira-owned state in this order:
+
+1. Ask DevOps to take or confirm a production database restore point.
+2. Import base Admin Data: Buckets, Estimation Profiles, Team Members, Products, Product Budgets, Product Team Members, Product Jira Spaces, Jira User Mappings, and Forecast Entries.
+3. Optionally import sanitized User Access Definitions. New users have local login disabled and no Entra identity link; existing target authentication fields are preserved.
+4. Run Jira Roadmap sync.
+5. Import Roadmap Item Overrides and Roadmap Ticket Mappings from the same package.
+6. Run Jira Actuals sync.
+7. Run estimation only when generated estimates are required.
+8. Reconcile package row counts, Products, Program Areas, budgets, Forecast totals, Product/Jira mappings, Jira user mappings, Roadmap overrides, Roadmap gaps, and Actual totals.
+
+The Admin Data package is not a database backup. It intentionally omits Jira-fetched records, generated values, credentials, identity links, and event/audit history. DevOps must use PostgreSQL backup/restore for full disaster recovery.
+
+Admin Data imports are transactional and idempotent. A gateway timeout does not prove failure: the backend may finish and commit after the proxy stops waiting. Do not immediately rerun a timed-out import. Check the target data, package row counts, API logs, and database state first.
 
 Deploy flow:
 

@@ -22,6 +22,7 @@ class AdminDataExportOptionResponse(BaseModel):
     label: str
     description: str
     default_selected: bool
+    import_phase: str = "base"
 
 
 class AdminDataImportDatasetResult(BaseModel):
@@ -39,10 +40,19 @@ class AdminDataImportError(BaseModel):
     message: str
 
 
+class AdminDataPackageInfo(BaseModel):
+    package_id: str | None = None
+    version: int = 1
+    generated_at: str | None = None
+    row_counts: dict[str, int] = Field(default_factory=dict)
+
+
 class AdminDataImportResult(BaseModel):
     datasets: list[AdminDataImportDatasetResult]
     errors: list[AdminDataImportError]
+    warnings: list[AdminDataImportError] = Field(default_factory=list)
     excluded_jira_refresh_data: list[str]
+    package: AdminDataPackageInfo | None = None
 
 
 AccessRole = Literal["ADMIN", "LEADERSHIP_VIEW_ONLY", "PROGRAM_AREA_VIEW_ONLY"]

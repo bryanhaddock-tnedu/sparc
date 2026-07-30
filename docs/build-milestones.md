@@ -626,6 +626,8 @@ The team can change SPARC without guessing whether core planning math still work
 
 Stage is deployed as a container against Azure PostgreSQL with health endpoints, scheduled Jira sync, and immutable build-version verification. Remaining work includes operational and backup/restore runbooks, pilot/onboarding material, stronger automated stage validation, and external Entra registration/secret configuration.
 
+Environment-transfer hardening is implemented pending stage acceptance: Admin Data package v2 carries SPARC-owned planning/configuration plus manual Roadmap overrides and ticket mappings, offers optional credential-free user access definitions, reports package row counts, and uses a bulk Forecast import path. Jira-fetched records remain excluded and must be recreated by sync. The documented production sequence is base import, Roadmap sync, Roadmap overlay import, then Actuals sync.
+
 **Outcome**
 
 SPARC is ready for a controlled pilot with real users and real data.
@@ -674,6 +676,7 @@ SPARC is ready for a controlled pilot with real users and real data.
 - Milestones 1 through 10.
 - SPARC-local authorization is implemented. End-to-end Entra SSO depends on external App Registration values and stage secret configuration.
 - DevOps confirmation of registry, namespace, ingress/host, and Key Vault integration pattern.
+- DevOps confirmation of the exact production deployment branch name before the first production promotion.
 
 **Risks**
 
