@@ -323,6 +323,8 @@ Team Management is an Admin-only page. It should be a searchable, sortable roste
 
 The page should also include an all-Team-Member ranking table with a dimension selector for hours, ticket, and story point signals. These rankings are context signals only; they must not be labeled as performance scores.
 
+Ranking tables must show active Team Members and inactive Team Members only when they have nonzero Forecast or Actual work in the selected Fiscal Year. This preserves history without filling future fiscal-year rankings with former staff who have no work in that year.
+
 Columns:
 
 - Name
@@ -370,6 +372,7 @@ Ranking dimensions may include actual hours, average hours per month, forecast h
 Rules:
 
 - Story point ratios are context signals, not productivity scores.
+- Ranking tables show active Team Members plus inactive Team Members with nonzero Forecast or Actual work in the selected Fiscal Year; inactive Team Members with no work in that Fiscal Year are omitted.
 - Story points should be counted once per unique Jira issue, even if an issue is allocated across multiple months.
 - Ratio values with no denominator should display as unavailable rather than zero.
 - Engineering Work Done should represent Jira statuses such as Ready for UAT, Ready for Acceptance, Dev Complete, or Code Complete.

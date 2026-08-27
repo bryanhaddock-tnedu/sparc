@@ -283,7 +283,7 @@ export function TeamManagementPage() {
       <TeamMonthlyActualBarCard data={analytics.monthly} total={analytics.fytd.total} fiscalYearLabel={fiscalYearLabel} />
 
       <TeamMemberRankingsTable
-        description="All rostered Team Members with annual capacity, Forecast value, Actual value, and the selected Rank By value."
+        description={`Team Members active in the roster or with Forecast or Actual work in ${fiscalYearLabel}, with annual capacity and the selected Rank By value.`}
         dimension={rankingDimension}
         onDimensionChange={setRankingDimension}
         rows={rankingRows}

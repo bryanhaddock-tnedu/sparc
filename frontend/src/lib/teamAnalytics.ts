@@ -238,9 +238,13 @@ export function buildTeamMemberRankingRows(
   const fytdActualByMemberId = sumHoursByMember(periods.fytd.rows, "actual_hours");
   const fyForecastByMemberId = sumHoursByMember(scopedRows, "forecast_hours");
   const fytdForecastByMemberId = sumHoursByMember(periods.fytd.rows, "forecast_hours");
+  const membersWithFiscalYearWork = new Set<number>();
   const productIdsByMemberId = new Map<number, Set<number>>();
 
   for (const row of scopedRows) {
+    if (row.actual_hours !== 0 || row.forecast_hours !== 0) {
+      membersWithFiscalYearWork.add(row.team_member_id);
+    }
     if (row.actual_hours <= 0 && row.forecast_hours <= 0) continue;
     const products = productIdsByMemberId.get(row.team_member_id) ?? new Set<number>();
     products.add(row.product_id);
@@ -249,47 +253,49 @@ export function buildTeamMemberRankingRows(
 
   const totalFytdActual = [...fytdActualByMemberId.values()].reduce((sum, hours) => sum + hours, 0);
   const elapsedMonths = fiscalMonthsElapsed(fiscalYear);
-  return scopedMembers.map((member) => {
-    const fytdActual = fytdActualByMemberId.get(member.id) ?? 0;
-    const fyForecast = fyForecastByMemberId.get(member.id) ?? 0;
-    const billRate = member.bill_rate;
-    const annualCostCap = billRate == null ? null : ANNUAL_WORK_HOURS * billRate;
-    const fytdForecast = fytdForecastByMemberId.get(member.id) ?? 0;
-    const storyMetric = storyMetricByMemberId.get(member.id);
-    const storyPoints = storyMetric?.story_points ?? 0;
-    const issueLoggedHours = storyMetric?.issue_logged_hours ?? 0;
-    const ticketsTouched = storyMetric?.issue_count ?? 0;
-    return {
-      memberId: member.id,
-      memberSlug: member.slug,
-      name: member.name,
-      role: member.role,
-      team: teamDisplayName(member.team),
-      status: member.status,
-      employmentType: member.employment_type,
-      billRate,
-      annualCapacityHours: ANNUAL_WORK_HOURS,
-      annualCostCap: annualCostCap == null ? null : roundMoney(annualCostCap),
-      currentActualHours: roundHours(currentActualByMemberId.get(member.id) ?? 0),
-      previousActualHours: roundHours(previousActualByMemberId.get(member.id) ?? 0),
-      fytdActualHours: roundHours(fytdActual),
-      fytdActualCost: billRate == null ? null : roundMoney(fytdActual * billRate),
-      avgMonthlyActualHours: elapsedMonths > 0 ? roundHours(fytdActual / elapsedMonths) : 0,
-      fyForecastHours: roundHours(fyForecast),
-      fyForecastCost: billRate == null ? null : roundMoney(fyForecast * billRate),
-      forecastCapCoveragePercent: billRate != null && annualCostCap != null && annualCostCap > 0 ? roundPercent((fyForecast * billRate / annualCostCap) * 100) : null,
-      fytdForecastHours: roundHours(fytdForecast),
-      fytdVarianceHours: roundHours(fytdActual - fytdForecast),
-      productsSupported: productIdsByMemberId.get(member.id)?.size ?? 0,
-      percentOfFytdActual: totalFytdActual > 0 ? Math.round((fytdActual / totalFytdActual) * 1000) / 10 : 0,
-      ticketsTouched,
-      storyPoints: roundHours(storyPoints),
-      issueLoggedHours: roundHours(issueLoggedHours),
-      hoursPerTicket: ticketsTouched > 0 ? roundHours(issueLoggedHours / ticketsTouched) : null,
-      hoursPerStoryPoint: storyPoints > 0 ? roundHours(issueLoggedHours / storyPoints) : null,
-      storyPointsPerLoggedHour: issueLoggedHours > 0 ? Math.round((storyPoints / issueLoggedHours) * 100) / 100 : null,
-    };
-  });
+  return scopedMembers
+    .filter((member) => member.status === "active" || membersWithFiscalYearWork.has(member.id))
+    .map((member) => {
+      const fytdActual = fytdActualByMemberId.get(member.id) ?? 0;
+      const fyForecast = fyForecastByMemberId.get(member.id) ?? 0;
+      const billRate = member.bill_rate;
+      const annualCostCap = billRate == null ? null : ANNUAL_WORK_HOURS * billRate;
+      const fytdForecast = fytdForecastByMemberId.get(member.id) ?? 0;
+      const storyMetric = storyMetricByMemberId.get(member.id);
+      const storyPoints = storyMetric?.story_points ?? 0;
+      const issueLoggedHours = storyMetric?.issue_logged_hours ?? 0;
+      const ticketsTouched = storyMetric?.issue_count ?? 0;
+      return {
+        memberId: member.id,
+        memberSlug: member.slug,
+        name: member.name,
+        role: member.role,
+        team: teamDisplayName(member.team),
+        status: member.status,
+        employmentType: member.employment_type,
+        billRate,
+        annualCapacityHours: ANNUAL_WORK_HOURS,
+        annualCostCap: annualCostCap == null ? null : roundMoney(annualCostCap),
+        currentActualHours: roundHours(currentActualByMemberId.get(member.id) ?? 0),
+        previousActualHours: roundHours(previousActualByMemberId.get(member.id) ?? 0),
+        fytdActualHours: roundHours(fytdActual),
+        fytdActualCost: billRate == null ? null : roundMoney(fytdActual * billRate),
+        avgMonthlyActualHours: elapsedMonths > 0 ? roundHours(fytdActual / elapsedMonths) : 0,
+        fyForecastHours: roundHours(fyForecast),
+        fyForecastCost: billRate == null ? null : roundMoney(fyForecast * billRate),
+        forecastCapCoveragePercent: billRate != null && annualCostCap != null && annualCostCap > 0 ? roundPercent((fyForecast * billRate / annualCostCap) * 100) : null,
+        fytdForecastHours: roundHours(fytdForecast),
+        fytdVarianceHours: roundHours(fytdActual - fytdForecast),
+        productsSupported: productIdsByMemberId.get(member.id)?.size ?? 0,
+        percentOfFytdActual: totalFytdActual > 0 ? Math.round((fytdActual / totalFytdActual) * 1000) / 10 : 0,
+        ticketsTouched,
+        storyPoints: roundHours(storyPoints),
+        issueLoggedHours: roundHours(issueLoggedHours),
+        hoursPerTicket: ticketsTouched > 0 ? roundHours(issueLoggedHours / ticketsTouched) : null,
+        hoursPerStoryPoint: storyPoints > 0 ? roundHours(issueLoggedHours / storyPoints) : null,
+        storyPointsPerLoggedHour: issueLoggedHours > 0 ? Math.round((storyPoints / issueLoggedHours) * 100) / 100 : null,
+      };
+    });
 }
 
 function roundMoney(value: number) {

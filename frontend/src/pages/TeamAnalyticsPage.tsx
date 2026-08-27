@@ -146,7 +146,7 @@ export function TeamAnalyticsPage() {
           ) : null}
           <TeamMonthlyForecastActualCard analytics={analytics} />
           <TeamMemberRankingsTable
-            description={`${analytics.team} members with annual capacity, Forecast value, Actual value, and the selected Rank By value.`}
+            description={`${analytics.team} members active in the roster or with Forecast or Actual work in ${fiscalYearLabel}, with annual capacity and the selected Rank By value.`}
             dimension={rankingDimension}
             onDimensionChange={setRankingDimension}
             rows={rankingRows}

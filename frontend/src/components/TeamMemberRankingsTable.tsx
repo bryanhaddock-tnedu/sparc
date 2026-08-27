@@ -48,7 +48,7 @@ export function TeamMemberRankingsTable({
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">{title}</h2>
           {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
           <p className="mt-1 text-xs text-muted-foreground">
-            Showing {rankedRows.length} of {rows.length} rostered Team Members.
+            Showing {rankedRows.length} of {rows.length} eligible Team Members.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
