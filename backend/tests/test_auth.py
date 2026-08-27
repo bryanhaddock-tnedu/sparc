@@ -12,7 +12,7 @@ from app.services import auth
 from app.services import entra_auth
 from app.services.entra_auth import ENTRA_STATE_COOKIE_NAME, EntraIdentity
 from app.services.access_control import AuthenticatedUser, UserRole, authenticate_entra_user, authenticated_user_from_app_user, create_app_user, role_capabilities, update_app_user
-from app.services.auth import require_labor_detail_access
+from app.services.auth import require_labor_detail_access, require_work_type_breakdown_access
 
 
 def test_login_sets_signed_cookie_and_authenticates_request(monkeypatch):
@@ -60,6 +60,8 @@ def test_email_user_login_returns_role_and_program_area_scope(monkeypatch):
     assert status["capabilities"]["can_admin"] is False
     assert status["capabilities"]["can_view_rates"] is False
     assert status["capabilities"]["can_view_named_people"] is False
+    assert status["capabilities"]["can_view_hours"] is False
+    assert status["capabilities"]["can_view_work_type_breakdown"] is True
 
 
 def test_leadership_can_see_names_without_team_member_or_team_page_access():
@@ -73,6 +75,19 @@ def test_leadership_can_see_names_without_team_member_or_team_page_access():
     assert role_capabilities(UserRole.ADMIN)["can_view_team_member_profiles"] is True
     assert role_capabilities(UserRole.ADMIN)["can_view_team_pages"] is True
     assert role_capabilities(UserRole.ADMIN)["can_view_labor_details"] is True
+
+
+def test_program_area_user_can_view_work_type_breakdown_without_general_hours_access():
+    program_area_user = AuthenticatedUser(
+        id=3,
+        email="program@example.org",
+        display_name="Program",
+        role=UserRole.PROGRAM_AREA_VIEW_ONLY,
+        program_areas=("Academics",),
+    )
+
+    assert role_capabilities(program_area_user.role)["can_view_hours"] is False
+    assert require_work_type_breakdown_access(program_area_user) is program_area_user
 
 
 def test_labor_detail_dependency_denies_leadership_and_allows_admin():

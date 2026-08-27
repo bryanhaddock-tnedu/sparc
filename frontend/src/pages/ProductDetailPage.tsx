@@ -53,6 +53,7 @@ export function ProductDetailPage() {
   const canAdmin = status?.capabilities.can_admin === true;
   const canEditForecast = status?.capabilities.can_edit_forecast === true;
   const canViewHours = status?.capabilities.can_view_hours === true;
+  const canViewWorkTypeBreakdown = status?.capabilities.can_view_work_type_breakdown === true;
   const canViewLaborDetails = status?.capabilities.can_view_labor_details === true;
   const canViewRates = status?.capabilities.can_view_rates === true;
   const [summary, setSummary] = useState<ProductSummary | null>(null);
@@ -77,7 +78,7 @@ export function ProductDetailPage() {
   async function loadData() {
     const summaryResult = await api.productSummary(productRef, fiscalYear);
     const resolvedProductId = summaryResult.product.id;
-    const distributionResult = canViewHours ? await api.bucketDistribution(resolvedProductId, fiscalYear) : [];
+    const distributionResult = canViewWorkTypeBreakdown ? await api.bucketDistribution(resolvedProductId, fiscalYear) : [];
     const [tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = canViewLaborDetails
       ? await Promise.all([
           api.productBucketTables(resolvedProductId, fiscalYear),
@@ -106,7 +107,7 @@ export function ProductDetailPage() {
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load product"))
       .finally(() => setLoading(false));
-  }, [productRef, fiscalYear, canAdmin, canViewHours, canViewLaborDetails]);
+  }, [productRef, fiscalYear, canAdmin, canViewWorkTypeBreakdown, canViewLaborDetails]);
 
   useEffect(() => {
     if (!forecastLineBucketId && tables?.buckets[0]) {
@@ -324,9 +325,9 @@ export function ProductDetailPage() {
           contextLabel={`${summary.product.name} budget, forecast, and actuals`}
         />
         {canViewLaborDetails ? <ProductRoleCostCard summary={roleCostSummary} /> : null}
-        <div className={canViewHours ? "grid gap-4 xl:grid-cols-[360px_1fr]" : "grid gap-4"}>
-          {canViewHours ? <div className="rounded-lg border bg-card p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase text-muted-foreground">FYTD Actualized Hours</h2>
+        <div className={canViewWorkTypeBreakdown ? "grid gap-4 xl:grid-cols-[360px_1fr]" : "grid gap-4"}>
+          {canViewWorkTypeBreakdown ? <div className="rounded-lg border bg-card p-4">
+            <h2 className="mb-3 text-sm font-semibold uppercase text-muted-foreground">{canViewHours ? "FYTD Actualized Hours" : "FYTD Work Type Breakdown"}</h2>
             <div className="relative h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -342,7 +343,7 @@ export function ProductDetailPage() {
                       <Cell key={entry.bucket} fill={hasActualDistribution ? PIE_COLORS[index % PIE_COLORS.length] : "hsl(var(--muted))"} />
                     ))}
                   </Pie>
-                  {hasActualDistribution ? <Tooltip formatter={(value: number) => `${formatHours(value)} hrs`} /> : null}
+                  {hasActualDistribution && canViewHours ? <Tooltip formatter={(value: number) => `${formatHours(value)} hrs`} /> : null}
                   {hasActualDistribution ? <Legend /> : null}
                 </PieChart>
               </ResponsiveContainer>

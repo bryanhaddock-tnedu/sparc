@@ -10,7 +10,7 @@ from app.db.seed import _seed_buckets
 from app.models import Base, Bucket, Product, TeamMember
 from app.services.access_control import AuthenticatedUser, UserRole
 from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_summary, dashboard_work_type_breakdown, product_bucket_tables, product_summary
-from app.services.auth import require_admin, require_hours_access, require_labor_detail_access, require_team_member_profile_access, require_team_page_access
+from app.services.auth import require_admin, require_labor_detail_access, require_team_member_profile_access, require_team_page_access, require_work_type_breakdown_access
 from app.services.fiscal_year import get_fiscal_month
 from app.services.forecasting import upsert_forecast_entry
 from app.services.reporting import build_labor_cost_report
@@ -188,7 +188,7 @@ def test_jira_actual_exclusion_queue_requires_admin_access():
 @pytest.mark.parametrize(
     ("path", "method", "required_dependency"),
     [
-        ("/products/{product_ref}/bucket-distribution", "GET", require_hours_access),
+        ("/products/{product_ref}/bucket-distribution", "GET", require_work_type_breakdown_access),
         ("/products/{product_ref}/team-members", "GET", require_labor_detail_access),
         ("/products/{product_ref}/bucket-tables", "GET", require_labor_detail_access),
         ("/products/{product_ref}/roadmap-actuals", "GET", require_labor_detail_access),

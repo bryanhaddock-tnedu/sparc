@@ -46,8 +46,8 @@ from app.services.access_control import AuthenticatedUser, can_view_product_offi
 from app.services.auth import (
     current_user,
     require_admin,
-    require_hours_access,
     require_labor_detail_access,
+    require_work_type_breakdown_access,
 )
 from app.services.jira_projects import (
     add_product_jira_space,
@@ -422,7 +422,7 @@ def get_bucket_distribution(
     product_ref: str,
     fiscal_year: int = 2027,
     db: Session = Depends(get_db),
-    user: AuthenticatedUser = Depends(require_hours_access),
+    user: AuthenticatedUser = Depends(require_work_type_breakdown_access),
 ) -> list[dict[str, object]]:
     product = _resolve_product_or_404(db, product_ref)
     _require_product_visible(product, user)

@@ -180,7 +180,7 @@ Optional columns if useful:
 
 Each Product Detail page should include:
 
-Leadership View Only receives the Product header, Budget Tracker, aggregate Product snapshot, and aggregate actual-hours bucket distribution. Product Team, role-cost breakdown, Product-by-Bucket Forecast matrices, Reported Values, and their raw supporting APIs are Admin-only. Program Area View Only receives the same high-level Product page further redacted by its no-hours capability. These visibility rules must not delete or alter Product Team, Forecast, Actual, Estimate, Roadmap, or Jira data.
+Leadership View Only receives the Product header, Budget Tracker, aggregate Product snapshot, and aggregate actual-hours bucket distribution. Product Team, role-cost breakdown, Product-by-Bucket Forecast matrices, Reported Values, and their raw supporting APIs are Admin-only. Program Area View Only receives the same high-level Product page further redacted by its no-hours capability, except that it may view the aggregate FYTD work-type breakdown graphic for Products in its assigned Program Areas. This narrow graphic access must not grant general labor-hours, Team Member, or detailed labor access. These visibility rules must not delete or alter Product Team, Forecast, Actual, Estimate, Roadmap, or Jira data.
 
 1. Product header
    - Product name

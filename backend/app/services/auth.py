@@ -121,6 +121,12 @@ def require_hours_access(user: AuthenticatedUser = Depends(current_user)) -> Aut
     return user
 
 
+def require_work_type_breakdown_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
+    if not role_capabilities(user.role).get("can_view_work_type_breakdown"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Work type breakdown access required")
+    return user
+
+
 def require_labor_detail_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
     if not role_capabilities(user.role).get("can_view_labor_details"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Detailed labor access required")
