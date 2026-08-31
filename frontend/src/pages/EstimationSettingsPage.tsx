@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { api } from "../lib/api";
 import { useFiscalYear } from "../lib/fiscalYear";
 import { formatHours } from "../lib/utils";
-import type { EstimatedIssueAllocation, EstimationPreview, EstimationProfile, EstimationRun } from "../types/api";
+import type { EstimatedIssueAllocation, EstimationPreview, EstimationProfile, EstimationRun, JiraTeamEstimationProfile } from "../types/api";
 
 type ProfileForm = {
   name: string;
@@ -34,6 +34,7 @@ type ProfileForm = {
 export function EstimationSettingsPage() {
   const { fiscalYear, fiscalYearLabel, fiscalYearRangeLabel } = useFiscalYear();
   const [profiles, setProfiles] = useState<EstimationProfile[]>([]);
+  const [jiraTeamProfiles, setJiraTeamProfiles] = useState<JiraTeamEstimationProfile[]>([]);
   const [runs, setRuns] = useState<EstimationRun[]>([]);
   const [allocations, setAllocations] = useState<EstimatedIssueAllocation[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
@@ -51,9 +52,10 @@ export function EstimationSettingsPage() {
 
   async function loadData() {
     setError(null);
-    const [profileResults, runResults] = await Promise.all([api.estimationProfiles(), api.estimationRuns(fiscalYear)]);
+    const [profileResults, runResults, teamProfiles] = await Promise.all([api.estimationProfiles(), api.estimationRuns(fiscalYear), api.jiraTeamEstimationProfiles()]);
     const nextProfile = profileResults.find((profile) => profile.id === selectedProfileId) ?? profileResults[0] ?? null;
     setProfiles(profileResults);
+    setJiraTeamProfiles(teamProfiles);
     setRuns(runResults);
     setSelectedProfileId(nextProfile?.id ?? null);
     setForm(nextProfile ? formFromProfile(nextProfile) : null);
@@ -206,8 +208,43 @@ export function EstimationSettingsPage() {
 
       <RunHistory runs={runs} />
       <AllocationAudit rows={allocations} />
+      <JiraTeamProfilesPanel profiles={jiraTeamProfiles} onChanged={loadData} />
     </div>
   );
+}
+
+function JiraTeamProfilesPanel({ profiles, onChanged }: { profiles: JiraTeamEstimationProfile[]; onChanged: () => Promise<void> }) {
+  const [form, setForm] = useState({ jira_team: "Product Maintenance", velocity_story_points: "75.8", developer_capacity_hours: "360", qa_percent: "20", po_percent: "15", notes: "" });
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function save() {
+    const values = [form.velocity_story_points, form.developer_capacity_hours, form.qa_percent, form.po_percent].map(Number);
+    if (!form.jira_team.trim() || values.some((value) => !Number.isFinite(value) || value < 0) || values[0] === 0 || values[1] === 0) { setError("Enter a Jira Team, velocity, capacity, and non-negative percentages."); return; }
+    setWorking(true); setError(null);
+    const payload = { jira_team: form.jira_team.trim(), velocity_story_points: values[0], developer_capacity_hours: values[1], qa_percent_of_developer_hours: values[2] / 100, product_owner_percent_of_developer_hours: values[3] / 100, is_active: true, notes: form.notes || null };
+    try {
+      const existing = profiles.find((profile) => profile.jira_team.trim().toLowerCase() === payload.jira_team.toLowerCase());
+      if (existing) await api.updateJiraTeamEstimationProfile(existing.id, payload); else await api.createJiraTeamEstimationProfile(payload);
+      await onChanged();
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to save Jira Team profile"); } finally { setWorking(false); }
+  }
+  return <Card>
+    <CardHeader><CardTitle>Jira Team Ticket Cost Profiles</CardTitle></CardHeader>
+    <CardContent className="space-y-4">
+      <p className="text-sm text-muted-foreground">Used only for ticket estimates. This is independent from SPARC Team rosters and does not change Forecast entry.</p>
+      {profiles.length ? <div className="overflow-x-auto rounded border"><Table><TableHeader><TableRow><TableHead>Jira Team</TableHead><TableHead>Velocity</TableHead><TableHead>Dev Capacity</TableHead><TableHead>QA</TableHead><TableHead>PO</TableHead></TableRow></TableHeader><TableBody>{profiles.map((profile) => <TableRow key={profile.id}><TableCell className="font-semibold">{profile.jira_team}</TableCell><TableCell>{profile.velocity_story_points}</TableCell><TableCell>{profile.developer_capacity_hours} hrs</TableCell><TableCell>{profile.qa_percent_of_developer_hours * 100}%</TableCell><TableCell>{profile.product_owner_percent_of_developer_hours * 100}%</TableCell></TableRow>)}</TableBody></Table></div> : null}
+      <div className="grid gap-3 md:grid-cols-3">
+        <TextField label="Jira Team" value={form.jira_team} onChange={(jira_team) => setForm({ ...form, jira_team })} disabled={working} />
+        <TextField label="Velocity (story points)" value={form.velocity_story_points} onChange={(velocity_story_points) => setForm({ ...form, velocity_story_points })} disabled={working} inputMode="decimal" />
+        <TextField label="Developer capacity (hours)" value={form.developer_capacity_hours} onChange={(developer_capacity_hours) => setForm({ ...form, developer_capacity_hours })} disabled={working} inputMode="decimal" />
+        <TextField label="QA % of Developer hours" value={form.qa_percent} onChange={(qa_percent) => setForm({ ...form, qa_percent })} disabled={working} inputMode="decimal" />
+        <TextField label="PO % of Developer hours" value={form.po_percent} onChange={(po_percent) => setForm({ ...form, po_percent })} disabled={working} inputMode="decimal" />
+        <TextField label="Notes" value={form.notes} onChange={(notes) => setForm({ ...form, notes })} disabled={working} />
+      </div>
+      {error ? <div className="text-sm text-destructive">{error}</div> : null}
+      <Button onClick={() => void save()} disabled={working}>{working ? "Saving" : "Save Jira Team Profile"}</Button>
+    </CardContent>
+  </Card>;
 }
 
 function ProfileEditor({ form, onChange, disabled }: { form: ProfileForm; onChange: (form: ProfileForm) => void; disabled: boolean }) {

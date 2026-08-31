@@ -695,6 +695,61 @@ class ProductRoleBreakdownResponse(BaseModel):
     variance_cost: float
 
 
+class TicketCostReceiptRoleResponse(BaseModel):
+    role: str
+    actual_hours: float
+    actual_cost: float
+
+
+class TicketCostReceiptResponse(BaseModel):
+    fiscal_month_id: int
+    fiscal_month: str
+    month_sequence: int
+    ticket_key: str
+    ticket_summary: str
+    jira_team: str | None
+    story_points: float | None
+    estimate_status: str
+    estimated_cost: float | None
+    actual_hours: float
+    actual_cost: float
+    variance_cost: float | None
+    roles: list[TicketCostReceiptRoleResponse]
+
+
+class JiraTeamEstimationProfileResponse(BaseModel):
+    id: int
+    jira_team: str
+    velocity_story_points: float
+    developer_capacity_hours: float
+    qa_percent_of_developer_hours: float
+    product_owner_percent_of_developer_hours: float
+    is_active: bool
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class JiraTeamEstimationProfileCreate(BaseModel):
+    jira_team: str = Field(min_length=1, max_length=160)
+    velocity_story_points: Decimal = Field(gt=0)
+    developer_capacity_hours: Decimal = Field(gt=0)
+    qa_percent_of_developer_hours: Decimal = Field(ge=0, le=1)
+    product_owner_percent_of_developer_hours: Decimal = Field(ge=0, le=1)
+    is_active: bool = True
+    notes: str | None = None
+
+
+class JiraTeamEstimationProfileUpdate(BaseModel):
+    jira_team: str | None = Field(default=None, min_length=1, max_length=160)
+    velocity_story_points: Decimal | None = Field(default=None, gt=0)
+    developer_capacity_hours: Decimal | None = Field(default=None, gt=0)
+    qa_percent_of_developer_hours: Decimal | None = Field(default=None, ge=0, le=1)
+    product_owner_percent_of_developer_hours: Decimal | None = Field(default=None, ge=0, le=1)
+    is_active: bool | None = None
+    notes: str | None = None
+
+
 class BucketDistributionResponse(BaseModel):
     bucket_id: int
     bucket: str

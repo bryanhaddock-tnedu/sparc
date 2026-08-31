@@ -47,6 +47,7 @@ export interface AuthCapabilities {
   can_view_hours?: boolean;
   can_view_work_type_breakdown?: boolean;
   can_view_role_breakdown?: boolean;
+  can_view_ticket_cost_receipts?: boolean;
   can_view_named_people?: boolean;
   can_view_labor_details?: boolean;
   can_view_team_member_profiles?: boolean;
@@ -208,6 +209,28 @@ export interface ProductRoleBreakdownRow {
   actual_cost: number;
   variance_hours: number;
   variance_cost: number;
+}
+
+export interface TicketCostReceiptRole {
+  role: string;
+  actual_hours: number;
+  actual_cost: number;
+}
+
+export interface TicketCostReceipt {
+  fiscal_month_id: number;
+  fiscal_month: string;
+  month_sequence: number;
+  ticket_key: string;
+  ticket_summary: string;
+  jira_team: string | null;
+  story_points: number | null;
+  estimate_status: string;
+  estimated_cost: number | null;
+  actual_hours: number;
+  actual_cost: number;
+  variance_cost: number | null;
+  roles: TicketCostReceiptRole[];
 }
 
 export interface Product {
@@ -609,6 +632,21 @@ export interface EstimationProfile {
   created_at: string;
   updated_at: string;
 }
+
+export interface JiraTeamEstimationProfile {
+  id: number;
+  jira_team: string;
+  velocity_story_points: number;
+  developer_capacity_hours: number;
+  qa_percent_of_developer_hours: number;
+  product_owner_percent_of_developer_hours: number;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type JiraTeamEstimationProfilePayload = Omit<JiraTeamEstimationProfile, "id" | "created_at" | "updated_at">;
 
 export type EstimationProfileUpdatePayload = Partial<
   Pick<

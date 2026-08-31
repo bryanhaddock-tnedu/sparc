@@ -133,6 +133,12 @@ def require_role_breakdown_access(user: AuthenticatedUser = Depends(current_user
     return user
 
 
+def require_ticket_cost_receipt_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
+    if not role_capabilities(user.role).get("can_view_ticket_cost_receipts"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ticket cost receipt access required")
+    return user
+
+
 def require_labor_detail_access(user: AuthenticatedUser = Depends(current_user)) -> AuthenticatedUser:
     if not role_capabilities(user.role).get("can_view_labor_details"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Detailed labor access required")

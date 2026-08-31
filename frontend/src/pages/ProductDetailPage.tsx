@@ -25,6 +25,7 @@ import type {
   ProductJiraSpace,
   ProductSummary,
   ProductRoleBreakdownRow,
+  TicketCostReceipt,
   ProductTeamMember,
   ReportedValueRow,
   TeamMember,
@@ -45,6 +46,7 @@ export function ProductDetailPage() {
   const canViewHours = status?.capabilities.can_view_hours === true;
   const canViewWorkTypeBreakdown = status?.capabilities.can_view_work_type_breakdown === true;
   const canViewRoleBreakdown = status?.capabilities.can_view_role_breakdown === true;
+  const canViewTicketCostReceipts = status?.capabilities.can_view_ticket_cost_receipts === true;
   const canViewLaborDetails = status?.capabilities.can_view_labor_details === true;
   const canViewRates = status?.capabilities.can_view_rates === true;
   const [summary, setSummary] = useState<ProductSummary | null>(null);
@@ -55,6 +57,7 @@ export function ProductDetailPage() {
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [distribution, setDistribution] = useState<{ bucket: string; hours: number }[]>([]);
   const [roleBreakdown, setRoleBreakdown] = useState<ProductRoleBreakdownRow[]>([]);
+  const [ticketReceipts, setTicketReceipts] = useState<TicketCostReceipt[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [forecastLineMemberId, setForecastLineMemberId] = useState("");
   const [forecastLineBucketId, setForecastLineBucketId] = useState("");
@@ -72,6 +75,7 @@ export function ProductDetailPage() {
     const resolvedProductId = summaryResult.product.id;
     const distributionResult = canViewWorkTypeBreakdown ? await api.bucketDistribution(resolvedProductId, fiscalYear) : [];
     const roleBreakdownResult = canViewRoleBreakdown ? await api.productRoleBreakdown(resolvedProductId, fiscalYear) : [];
+    const ticketReceiptsResult = canViewTicketCostReceipts ? await api.productTicketCostReceipts(resolvedProductId, fiscalYear) : [];
     const [tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = canViewLaborDetails
       ? await Promise.all([
           api.productBucketTables(resolvedProductId, fiscalYear),
@@ -87,6 +91,7 @@ export function ProductDetailPage() {
     setSummary(summaryResult);
     setDistribution(distributionResult.map((row) => ({ bucket: row.bucket, hours: row.hours })));
     setRoleBreakdown(roleBreakdownResult);
+    setTicketReceipts(ticketReceiptsResult);
     setTables(tablesResult);
     setProductSpaces(productSpacesResult);
     setProductTeam(productTeamResult);
@@ -101,7 +106,7 @@ export function ProductDetailPage() {
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load product"))
       .finally(() => setLoading(false));
-  }, [productRef, fiscalYear, canAdmin, canViewWorkTypeBreakdown, canViewRoleBreakdown, canViewLaborDetails]);
+  }, [productRef, fiscalYear, canAdmin, canViewWorkTypeBreakdown, canViewRoleBreakdown, canViewTicketCostReceipts, canViewLaborDetails]);
 
   useEffect(() => {
     if (!forecastLineBucketId && tables?.buckets[0]) {
@@ -317,6 +322,7 @@ export function ProductDetailPage() {
           contextLabel={`${summary.product.name} budget, forecast, and actuals`}
         />
         {canViewRoleBreakdown ? <ProductRoleBreakdownPanel fiscalYearLabel={fiscalYearLabel} rows={roleBreakdown} /> : null}
+        {canViewTicketCostReceipts ? <TicketCostReceiptsPanel fiscalYearLabel={fiscalYearLabel} rows={ticketReceipts} /> : null}
         <div className={canViewWorkTypeBreakdown ? "grid gap-4 xl:grid-cols-[360px_1fr]" : "grid gap-4"}>
           {canViewWorkTypeBreakdown ? <div className="rounded-lg border bg-card p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase text-muted-foreground">{canViewHours ? "FYTD Actualized Hours" : "FYTD Work Type Breakdown"}</h2>
@@ -408,6 +414,35 @@ export function ProductDetailPage() {
       {canViewLaborDetails ? <ReportedValuesTable rows={reportedRows} showTeamMember /> : null}
     </div>
   );
+}
+
+function TicketCostReceiptsPanel({ fiscalYearLabel, rows }: { fiscalYearLabel: string; rows: TicketCostReceipt[] }) {
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold uppercase text-muted-foreground">Ticket Cost Receipts</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Tickets with Jira work logged in {fiscalYearLabel}, grouped by fiscal month. Names and bill rates are not shown.</p>
+      </div>
+      {rows.length ? <div className="space-y-3">{rows.map((row) => (
+        <article key={`${row.fiscal_month_id}-${row.ticket_key}`} className="rounded-md border p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div><div className="text-xs font-semibold uppercase text-muted-foreground">{row.fiscal_month} · {row.ticket_key}</div><div className="font-semibold">{row.ticket_summary}</div></div>
+            <div className="text-sm text-muted-foreground">{row.story_points ?? "No"} story points{row.jira_team ? ` · ${row.jira_team}` : ""}</div>
+          </div>
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+            <ReceiptMetric label="Estimated Cost" value={row.estimated_cost === null ? row.estimate_status : formatCurrency(row.estimated_cost)} />
+            <ReceiptMetric label="Actual Cost" value={formatCurrency(row.actual_cost)} />
+            <ReceiptMetric label="Variance" value={row.variance_cost === null ? "—" : formatCurrency(row.variance_cost)} />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">{row.roles.map((role) => <span key={role.role}><strong className="text-foreground">{role.role}</strong>: {formatHours(role.actual_hours)} hrs · {formatCurrency(role.actual_cost)}</span>)}</div>
+        </article>
+      ))}</div> : <div className="rounded-md bg-secondary/50 p-3 text-sm text-muted-foreground">No Jira ticket work is available for this fiscal year yet.</div>}
+    </section>
+  );
+}
+
+function ReceiptMetric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded bg-secondary/50 p-2"><div className="text-xs font-semibold uppercase text-muted-foreground">{label}</div><div className="mt-1 font-semibold">{value}</div></div>;
 }
 
 function ProductRoleBreakdownPanel({ fiscalYearLabel, rows }: { fiscalYearLabel: string; rows: ProductRoleBreakdownRow[] }) {

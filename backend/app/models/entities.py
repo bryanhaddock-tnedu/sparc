@@ -384,6 +384,9 @@ class ActualEntry(TimestampMixin, Base):
     source_worklog_id: Mapped[str | None] = mapped_column(String(120))
     source_account_id: Mapped[str | None] = mapped_column(String(160))
     source_project_key: Mapped[str | None] = mapped_column(String(80))
+    source_ticket_summary: Mapped[str | None] = mapped_column(Text)
+    source_team: Mapped[str | None] = mapped_column(String(160))
+    source_story_points: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
     source_payload_hash: Mapped[str | None] = mapped_column(String(128))
     is_team_member_time: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     worked_on: Mapped[date | None] = mapped_column(Date)
@@ -393,6 +396,19 @@ class ActualEntry(TimestampMixin, Base):
     team_member: Mapped[TeamMember] = relationship(back_populates="actuals")
     bucket: Mapped[Bucket] = relationship(back_populates="actuals")
     fiscal_month: Mapped[FiscalMonth] = relationship(back_populates="actuals")
+
+
+class JiraTeamEstimationProfile(TimestampMixin, Base):
+    __tablename__ = "jira_team_estimation_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    jira_team: Mapped[str] = mapped_column(String(160), unique=True, nullable=False)
+    velocity_story_points: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    developer_capacity_hours: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    qa_percent_of_developer_hours: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    product_owner_percent_of_developer_hours: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
 
 
 class JiraUserMapping(TimestampMixin, Base):

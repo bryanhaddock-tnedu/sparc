@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import not_found
 from app.db.session import get_db
-from app.models import EstimatedIssueAllocation, EstimationProfile, EstimationRun
+from app.models import EstimatedIssueAllocation, EstimationProfile, EstimationRun, JiraTeamEstimationProfile
 from app.schemas import (
     DeliveryFlowIssueResponse,
     EstimatedIssueAllocationResponse,
@@ -16,6 +16,9 @@ from app.schemas import (
     EstimationPreviewResponse,
     EstimationRunRequest,
     EstimationRunResponse,
+    JiraTeamEstimationProfileCreate,
+    JiraTeamEstimationProfileResponse,
+    JiraTeamEstimationProfileUpdate,
     ReportedValueRowResponse,
     TeamMemberStoryPointMetricResponse,
 )
@@ -24,6 +27,32 @@ from app.services.auth import require_admin, require_labor_detail_access
 from app.services.slugs import product_url_slug, team_member_url_slug
 
 router = APIRouter(prefix="/estimations", tags=["estimations"])
+
+
+@router.get("/jira-team-profiles", response_model=list[JiraTeamEstimationProfileResponse])
+def list_jira_team_profiles(db: Session = Depends(get_db), _admin=Depends(require_admin)) -> list[JiraTeamEstimationProfile]:
+    return db.scalars(select(JiraTeamEstimationProfile).order_by(JiraTeamEstimationProfile.jira_team)).all()
+
+
+@router.post("/jira-team-profiles", response_model=JiraTeamEstimationProfileResponse)
+def create_jira_team_profile(payload: JiraTeamEstimationProfileCreate, db: Session = Depends(get_db), _admin=Depends(require_admin)) -> JiraTeamEstimationProfile:
+    profile = JiraTeamEstimationProfile(**payload.model_dump())
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+@router.put("/jira-team-profiles/{profile_id}", response_model=JiraTeamEstimationProfileResponse)
+def update_jira_team_profile(profile_id: int, payload: JiraTeamEstimationProfileUpdate, db: Session = Depends(get_db), _admin=Depends(require_admin)) -> JiraTeamEstimationProfile:
+    profile = db.get(JiraTeamEstimationProfile, profile_id)
+    if profile is None:
+        raise not_found("Jira Team estimation profile")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(profile, key, value)
+    db.commit()
+    db.refresh(profile)
+    return profile
 
 DELIVERY_STAGE_LABELS = {
     "in_engineering": "In Engineering",

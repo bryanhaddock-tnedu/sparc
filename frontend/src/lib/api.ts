@@ -16,6 +16,8 @@ import type {
   EstimationPreview,
   EstimationProfile,
   EstimationProfileUpdatePayload,
+  JiraTeamEstimationProfile,
+  JiraTeamEstimationProfilePayload,
   EstimationRun,
   EstimationRunRequest,
   ForecastRecommendationDecision,
@@ -43,6 +45,7 @@ import type {
   ProductJiraSpacePayload,
   ProductJiraSpaceUpdatePayload,
   ProductRoleBreakdownRow,
+  TicketCostReceipt,
   ProductSummary,
   ProductSummaryRow,
   ProductTeamMember,
@@ -230,6 +233,8 @@ export const api = {
     request<ProductSummary>(`/api/products/${encodeURIComponent(String(productRef))}/summary?fiscal_year=${fiscalYear}`),
   productRoleBreakdown: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<ProductRoleBreakdownRow[]>(`/api/products/${encodeURIComponent(String(productRef))}/role-breakdown?fiscal_year=${fiscalYear}`),
+  productTicketCostReceipts: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<TicketCostReceipt[]>(`/api/products/${encodeURIComponent(String(productRef))}/ticket-cost-receipts?fiscal_year=${fiscalYear}`),
   bucketDistribution: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<BucketDistributionRow[]>(`/api/products/${encodeURIComponent(String(productRef))}/bucket-distribution?fiscal_year=${fiscalYear}`),
   productBucketTables: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
@@ -408,6 +413,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
+  jiraTeamEstimationProfiles: () => request<JiraTeamEstimationProfile[]>("/api/estimations/jira-team-profiles"),
+  createJiraTeamEstimationProfile: (payload: JiraTeamEstimationProfilePayload) =>
+    request<JiraTeamEstimationProfile>("/api/estimations/jira-team-profiles", { method: "POST", body: JSON.stringify(payload) }),
+  updateJiraTeamEstimationProfile: (profileId: number, payload: Partial<JiraTeamEstimationProfilePayload>) =>
+    request<JiraTeamEstimationProfile>(`/api/estimations/jira-team-profiles/${profileId}`, { method: "PUT", body: JSON.stringify(payload) }),
   estimationRuns: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<EstimationRun[]>(`/api/estimations/runs?fiscal_year=${fiscalYear}`),
   previewEstimation: (payload: EstimationRunRequest) =>
     request<EstimationPreview>("/api/estimations/preview", {

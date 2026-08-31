@@ -34,6 +34,7 @@ from app.schemas import (
     ProductJiraSpaceUpdate,
     ProductResponse,
     ProductRoleBreakdownResponse,
+    TicketCostReceiptResponse,
     RoadmapActualRowResponse,
     RoadmapItemResponse,
     ProductSummaryResponse,
@@ -49,6 +50,7 @@ from app.services.auth import (
     require_admin,
     require_labor_detail_access,
     require_role_breakdown_access,
+    require_ticket_cost_receipt_access,
     require_work_type_breakdown_access,
 )
 from app.services.jira_projects import (
@@ -62,6 +64,7 @@ from app.services.jira_projects import (
 )
 from app.services.product_org import product_org_pair_error
 from app.services.roadmap import product_roadmap_items, roadmap_actual_rows
+from app.services.ticket_cost_receipts import product_ticket_cost_receipts
 from app.services.slugs import resolve_product_ref, team_member_url_slug, unique_product_slug
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -441,6 +444,18 @@ def get_product_role_breakdown(
     product = _resolve_product_or_404(db, product_ref)
     _require_product_visible(product, user)
     return product_role_breakdown(db, product.id, fiscal_year)
+
+
+@router.get("/{product_ref}/ticket-cost-receipts", response_model=list[TicketCostReceiptResponse])
+def get_product_ticket_cost_receipts(
+    product_ref: str,
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_ticket_cost_receipt_access),
+) -> list[dict[str, object]]:
+    product = _resolve_product_or_404(db, product_ref)
+    _require_product_visible(product, user)
+    return product_ticket_cost_receipts(db, product.id, fiscal_year)
 
 
 @router.get("/{product_ref}/bucket-tables", response_model=ProductBucketTablesResponse)

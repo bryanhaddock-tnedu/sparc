@@ -32,6 +32,8 @@ WORK_TYPE_FIELD_NAMES = {
     "Development Type",
     "Request Type",
 }
+TEAM_FIELD_NAMES = {"team"}
+STORY_POINT_FIELD_NAMES = {"story points", "story point estimate"}
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,8 @@ class MockWorklog:
     worked_on: date
     hours: Decimal
     work_type_value: str | None = None
+    source_team: str | None = None
+    story_points: Decimal | None = None
 
 
 MOCK_WORKLOGS = [
@@ -112,6 +116,9 @@ def run_mock_jira_rovo_sync(db: Session) -> dict[str, object]:
                         source_worklog_id=worklog.worklog_id,
                         source_account_id=worklog.jira_account_id,
                         source_project_key=worklog.jira_project_key,
+                        source_ticket_summary=worklog.ticket_summary,
+                        source_team=worklog.source_team,
+                        source_story_points=worklog.story_points,
                         source_payload_hash=payload_hash,
                         is_team_member_time=True,
                         worked_on=worklog.worked_on,
@@ -127,6 +134,9 @@ def run_mock_jira_rovo_sync(db: Session) -> dict[str, object]:
                 existing.source_ticket_key = worklog.ticket_key
                 existing.source_account_id = worklog.jira_account_id
                 existing.source_project_key = worklog.jira_project_key
+                existing.source_ticket_summary = worklog.ticket_summary
+                existing.source_team = worklog.source_team
+                existing.source_story_points = worklog.story_points
                 existing.source_payload_hash = payload_hash
                 existing.is_team_member_time = True
                 existing.worked_on = worklog.worked_on
@@ -220,6 +230,9 @@ def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = Non
                         source_worklog_id=worklog.worklog_id,
                         source_account_id=worklog.jira_account_id,
                         source_project_key=worklog.jira_project_key,
+                        source_ticket_summary=worklog.ticket_summary,
+                        source_team=worklog.source_team,
+                        source_story_points=worklog.story_points,
                         source_payload_hash=payload_hash,
                         is_team_member_time=True,
                         worked_on=worklog.worked_on,
@@ -235,6 +248,9 @@ def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = Non
                 existing.source_ticket_key = worklog.ticket_key
                 existing.source_account_id = worklog.jira_account_id
                 existing.source_project_key = worklog.jira_project_key
+                existing.source_ticket_summary = worklog.ticket_summary
+                existing.source_team = worklog.source_team
+                existing.source_story_points = worklog.story_points
                 existing.source_payload_hash = payload_hash
                 existing.is_team_member_time = True
                 existing.worked_on = worklog.worked_on
@@ -285,12 +301,15 @@ def fetch_live_jira_worklogs(db: Session, fiscal_year: int) -> list[MockWorklog]
     jql = _worklog_jql(spaces, fiscal_start, fiscal_end)
     worklogs: list[MockWorklog] = []
     with httpx.Client(timeout=45, auth=(settings.jira_api_email, settings.jira_api_token)) as client:
-        field_ids = _fetch_work_type_field_ids(client, settings.jira_site_url)
+        work_type_field_ids = _fetch_work_type_field_ids(client, settings.jira_site_url)
+        team_field_ids = _fetch_field_ids(client, settings.jira_site_url, TEAM_FIELD_NAMES)
+        story_point_field_ids = _fetch_field_ids(client, settings.jira_site_url, STORY_POINT_FIELD_NAMES)
+        field_ids = [*work_type_field_ids, *team_field_ids, *story_point_field_ids]
         fields = ["project", "summary", "status", "issuetype", "worklog", *field_ids]
         for issue in _search_jira_issues(client, settings.jira_site_url, jql, fields):
             issue_worklogs = _issue_worklogs(client, settings.jira_site_url, issue)
             for worklog in issue_worklogs:
-                normalized = _normalize_jira_worklog(issue, worklog, field_ids, fiscal_start, fiscal_end)
+                normalized = _normalize_jira_worklog(issue, worklog, work_type_field_ids, fiscal_start, fiscal_end, team_field_ids, story_point_field_ids)
                 if normalized is not None:
                     worklogs.append(normalized)
     return worklogs
@@ -643,6 +662,10 @@ def _worklog_jql(spaces: list[ProductJiraSpace], fiscal_start: date, fiscal_end:
 
 
 def _fetch_work_type_field_ids(client: httpx.Client, site_url: str) -> list[str]:
+    return _fetch_field_ids(client, site_url, {name.casefold() for name in WORK_TYPE_FIELD_NAMES})
+
+
+def _fetch_field_ids(client: httpx.Client, site_url: str, names: set[str]) -> list[str]:
     response = client.get(f"{site_url.rstrip('/')}/rest/api/3/field", headers={"Accept": "application/json"})
     _raise_for_jira_response(response)
     fields = response.json()
@@ -651,7 +674,7 @@ def _fetch_work_type_field_ids(client: httpx.Client, site_url: str) -> list[str]
     return [
         str(field["id"])
         for field in fields
-        if isinstance(field, dict) and str(field.get("name") or "").strip() in WORK_TYPE_FIELD_NAMES and field.get("id")
+        if isinstance(field, dict) and str(field.get("name") or "").strip().casefold() in names and field.get("id")
     ]
 
 
@@ -748,6 +771,8 @@ def _normalize_jira_worklog(
     work_type_field_ids: list[str],
     fiscal_start: date,
     fiscal_end: date,
+    team_field_ids: list[str],
+    story_point_field_ids: list[str],
 ) -> MockWorklog | None:
     worked_on = _jira_worklog_date(worklog.get("started"))
     if worked_on is None or worked_on < fiscal_start or worked_on > fiscal_end:
@@ -785,6 +810,8 @@ def _normalize_jira_worklog(
         worked_on=worked_on,
         hours=hours,
         work_type_value=work_type_value,
+        source_team=_first_issue_field_text(fields, team_field_ids),
+        story_points=_first_issue_decimal(fields, story_point_field_ids),
     )
 
 
@@ -823,6 +850,25 @@ def _jira_field_text(value: object) -> str:
     if isinstance(value, list):
         return " ".join(_jira_field_text(item) for item in value)
     return str(value).strip()
+
+
+def _first_issue_field_text(fields: dict[str, object], field_ids: list[str]) -> str | None:
+    for field_id in field_ids:
+        value = _jira_field_text(fields.get(field_id))
+        if value:
+            return value
+    return None
+
+
+def _first_issue_decimal(fields: dict[str, object], field_ids: list[str]) -> Decimal | None:
+    for field_id in field_ids:
+        try:
+            value = Decimal(str(fields.get(field_id) or ""))
+        except Exception:
+            continue
+        if value >= 0:
+            return value
+    return None
 
 
 def _jira_worklog_date(value: object) -> date | None:
