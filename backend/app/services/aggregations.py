@@ -47,6 +47,50 @@ def product_budget_map(db: Session, fiscal_year: int) -> dict[int, Decimal]:
     }
 
 
+def product_role_breakdown(db: Session, product_id: int, fiscal_year: int) -> list[dict[str, object]]:
+    """Aggregate a Product's contributor-level Forecasts and Actuals by exact job-role title."""
+    totals_by_role: dict[str, dict[str, Decimal]] = defaultdict(
+        lambda: {
+            "forecast_hours": Decimal("0"),
+            "forecast_cost": Decimal("0"),
+            "actual_hours": Decimal("0"),
+            "actual_cost": Decimal("0"),
+        }
+    )
+
+    for entry in _forecast_entries(db, fiscal_year, product_id=product_id):
+        role = _display_role(entry.team_member.role)
+        totals = totals_by_role[role]
+        totals["forecast_hours"] += entry.hours
+        totals["forecast_cost"] += Decimal(str(calculate_cost(entry.hours, entry.team_member.bill_rate)))
+
+    for entry in _actual_entries(db, fiscal_year, product_id=product_id):
+        role = _display_role(entry.team_member.role)
+        totals = totals_by_role[role]
+        totals["actual_hours"] += entry.hours
+        totals["actual_cost"] += Decimal(str(calculate_cost(entry.hours, entry.team_member.bill_rate)))
+
+    return [
+        {
+            "role": role,
+            "forecast_hours": round_hours(totals["forecast_hours"]),
+            "forecast_cost": round(float(totals["forecast_cost"]), 2),
+            "actual_hours": round_hours(totals["actual_hours"]),
+            "actual_cost": round(float(totals["actual_cost"]), 2),
+            "variance_hours": round_hours(totals["actual_hours"] - totals["forecast_hours"]),
+            "variance_cost": round(float(totals["actual_cost"] - totals["forecast_cost"]), 2),
+        }
+        for role, totals in sorted(
+            totals_by_role.items(),
+            key=lambda item: (-item[1]["forecast_cost"], -item[1]["actual_cost"], item[0].lower()),
+        )
+    ]
+
+
+def _display_role(role: str | None) -> str:
+    return role.strip() if role and role.strip() else "Unspecified Role"
+
+
 def serialize_team_member(member: TeamMember, *, can_view_rates: bool = True) -> dict[str, object]:
     return {
         "id": member.id,

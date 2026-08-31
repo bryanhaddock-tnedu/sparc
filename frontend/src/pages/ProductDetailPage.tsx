@@ -24,6 +24,7 @@ import type {
   ProductBucketTables,
   ProductJiraSpace,
   ProductSummary,
+  ProductRoleBreakdownRow,
   ProductTeamMember,
   ReportedValueRow,
   TeamMember,
@@ -32,17 +33,6 @@ import type {
 const PIE_COLORS = ["#2CCCD3", "#D2D755", "#E87722", "#5E7975"];
 const COST_VARIANCE_HELP =
   "Actual cost minus forecast cost. Negative means actuals are under forecast; positive means actuals exceeded forecast.";
-interface ProductRoleCostRow {
-  role: string;
-  memberCount: number;
-  forecastCost: number;
-}
-
-interface ProductRoleCostSummary {
-  rows: ProductRoleCostRow[];
-  totalMembers: number;
-  totalCost: number;
-}
 
 export function ProductDetailPage() {
   const params = useParams();
@@ -54,6 +44,7 @@ export function ProductDetailPage() {
   const canEditForecast = status?.capabilities.can_edit_forecast === true;
   const canViewHours = status?.capabilities.can_view_hours === true;
   const canViewWorkTypeBreakdown = status?.capabilities.can_view_work_type_breakdown === true;
+  const canViewRoleBreakdown = status?.capabilities.can_view_role_breakdown === true;
   const canViewLaborDetails = status?.capabilities.can_view_labor_details === true;
   const canViewRates = status?.capabilities.can_view_rates === true;
   const [summary, setSummary] = useState<ProductSummary | null>(null);
@@ -63,6 +54,7 @@ export function ProductDetailPage() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
   const [distribution, setDistribution] = useState<{ bucket: string; hours: number }[]>([]);
+  const [roleBreakdown, setRoleBreakdown] = useState<ProductRoleBreakdownRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [forecastLineMemberId, setForecastLineMemberId] = useState("");
   const [forecastLineBucketId, setForecastLineBucketId] = useState("");
@@ -79,6 +71,7 @@ export function ProductDetailPage() {
     const summaryResult = await api.productSummary(productRef, fiscalYear);
     const resolvedProductId = summaryResult.product.id;
     const distributionResult = canViewWorkTypeBreakdown ? await api.bucketDistribution(resolvedProductId, fiscalYear) : [];
+    const roleBreakdownResult = canViewRoleBreakdown ? await api.productRoleBreakdown(resolvedProductId, fiscalYear) : [];
     const [tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = canViewLaborDetails
       ? await Promise.all([
           api.productBucketTables(resolvedProductId, fiscalYear),
@@ -93,6 +86,7 @@ export function ProductDetailPage() {
     }
     setSummary(summaryResult);
     setDistribution(distributionResult.map((row) => ({ bucket: row.bucket, hours: row.hours })));
+    setRoleBreakdown(roleBreakdownResult);
     setTables(tablesResult);
     setProductSpaces(productSpacesResult);
     setProductTeam(productTeamResult);
@@ -107,7 +101,7 @@ export function ProductDetailPage() {
     loadData()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to load product"))
       .finally(() => setLoading(false));
-  }, [productRef, fiscalYear, canAdmin, canViewWorkTypeBreakdown, canViewLaborDetails]);
+  }, [productRef, fiscalYear, canAdmin, canViewWorkTypeBreakdown, canViewRoleBreakdown, canViewLaborDetails]);
 
   useEffect(() => {
     if (!forecastLineBucketId && tables?.buckets[0]) {
@@ -191,8 +185,6 @@ export function ProductDetailPage() {
     }
     return keys;
   }, [tables]);
-  const roleCostSummary = useMemo(() => buildProductRoleCostSummary(productTeam, tables), [productTeam, tables]);
-
   async function addForecastLine(teamMemberId: number, bucketId: number) {
     if (!tables || productId === null) return;
     if (existingForecastLineKeys.has(forecastLineKey(teamMemberId, bucketId))) {
@@ -324,7 +316,7 @@ export function ProductDetailPage() {
           actualSpend={summary.fytd_cost}
           contextLabel={`${summary.product.name} budget, forecast, and actuals`}
         />
-        {canViewLaborDetails ? <ProductRoleCostCard summary={roleCostSummary} /> : null}
+        {canViewRoleBreakdown ? <ProductRoleBreakdownPanel fiscalYearLabel={fiscalYearLabel} rows={roleBreakdown} /> : null}
         <div className={canViewWorkTypeBreakdown ? "grid gap-4 xl:grid-cols-[360px_1fr]" : "grid gap-4"}>
           {canViewWorkTypeBreakdown ? <div className="rounded-lg border bg-card p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase text-muted-foreground">{canViewHours ? "FYTD Actualized Hours" : "FYTD Work Type Breakdown"}</h2>
@@ -418,42 +410,46 @@ export function ProductDetailPage() {
   );
 }
 
-function ProductRoleCostCard({ summary }: { summary: ProductRoleCostSummary }) {
-  const maxCost = Math.max(...summary.rows.map((row) => row.forecastCost), 0);
-
+function ProductRoleBreakdownPanel({ fiscalYearLabel, rows }: { fiscalYearLabel: string; rows: ProductRoleBreakdownRow[] }) {
   return (
     <section className="rounded-lg border bg-card p-4">
-      <div className="mb-3 flex flex-col justify-between gap-2 md:flex-row md:items-start">
+      <div className="mb-3">
         <div>
-          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Role Cost Summary</h2>
-          <p className="mt-1 text-sm text-muted-foreground">De-identified FY forecast cost by Product Team role.</p>
-        </div>
-        <div className="numeric-cell text-sm font-semibold text-primary">
-          {formatMemberCount(summary.totalMembers)} / {formatCurrency(summary.totalCost)}
+          <h2 className="text-sm font-semibold uppercase text-muted-foreground">Role Forecast and Actuals</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{fiscalYearLabel} aggregate by job role. Forecast entry remains managed by individual contributor.</p>
         </div>
       </div>
-      {summary.rows.length ? (
-        <div className="overflow-hidden rounded-md border bg-background">
-          {summary.rows.map((row) => (
-            <div key={row.role} className="grid gap-3 border-b px-3 py-2.5 last:border-b-0 lg:grid-cols-[11rem_1fr_8rem] lg:items-center">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-foreground">{row.role}</div>
-                <div className="text-xs text-muted-foreground">{formatMemberCount(row.memberCount)}</div>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-[color:var(--spark-cyan)]"
-                  style={{ width: `${maxCost > 0 ? Math.max((row.forecastCost / maxCost) * 100, 4) : 0}%` }}
-                />
-              </div>
-              <div className="numeric-cell text-left text-sm font-semibold text-primary lg:text-right">
-                {formatCurrency(row.forecastCost)}
-              </div>
-            </div>
-          ))}
+      {rows.length ? (
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full min-w-[54rem] text-sm">
+            <thead className="border-b bg-secondary/50 text-xs font-semibold uppercase text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left">Role</th>
+                <th className="px-3 py-2 text-right">Forecast Hrs</th>
+                <th className="px-3 py-2 text-right">Forecast Cost</th>
+                <th className="px-3 py-2 text-right">Actual Hrs</th>
+                <th className="px-3 py-2 text-right">Actual Cost</th>
+                <th className="px-3 py-2 text-right" title={COST_VARIANCE_HELP}>Actual − Forecast Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.role} className="border-b last:border-b-0">
+                  <td className="px-3 py-2 font-semibold">{row.role}</td>
+                  <td className="numeric-cell px-3 py-2 text-right">{formatHours(row.forecast_hours)}</td>
+                  <td className="numeric-cell px-3 py-2 text-right">{formatCurrency(row.forecast_cost)}</td>
+                  <td className="numeric-cell px-3 py-2 text-right">{formatHours(row.actual_hours)}</td>
+                  <td className="numeric-cell px-3 py-2 text-right">{formatCurrency(row.actual_cost)}</td>
+                  <td className={`numeric-cell px-3 py-2 text-right font-semibold ${row.variance_cost > 0 ? "text-destructive" : "text-primary"}`}>
+                    {formatCurrency(row.variance_cost)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
-        <div className="rounded-md bg-secondary/50 p-3 text-sm text-muted-foreground">No active product team members yet.</div>
+        <div className="rounded-md bg-secondary/50 p-3 text-sm text-muted-foreground">No Forecast or Actual labor is available for this fiscal year yet.</div>
       )}
     </section>
   );
@@ -1075,41 +1071,4 @@ function draftKey(bucket: BucketTable, row: BucketTableRow, cell: MonthCell) {
 
 function forecastLineKey(teamMemberId: number, bucketId: number) {
   return `${teamMemberId}:${bucketId}`;
-}
-
-function formatMemberCount(count: number) {
-  return `${count} team ${count === 1 ? "member" : "members"}`;
-}
-
-function buildProductRoleCostSummary(assignments: ProductTeamMember[], tables: ProductBucketTables | null): ProductRoleCostSummary {
-  const activeAssignments = assignments.filter((assignment) => assignment.status === "active");
-  const activeMemberRoles = new Map(activeAssignments.map((assignment) => [assignment.team_member_id, assignment.role || "Unspecified"]));
-  const rowsByRole = new Map<string, ProductRoleCostRow>();
-
-  for (const assignment of activeAssignments) {
-    const role = assignment.role || "Unspecified";
-    const current = rowsByRole.get(role) ?? { role, memberCount: 0, forecastCost: 0 };
-    current.memberCount += 1;
-    rowsByRole.set(role, current);
-  }
-
-  for (const bucket of tables?.buckets ?? []) {
-    for (const row of bucket.rows) {
-      const role = activeMemberRoles.get(row.team_member_id);
-      if (!role) continue;
-      const current = rowsByRole.get(role) ?? { role, memberCount: 0, forecastCost: 0 };
-      current.forecastCost += row.totals.forecast_cost;
-      rowsByRole.set(role, current);
-    }
-  }
-
-  const rows = [...rowsByRole.values()].sort(
-    (left, right) => right.forecastCost - left.forecastCost || right.memberCount - left.memberCount || left.role.localeCompare(right.role),
-  );
-
-  return {
-    rows,
-    totalMembers: activeAssignments.length,
-    totalCost: rows.reduce((total, row) => total + row.forecastCost, 0),
-  };
 }

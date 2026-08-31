@@ -42,6 +42,7 @@ import type {
   ProductJiraSpaceMoveResult,
   ProductJiraSpacePayload,
   ProductJiraSpaceUpdatePayload,
+  ProductRoleBreakdownRow,
   ProductSummary,
   ProductSummaryRow,
   ProductTeamMember,
@@ -227,6 +228,8 @@ export const api = {
   },
   productSummary: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<ProductSummary>(`/api/products/${encodeURIComponent(String(productRef))}/summary?fiscal_year=${fiscalYear}`),
+  productRoleBreakdown: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
+    request<ProductRoleBreakdownRow[]>(`/api/products/${encodeURIComponent(String(productRef))}/role-breakdown?fiscal_year=${fiscalYear}`),
   bucketDistribution: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>
     request<BucketDistributionRow[]>(`/api/products/${encodeURIComponent(String(productRef))}/bucket-distribution?fiscal_year=${fiscalYear}`),
   productBucketTables: (productRef: ProductRef, fiscalYear = DEFAULT_FISCAL_YEAR) =>

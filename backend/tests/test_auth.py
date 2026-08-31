@@ -62,6 +62,7 @@ def test_email_user_login_returns_role_and_program_area_scope(monkeypatch):
     assert status["capabilities"]["can_view_named_people"] is False
     assert status["capabilities"]["can_view_hours"] is False
     assert status["capabilities"]["can_view_work_type_breakdown"] is True
+    assert status["capabilities"]["can_view_role_breakdown"] is False
 
 
 def test_leadership_can_see_names_without_team_member_or_team_page_access():

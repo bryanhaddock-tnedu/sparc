@@ -34,7 +34,7 @@ from app.models import (
     TeamMember,
 )
 from app.schemas import ProductCreate, TeamMemberCreate
-from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_work_type_breakdown, product_bucket_tables, product_summary
+from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_work_type_breakdown, product_bucket_tables, product_role_breakdown, product_summary
 from app.services.costs import calculate_cost
 from app.services.fiscal_year import current_fiscal_year, fiscal_sequence_for_date, fiscal_year_for_date, get_fiscal_month
 from app.services.forecasting import remove_empty_forecast_line, upsert_forecast_entry
@@ -1052,6 +1052,51 @@ def test_product_summary_includes_budget_tracker_metrics():
         assert summary["projected_spend"] == 1400.0
         assert summary["budget_remaining"] == 600.0
         assert summary["budget_utilization_percent"] == 70.0
+
+
+def test_product_role_breakdown_keeps_exact_roles_and_uses_contributor_rates():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="Student Information", jira_space_key="SIS")
+        dev = TeamMember(name="Avery Johnson", role="Dev", team="Applications", bill_rate=Decimal("50"))
+        senior_dev = TeamMember(name="Morgan Lee", role="Sr. Dev", team="Applications", bill_rate=Decimal("100"))
+        db.add_all([product, dev, senior_dev])
+        db.flush()
+        bucket = db.scalar(select(Bucket).where(Bucket.code == "NET_NEW"))
+        month = get_fiscal_month(db, 2027, 1)
+
+        upsert_forecast_entry(db, product_id=product.id, team_member_id=dev.id, bucket_code="NET_NEW", fiscal_year=2027, month_sequence=1, hours=10)
+        upsert_forecast_entry(db, product_id=product.id, team_member_id=senior_dev.id, bucket_code="NET_NEW", fiscal_year=2027, month_sequence=1, hours=5)
+        db.add_all(
+            [
+                ActualEntry(product_id=product.id, team_member_id=dev.id, bucket_id=bucket.id, fiscal_month_id=month.id, hours=Decimal("2"), source="test", source_ticket_key="SIS-1", source_worklog_id="1"),
+                ActualEntry(product_id=product.id, team_member_id=senior_dev.id, bucket_id=bucket.id, fiscal_month_id=month.id, hours=Decimal("3"), source="test", source_ticket_key="SIS-2", source_worklog_id="2"),
+            ]
+        )
+        db.flush()
+
+        rows = {row["role"]: row for row in product_role_breakdown(db, product.id, 2027)}
+
+    assert rows["Dev"] == {
+        "role": "Dev",
+        "forecast_hours": 10.0,
+        "forecast_cost": 500.0,
+        "actual_hours": 2.0,
+        "actual_cost": 100.0,
+        "variance_hours": -8.0,
+        "variance_cost": -400.0,
+    }
+    assert rows["Sr. Dev"] == {
+        "role": "Sr. Dev",
+        "forecast_hours": 5.0,
+        "forecast_cost": 500.0,
+        "actual_hours": 3.0,
+        "actual_cost": 300.0,
+        "variance_hours": -2.0,
+        "variance_cost": -200.0,
+    }
 
 
 def test_product_slugs_are_generated_and_resolve_with_numeric_fallback():

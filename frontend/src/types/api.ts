@@ -46,6 +46,7 @@ export interface AuthCapabilities {
   can_view_costs?: boolean;
   can_view_hours?: boolean;
   can_view_work_type_breakdown?: boolean;
+  can_view_role_breakdown?: boolean;
   can_view_named_people?: boolean;
   can_view_labor_details?: boolean;
   can_view_team_member_profiles?: boolean;
@@ -197,6 +198,16 @@ export interface ProductSummaryRow {
   variance_cost: number;
   bucket_totals: DashboardProductBucketTotal[];
   forecast_consumed_percent: number | null;
+}
+
+export interface ProductRoleBreakdownRow {
+  role: string;
+  forecast_hours: number;
+  forecast_cost: number;
+  actual_hours: number;
+  actual_cost: number;
+  variance_hours: number;
+  variance_cost: number;
 }
 
 export interface Product {

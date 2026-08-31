@@ -685,6 +685,16 @@ class ProductSummaryResponse(BaseModel):
     variance_cost: float
 
 
+class ProductRoleBreakdownResponse(BaseModel):
+    role: str
+    forecast_hours: float
+    forecast_cost: float
+    actual_hours: float
+    actual_cost: float
+    variance_hours: float
+    variance_cost: float
+
+
 class BucketDistributionResponse(BaseModel):
     bucket_id: int
     bucket: str

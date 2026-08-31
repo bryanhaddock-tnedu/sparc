@@ -101,7 +101,7 @@ Entra authenticates users; SPARC authorizes users locally.
 Initial SPARC roles:
 
 - Admin: can view and edit everything; can see hours, costs, and bill rates; can run admin, sync, import, and configuration operations.
-- Leadership View Only: can view all Program Areas; cannot edit; can see aggregate hours and costs plus Team Member names as plain-text Report dimensions; cannot see bill rates, detailed Product labor, Product Team rostering, Product-by-Bucket Forecast tables, Team Member profiles, Team Management, or Team Analytics. Restricted fields and sections must be omitted rather than labeled as hidden.
+- Leadership View Only: can view all Program Areas; cannot edit; can see aggregate hours and costs plus Team Member names as plain-text Report dimensions; can see a de-identified Product role summary that aggregates Forecast and Actual hours/costs by exact Team Member job-role title; cannot see bill rates, detailed Product labor, Product Team rostering, Product-by-Bucket Forecast tables, Team Member profiles, Team Management, or Team Analytics. Restricted fields and sections must be omitted rather than labeled as hidden.
 - Program Area View Only: can view only assigned Program Area(s); cannot edit; cannot see bill rates; can be assigned multiple Program Areas.
 
 Program Area assignment rows apply only to Program Area View Only users. Admin and Leadership View Only users see all Program Areas by role. Changing a user from Program Area View Only to either broader role must clear the user's stored Program Area assignments atomically; changing unrelated fields must preserve unchanged assignments without deleting and recreating them.
@@ -386,6 +386,7 @@ Rules:
 - Invalid Forecast input must remain unsaved and visibly invalid; it must never be coerced to zero.
 - Inactive Products and inactive Team Members may remain visible for history but cannot receive new Team Forecast entries.
 - Team Management, Team Analytics, and the Team planning API are Admin-only.
+- Product Detail shows Leadership a read-only FY role summary that aggregates canonical contributor Forecast and Actual values by exact job-role title. It must keep titles such as `Dev` and `Sr. Dev` separate, must not expose contributor names or bill rates, and must not provide role-level Forecast entry.
 - Seeing a Team Member or Team name in a permitted Product or Report view is separate from page access. Leadership names render as plain text, direct Team and Team Member routes and APIs are denied, and rate or rate-derived fields are omitted instead of displaying a `Hidden` placeholder.
 
 ## Enterprise Reports Page Requirements

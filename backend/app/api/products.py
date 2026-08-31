@@ -33,6 +33,7 @@ from app.schemas import (
     ProductJiraSpaceResponse,
     ProductJiraSpaceUpdate,
     ProductResponse,
+    ProductRoleBreakdownResponse,
     RoadmapActualRowResponse,
     RoadmapItemResponse,
     ProductSummaryResponse,
@@ -41,12 +42,13 @@ from app.schemas import (
     ProductTeamMemberUpdate,
     ProductUpdate,
 )
-from app.services.aggregations import bucket_distribution, product_budget_amount, product_budget_map, product_bucket_tables, product_summary, serialize_product
+from app.services.aggregations import bucket_distribution, product_budget_amount, product_budget_map, product_bucket_tables, product_role_breakdown, product_summary, serialize_product
 from app.services.access_control import AuthenticatedUser, can_view_product_office, role_capabilities
 from app.services.auth import (
     current_user,
     require_admin,
     require_labor_detail_access,
+    require_role_breakdown_access,
     require_work_type_breakdown_access,
 )
 from app.services.jira_projects import (
@@ -427,6 +429,18 @@ def get_bucket_distribution(
     product = _resolve_product_or_404(db, product_ref)
     _require_product_visible(product, user)
     return bucket_distribution(db, product.id, fiscal_year)
+
+
+@router.get("/{product_ref}/role-breakdown", response_model=list[ProductRoleBreakdownResponse])
+def get_product_role_breakdown(
+    product_ref: str,
+    fiscal_year: int = 2027,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(require_role_breakdown_access),
+) -> list[dict[str, object]]:
+    product = _resolve_product_or_404(db, product_ref)
+    _require_product_visible(product, user)
+    return product_role_breakdown(db, product.id, fiscal_year)
 
 
 @router.get("/{product_ref}/bucket-tables", response_model=ProductBucketTablesResponse)
