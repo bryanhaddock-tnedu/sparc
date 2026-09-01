@@ -96,7 +96,7 @@ Promotion sequence:
 6. Run migrations before the production app starts.
 7. Verify production readiness, liveness, backend SHA, and interface version.
 
-The production branch name must be confirmed from DevOps configuration before the first Codex-managed production push. Do not infer or invent it.
+The production branch name must be confirmed from DevOps configuration before the first Codex-managed production push. Do not infer or invent it. The application container runs `alembic upgrade head` before starting Uvicorn, so a newly deployed image does not serve code against an older schema.
 
 ## Migration Rule
 
