@@ -27,3 +27,5 @@ Profiles do not map to SPARC Team rosters and do not alter individual-contributo
 ## UAT deployment follow-up
 
 UAT deployed the SPARC-3 image before applying `0023_ticket_cost_receipts`, causing Product Detail to return Internal Server Error when the new ticket-cost endpoint queried its new ActualEntry columns. The container startup now runs `alembic upgrade head` before Uvicorn starts, so the app will not serve a new image against a prior database schema.
+
+After that migration fix deployed, UAT exposed a second receipt-service defect: Team Member uses the existing `status` field, not an `is_active` field. The rate-average query now correctly selects `status = active`; receipt data can no longer fail because of that invalid model attribute.

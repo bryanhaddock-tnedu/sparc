@@ -51,7 +51,7 @@ def product_ticket_cost_receipts(db: Session, product_id: int, fiscal_year: int)
 
 def _role_rate_averages(db: Session) -> dict[str, Decimal]:
     rates: dict[str, list[Decimal]] = defaultdict(list)
-    for member in db.scalars(select(TeamMember).where(TeamMember.is_active.is_(True), TeamMember.bill_rate.is_not(None))).all():
+    for member in db.scalars(select(TeamMember).where(TeamMember.status == "active")).all():
         title = (member.role or "").strip().casefold()
         if title in DEVELOPER_TITLES:
             rates["developer"].append(member.bill_rate)

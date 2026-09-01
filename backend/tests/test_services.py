@@ -24,6 +24,7 @@ from app.models import (
     ForecastRecommendationDecision,
     JiraProductMapping,
     JiraProjectCatalog,
+    JiraTeamEstimationProfile,
     Product,
     ProductBudget,
     ProductJiraSpace,
@@ -38,6 +39,7 @@ from app.services.aggregations import dashboard_labor_mix, dashboard_products, d
 from app.services.costs import calculate_cost
 from app.services.fiscal_year import current_fiscal_year, fiscal_sequence_for_date, fiscal_year_for_date, get_fiscal_month
 from app.services.forecasting import remove_empty_forecast_line, upsert_forecast_entry
+from app.services.ticket_cost_receipts import product_ticket_cost_receipts
 from app.services.roadmap_forecasting import team_roadmap_forecast_plan, upsert_team_roadmap_forecast_allocations
 from app.services.forecast_recommendations import (
     create_forecast_recommendation_decision,
@@ -137,6 +139,31 @@ def test_scheduled_jira_sync_detects_existing_central_day_run():
 
 def test_cost_calculation():
     assert calculate_cost(Decimal("12.5"), Decimal("100.00")) == 1250.0
+
+
+def test_ticket_cost_receipts_uses_active_team_member_status_for_rate_averages():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="InformTN", slug="informtn")
+        developer = TeamMember(name="Dev One", slug="dev-one", role="Dev", team="AppDev", bill_rate=Decimal("100"), status="active")
+        qa = TeamMember(name="QA One", slug="qa-one", role="QA", team="Quality", bill_rate=Decimal("80"), status="active")
+        po = TeamMember(name="PO One", slug="po-one", role="Product Owner", team="Product", bill_rate=Decimal("120"), status="active")
+        db.add_all([product, developer, qa, po])
+        db.flush()
+        month = get_fiscal_month(db, 2027, 1)
+        maintenance = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        db.add(JiraTeamEstimationProfile(jira_team="Product Maintenance", velocity_story_points=Decimal("75.8"), developer_capacity_hours=Decimal("360"), qa_percent_of_developer_hours=Decimal("0.20"), product_owner_percent_of_developer_hours=Decimal("0.15")))
+        db.add(ActualEntry(product_id=product.id, team_member_id=developer.id, bucket_id=maintenance.id, fiscal_month_id=month.id, hours=Decimal("6"), source_ticket_key="INF-1", source_ticket_summary="Receipt test", source_team="Product Maintenance", source_story_points=Decimal("8")))
+        db.flush()
+
+        receipts = product_ticket_cost_receipts(db, product.id, 2027)
+
+        assert receipts[0]["ticket_key"] == "INF-1"
+        assert receipts[0]["estimate_status"] == "Estimated"
+        assert receipts[0]["actual_cost"] == 600
+        assert receipts[0]["estimated_cost"] is not None
 
 
 def test_labor_cost_report_rolls_up_by_team_and_bucket():
