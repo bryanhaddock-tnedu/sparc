@@ -282,13 +282,23 @@ function WorkTypeMixCard({
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: bucketColor(row.bucket_code) }} />
               {row.bucket}
             </div>
-            <div className="numeric-cell mt-1 text-lg font-semibold text-primary">
-              {canViewHours ? formatHours(numericValue(row.forecast_hours)) : formatCurrency(row.forecast_cost)}
+            <div className={`mt-2 grid gap-3 ${showActuals ? "grid-cols-2" : "grid-cols-1"}`}>
+              <WorkTypeMetric label="Forecast" value={canViewHours ? formatHours(numericValue(row.forecast_hours)) : formatCurrency(row.forecast_cost)} />
+              {showActuals ? <WorkTypeMetric label="Actual" value={canViewHours ? formatHours(numericValue(row.actual_hours)) : formatCurrency(row.actual_cost)} /> : null}
             </div>
           </div>
         ))}
       </div>
     </section>
+  );
+}
+
+function WorkTypeMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase text-muted-foreground">{label}</div>
+      <div className="numeric-cell mt-0.5 text-lg font-semibold text-primary">{value}</div>
+    </div>
   );
 }
 
