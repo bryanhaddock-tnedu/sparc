@@ -23,6 +23,7 @@ import type {
   MonthCell,
   ProductBucketTables,
   ProductJiraSpace,
+  ProductPeople,
   ProductSummary,
   ProductRoleBreakdownRow,
   TicketCostReceipt,
@@ -52,6 +53,7 @@ export function ProductDetailPage() {
   const [summary, setSummary] = useState<ProductSummary | null>(null);
   const [tables, setTables] = useState<ProductBucketTables | null>(null);
   const [productSpaces, setProductSpaces] = useState<ProductJiraSpace[]>([]);
+  const [productPeople, setProductPeople] = useState<ProductPeople | null>(null);
   const [productTeam, setProductTeam] = useState<ProductTeamMember[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [reportedRows, setReportedRows] = useState<ReportedValueRow[]>([]);
@@ -76,6 +78,7 @@ export function ProductDetailPage() {
     const distributionResult = canViewWorkTypeBreakdown ? await api.bucketDistribution(resolvedProductId, fiscalYear) : [];
     const roleBreakdownResult = canViewRoleBreakdown ? await api.productRoleBreakdown(resolvedProductId, fiscalYear) : [];
     const ticketReceiptsResult = canViewTicketCostReceipts ? await api.productTicketCostReceipts(resolvedProductId, fiscalYear) : [];
+    const productPeopleResult = await api.productPeople(resolvedProductId);
     const [tablesResult, productSpacesResult, productTeamResult, teamMembersResult, reportedRowsResult] = canViewLaborDetails
       ? await Promise.all([
           api.productBucketTables(resolvedProductId, fiscalYear),
@@ -92,6 +95,7 @@ export function ProductDetailPage() {
     setDistribution(distributionResult.map((row) => ({ bucket: row.bucket, hours: row.hours })));
     setRoleBreakdown(roleBreakdownResult);
     setTicketReceipts(ticketReceiptsResult);
+    setProductPeople(productPeopleResult);
     setTables(tablesResult);
     setProductSpaces(productSpacesResult);
     setProductTeam(productTeamResult);
@@ -314,6 +318,8 @@ export function ProductDetailPage() {
         <PageNav />
       </section>
 
+      {productPeople ? <ProductPeopleSummary people={productPeople} showDeliveryNames={status?.capabilities.can_view_named_people === true} /> : null}
+
       <section className="space-y-3">
         <BudgetTracker
           budget={summary.budget_amount}
@@ -412,6 +418,28 @@ export function ProductDetailPage() {
       ) : null}
 
       {canViewLaborDetails ? <ReportedValuesTable rows={reportedRows} showTeamMember /> : null}
+    </div>
+  );
+}
+
+function ProductPeopleSummary({ people, showDeliveryNames }: { people: ProductPeople; showDeliveryNames: boolean }) {
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <h2 className="text-sm font-semibold uppercase text-muted-foreground">Product Assignments</h2>
+      <div className={`mt-3 grid gap-3 ${showDeliveryNames ? "lg:grid-cols-3" : "lg:grid-cols-1"}`}>
+        <ProductPeopleField label="Product Owner" names={people.product_owners} />
+        {showDeliveryNames ? <ProductPeopleField label="Developers" names={people.developers} /> : null}
+        {showDeliveryNames ? <ProductPeopleField label="QA Engineers" names={people.qa_engineers} /> : null}
+      </div>
+    </section>
+  );
+}
+
+function ProductPeopleField({ label, names }: { label: string; names: string[] }) {
+  return (
+    <div>
+      <div className="text-xs font-semibold uppercase text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-semibold">{names.length ? names.join(", ") : "Not assigned"}</div>
     </div>
   );
 }

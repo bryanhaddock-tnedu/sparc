@@ -272,6 +272,12 @@ class ProductTeamMemberResponse(BaseModel):
     updated_at: datetime
 
 
+class ProductPeopleResponse(BaseModel):
+    product_owners: list[str]
+    developers: list[str]
+    qa_engineers: list[str]
+
+
 class JiraProjectCatalogResponse(BaseModel):
     id: int
     jira_project_id: str

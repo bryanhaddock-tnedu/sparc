@@ -284,6 +284,12 @@ export interface ProductTeamMember {
   updated_at: string;
 }
 
+export interface ProductPeople {
+  product_owners: string[];
+  developers: string[];
+  qa_engineers: string[];
+}
+
 export interface RoadmapItem {
   id: number;
   source: string;

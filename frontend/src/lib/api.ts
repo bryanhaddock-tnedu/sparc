@@ -44,6 +44,7 @@ import type {
   ProductJiraSpaceMoveResult,
   ProductJiraSpacePayload,
   ProductJiraSpaceUpdatePayload,
+  ProductPeople,
   ProductRoleBreakdownRow,
   TicketCostReceipt,
   ProductSummary,
@@ -264,6 +265,7 @@ export const api = {
       method: "DELETE",
     }),
   productTeamMembers: (productId: ProductRef) => request<ProductTeamMember[]>(`/api/products/${encodeURIComponent(String(productId))}/team-members`),
+  productPeople: (productId: ProductRef) => request<ProductPeople>(`/api/products/${encodeURIComponent(String(productId))}/people`),
   addProductTeamMember: (productId: ProductRef, payload: ProductTeamMemberPayload) =>
     request<ProductTeamMember>(`/api/products/${encodeURIComponent(String(productId))}/team-members`, {
       method: "POST",

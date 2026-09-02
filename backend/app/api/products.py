@@ -32,6 +32,7 @@ from app.schemas import (
     ProductJiraSpaceMoveResponse,
     ProductJiraSpaceResponse,
     ProductJiraSpaceUpdate,
+    ProductPeopleResponse,
     ProductResponse,
     ProductRoleBreakdownResponse,
     TicketCostReceiptResponse,
@@ -208,6 +209,24 @@ def list_product_team_members(
         .order_by(TeamMember.name)
     ).all()
     return [_serialize_product_team_member(db, assignment, can_view_rates=_can_view_rates(user)) for assignment in assignments]
+
+
+@router.get("/{product_ref}/people", response_model=ProductPeopleResponse)
+def get_product_people(
+    product_ref: str,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUser = Depends(current_user),
+) -> dict[str, list[str]]:
+    product = _resolve_product_or_404(db, product_ref)
+    _require_product_visible(product, user)
+    assignments = db.scalars(
+        select(ProductTeamMember)
+        .options(joinedload(ProductTeamMember.team_member))
+        .where(ProductTeamMember.product_id == product.id, ProductTeamMember.status == "active")
+        .join(ProductTeamMember.team_member)
+        .order_by(TeamMember.name)
+    ).all()
+    return _serialize_product_people(assignments, include_delivery_names=role_capabilities(user.role).get("can_view_named_people", False))
 
 
 @router.post("/{product_ref}/team-members", response_model=ProductTeamMemberResponse)
@@ -573,3 +592,21 @@ def _serialize_product_team_member(db: Session, assignment: ProductTeamMember, *
         "created_at": assignment.created_at,
         "updated_at": assignment.updated_at,
     }
+
+
+def _serialize_product_people(assignments: list[ProductTeamMember], *, include_delivery_names: bool) -> dict[str, list[str]]:
+    people: dict[str, list[str]] = {"product_owners": [], "developers": [], "qa_engineers": []}
+    for assignment in assignments:
+        member = assignment.team_member
+        role = _normalized_assignment_role(member.role)
+        if role in {"po", "product owner"}:
+            people["product_owners"].append(member.name)
+        elif include_delivery_names and role in {"dev", "developer", "sr dev", "senior dev", "senior developer"}:
+            people["developers"].append(member.name)
+        elif include_delivery_names and role in {"qa", "quality assurance", "qa engineer"}:
+            people["qa_engineers"].append(member.name)
+    return people
+
+
+def _normalized_assignment_role(role: str | None) -> str:
+    return " ".join((role or "").replace(".", " ").strip().casefold().split())

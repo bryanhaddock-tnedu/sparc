@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api import estimations as estimations_api, forecasts as forecasts_api, integrations as integrations_api, products as products_api, team_members as team_members_api, teams as teams_api
 from app.db.seed import _seed_buckets
-from app.models import Base, Bucket, Product, TeamMember
+from app.models import Base, Bucket, Product, ProductTeamMember, TeamMember
 from app.services.access_control import AuthenticatedUser, UserRole
 from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_summary, dashboard_work_type_breakdown, product_bucket_tables, product_summary
 from app.services.auth import require_admin, require_labor_detail_access, require_role_breakdown_access, require_team_member_profile_access, require_team_page_access, require_work_type_breakdown_access
@@ -123,6 +123,33 @@ def test_leadership_report_keeps_team_and_person_values_without_restricted_links
     dimension_values = [value for row in report["rows"] for value in row["dimension_values"]]
     assert all(value["href"] is None for value in dimension_values if value["key"] in {"person", "team"})
     assert all(str(value["href"]).startswith("/products/") for value in dimension_values if value["key"] == "product")
+
+
+def test_product_people_redacts_delivery_names_for_program_area_viewers():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        product = Product(name="Academics Product", slug="academics-product", office="Academics")
+        po = TeamMember(name="Product Owner One", slug="product-owner-one", role="Product Owner", team="Product", bill_rate=Decimal("110"))
+        dev = TeamMember(name="Developer One", slug="developer-one", role="Dev", team="Product Maintenance", bill_rate=Decimal("100"))
+        qa = TeamMember(name="QA One", slug="qa-one", role="QA", team="Quality", bill_rate=Decimal("80"))
+        inactive_dev = TeamMember(name="Inactive Dev", slug="inactive-dev", role="Dev", team="Product Maintenance", bill_rate=Decimal("90"))
+        db.add_all([product, po, dev, qa, inactive_dev])
+        db.flush()
+        db.add_all([
+            ProductTeamMember(product_id=product.id, team_member_id=po.id, status="active"),
+            ProductTeamMember(product_id=product.id, team_member_id=dev.id, status="active"),
+            ProductTeamMember(product_id=product.id, team_member_id=qa.id, status="active"),
+            ProductTeamMember(product_id=product.id, team_member_id=inactive_dev.id, status="inactive"),
+        ])
+        db.flush()
+
+        program_area = products_api.get_product_people(product.slug, db=db, user=_authenticated_user(UserRole.PROGRAM_AREA_VIEW_ONLY, ("Academics",)))
+        leadership = products_api.get_product_people(product.slug, db=db, user=_authenticated_user(UserRole.LEADERSHIP_VIEW_ONLY))
+
+    assert program_area == {"product_owners": ["Product Owner One"], "developers": [], "qa_engineers": []}
+    assert leadership == {"product_owners": ["Product Owner One"], "developers": ["Developer One"], "qa_engineers": ["QA One"]}
 
 
 def test_restricted_rate_viewer_gets_named_rows_without_bill_rates():
