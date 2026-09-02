@@ -161,6 +161,8 @@ def test_ticket_cost_receipts_uses_active_team_member_status_for_rate_averages()
         receipts = product_ticket_cost_receipts(db, product.id, 2027)
 
         assert receipts[0]["ticket_key"] == "INF-1"
+        assert receipts[0]["work_type"] == "Maintenance"
+        assert receipts[0]["work_type_code"] == "MAINTENANCE"
         assert receipts[0]["estimate_status"] == "Estimated"
         assert receipts[0]["actual_cost"] == 600
         assert receipts[0]["estimated_cost"] is not None

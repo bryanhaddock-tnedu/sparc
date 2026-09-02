@@ -10,6 +10,8 @@ The app-owned Jira Actual sync now stores a ticket summary, Jira Team, and Story
 
 For an eligible ticket, Developer estimated hours are `story points / Jira Team velocity * Developer capacity`. The blended active `Dev`/`Sr. Dev` rate is used only for the Developer estimate; active QA and Product Owner role averages apply to their configured portions. Actual role totals retain the exact Team Member job titles and calculate from actual logged hours and current bill rates.
 
+Follow-up iteration on 2026-09-02 renamed the Product Detail section to `Task Level Forecast Breakdown`, removed the explanatory redaction sentence from its subheader, added each ticket's work type with bucket-aligned badge styling, and grouped tickets into collapsible fiscal-month sections so prior months do not dominate the page. A data migration seeds the Product Maintenance Jira Team estimation profile with the approved starting assumptions when no matching profile exists.
+
 Profiles do not map to SPARC Team rosters and do not alter individual-contributor Forecast entry. Tickets without story points or an active matching Jira Team profile remain visible with actual work and an explanatory unavailable-estimate status.
 
 ## Verification

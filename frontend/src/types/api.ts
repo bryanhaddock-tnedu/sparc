@@ -223,6 +223,8 @@ export interface TicketCostReceipt {
   month_sequence: number;
   ticket_key: string;
   ticket_summary: string;
+  work_type: string;
+  work_type_code: string;
   jira_team: string | null;
   story_points: number | null;
   estimate_status: string;

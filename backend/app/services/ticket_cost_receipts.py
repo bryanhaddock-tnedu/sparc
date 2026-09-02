@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import ActualEntry, FiscalMonth, JiraTeamEstimationProfile, TeamMember
+from app.models import ActualEntry, Bucket, FiscalMonth, JiraTeamEstimationProfile, TeamMember
 from app.services.costs import calculate_cost
 
 DEVELOPER_TITLES = {"dev", "sr. dev"}
@@ -16,7 +16,7 @@ def product_ticket_cost_receipts(db: Session, product_id: int, fiscal_year: int)
     entries = db.scalars(
         select(ActualEntry)
         .join(ActualEntry.fiscal_month)
-        .options(joinedload(ActualEntry.team_member), joinedload(ActualEntry.fiscal_month))
+        .options(joinedload(ActualEntry.team_member), joinedload(ActualEntry.fiscal_month), joinedload(ActualEntry.bucket))
         .where(ActualEntry.product_id == product_id, FiscalMonth.fiscal_year == fiscal_year)
         .order_by(FiscalMonth.sequence, ActualEntry.source_ticket_key, ActualEntry.id)
     ).all()
@@ -30,6 +30,7 @@ def product_ticket_cost_receipts(db: Session, product_id: int, fiscal_year: int)
     for _, ticket_entries in grouped.items():
         first = ticket_entries[0]
         by_role: dict[str, dict[str, Decimal]] = defaultdict(lambda: {"hours": Decimal("0"), "cost": Decimal("0")})
+        work_type = _work_type(ticket_entries)
         for entry in ticket_entries:
             role = entry.team_member.role or "Unspecified"
             by_role[role]["hours"] += entry.hours
@@ -40,6 +41,7 @@ def product_ticket_cost_receipts(db: Session, product_id: int, fiscal_year: int)
         rows.append({
             "fiscal_month_id": first.fiscal_month_id, "fiscal_month": first.fiscal_month.label, "month_sequence": first.fiscal_month.sequence,
             "ticket_key": first.source_ticket_key, "ticket_summary": first.source_ticket_summary or first.source_ticket_key,
+            "work_type": work_type["label"], "work_type_code": work_type["code"],
             "jira_team": first.source_team, "story_points": float(first.source_story_points) if first.source_story_points is not None else None,
             "estimate_status": status, "estimated_cost": float(estimated_cost) if estimated_cost is not None else None,
             "actual_hours": float(actual_hours), "actual_cost": float(actual_cost),
@@ -72,6 +74,19 @@ def _estimated_cost(story_points: Decimal | None, profile: JiraTeamEstimationPro
     developer_hours = story_points / profile.velocity_story_points * profile.developer_capacity_hours
     total = developer_hours * rates["developer"] + developer_hours * profile.qa_percent_of_developer_hours * rates["qa"] + developer_hours * profile.product_owner_percent_of_developer_hours * rates["product_owner"]
     return total.quantize(Decimal("0.01")), "Estimated"
+
+
+def _work_type(entries: list[ActualEntry]) -> dict[str, str]:
+    buckets: dict[str, Bucket] = {}
+    for entry in entries:
+        if entry.bucket is not None:
+            buckets[entry.bucket.code] = entry.bucket
+    if len(buckets) == 1:
+        bucket = next(iter(buckets.values()))
+        return {"code": bucket.code, "label": bucket.name}
+    if len(buckets) > 1:
+        return {"code": "MIXED", "label": "Mixed"}
+    return {"code": "UNCLASSIFIED", "label": "Unclassified"}
 
 
 def _key(value: str | None) -> str:

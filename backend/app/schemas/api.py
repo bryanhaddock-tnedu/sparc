@@ -707,6 +707,8 @@ class TicketCostReceiptResponse(BaseModel):
     month_sequence: int
     ticket_key: str
     ticket_summary: str
+    work_type: str
+    work_type_code: str
     jira_team: str | None
     story_points: float | None
     estimate_status: str

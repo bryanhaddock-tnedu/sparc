@@ -417,28 +417,93 @@ export function ProductDetailPage() {
 }
 
 function TicketCostReceiptsPanel({ fiscalYearLabel, rows }: { fiscalYearLabel: string; rows: TicketCostReceipt[] }) {
+  const groupedRows = useMemo(() => {
+    const groups = new Map<number, { label: string; sequence: number; receipts: TicketCostReceipt[] }>();
+    rows.forEach((row) => {
+      const group = groups.get(row.month_sequence) ?? { label: row.fiscal_month, sequence: row.month_sequence, receipts: [] };
+      group.receipts.push(row);
+      groups.set(row.month_sequence, group);
+    });
+    return Array.from(groups.values()).sort((a, b) => b.sequence - a.sequence);
+  }, [rows]);
+  const [openMonths, setOpenMonths] = useState<Set<number>>(() => new Set(groupedRows[0] ? [groupedRows[0].sequence] : []));
+
+  useEffect(() => {
+    setOpenMonths(groupedRows[0] ? new Set([groupedRows[0].sequence]) : new Set());
+  }, [groupedRows]);
+
   return (
     <section className="rounded-lg border bg-card p-4">
       <div className="mb-3">
-        <h2 className="text-sm font-semibold uppercase text-muted-foreground">Ticket Cost Receipts</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Tickets with Jira work logged in {fiscalYearLabel}, grouped by fiscal month. Names and bill rates are not shown.</p>
+        <h2 className="text-sm font-semibold uppercase text-muted-foreground">Task Level Forecast Breakdown</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Tickets with Jira work logged in {fiscalYearLabel}, grouped by fiscal month.</p>
       </div>
-      {rows.length ? <div className="space-y-3">{rows.map((row) => (
-        <article key={`${row.fiscal_month_id}-${row.ticket_key}`} className="rounded-md border p-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div><div className="text-xs font-semibold uppercase text-muted-foreground">{row.fiscal_month} · {row.ticket_key}</div><div className="font-semibold">{row.ticket_summary}</div></div>
-            <div className="text-sm text-muted-foreground">{row.story_points ?? "No"} story points{row.jira_team ? ` · ${row.jira_team}` : ""}</div>
+      {groupedRows.length ? <div className="space-y-3">{groupedRows.map((group) => {
+        const isOpen = openMonths.has(group.sequence);
+        return (
+          <div key={group.sequence} className="rounded-md border">
+            <button
+              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+              type="button"
+              onClick={() => setOpenMonths((current) => {
+                const next = new Set(current);
+                if (next.has(group.sequence)) next.delete(group.sequence);
+                else next.add(group.sequence);
+                return next;
+              })}
+            >
+              <span className="flex items-center gap-2">
+                {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                <span className="text-sm font-semibold">{group.label}</span>
+              </span>
+              <Badge>{group.receipts.length} tickets</Badge>
+            </button>
+            {isOpen ? (
+              <div className="space-y-3 border-t p-3">
+                {group.receipts.map((row) => <TicketCostReceiptCard key={`${row.fiscal_month_id}-${row.ticket_key}`} row={row} />)}
+              </div>
+            ) : null}
           </div>
-          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
-            <ReceiptMetric label="Estimated Cost" value={row.estimated_cost === null ? row.estimate_status : formatCurrency(row.estimated_cost)} />
-            <ReceiptMetric label="Actual Cost" value={formatCurrency(row.actual_cost)} />
-            <ReceiptMetric label="Variance" value={row.variance_cost === null ? "—" : formatCurrency(row.variance_cost)} />
-          </div>
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">{row.roles.map((role) => <span key={role.role}><strong className="text-foreground">{role.role}</strong>: {formatHours(role.actual_hours)} hrs · {formatCurrency(role.actual_cost)}</span>)}</div>
-        </article>
-      ))}</div> : <div className="rounded-md bg-secondary/50 p-3 text-sm text-muted-foreground">No Jira ticket work is available for this fiscal year yet.</div>}
+        );
+      })}</div> : <div className="rounded-md bg-secondary/50 p-3 text-sm text-muted-foreground">No Jira ticket work is available for this fiscal year yet.</div>}
     </section>
   );
+}
+
+function TicketCostReceiptCard({ row }: { row: TicketCostReceipt }) {
+  return (
+    <article className="rounded-md border p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+            <span>{row.ticket_key}</span>
+            <WorkTypeBadge code={row.work_type_code} label={row.work_type} />
+          </div>
+          <div className="mt-1 font-semibold">{row.ticket_summary}</div>
+        </div>
+        <div className="text-sm text-muted-foreground">{row.story_points ?? "No"} story points{row.jira_team ? ` · ${row.jira_team}` : ""}</div>
+      </div>
+      <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+        <ReceiptMetric label="Estimated Cost" value={row.estimated_cost === null ? row.estimate_status : formatCurrency(row.estimated_cost)} />
+        <ReceiptMetric label="Actual Cost" value={formatCurrency(row.actual_cost)} />
+        <ReceiptMetric label="Variance" value={row.variance_cost === null ? "-" : formatCurrency(row.variance_cost)} />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
+        {row.roles.map((role) => <span key={role.role}><strong className="text-foreground">{role.role}</strong>: {formatHours(role.actual_hours)} hrs · {formatCurrency(role.actual_cost)}</span>)}
+      </div>
+    </article>
+  );
+}
+
+function WorkTypeBadge({ code, label }: { code: string; label: string }) {
+  const className = {
+    NET_NEW: "border-primary/40 bg-primary/10 text-primary",
+    ENHANCE: "border-[#D2D755]/70 bg-[#D2D755]/20 text-foreground",
+    MAINTENANCE: "border-[#E87722]/50 bg-[#E87722]/15 text-[#9A4B12]",
+    MIXED: "border-muted-foreground/30 bg-muted text-muted-foreground",
+    UNCLASSIFIED: "border-warning/50 bg-warning/10 text-warning",
+  }[code] ?? "border-muted-foreground/30 bg-muted text-muted-foreground";
+  return <Badge className={className}>{label}</Badge>;
 }
 
 function ReceiptMetric({ label, value }: { label: string; value: string }) {
