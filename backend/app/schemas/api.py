@@ -701,12 +701,6 @@ class ProductRoleBreakdownResponse(BaseModel):
     variance_cost: float
 
 
-class TicketCostReceiptRoleResponse(BaseModel):
-    role: str
-    actual_hours: float
-    actual_cost: float
-
-
 class TicketCostReceiptResponse(BaseModel):
     fiscal_month_id: int
     fiscal_month: str
@@ -722,7 +716,6 @@ class TicketCostReceiptResponse(BaseModel):
     actual_hours: float
     actual_cost: float
     variance_cost: float | None
-    roles: list[TicketCostReceiptRoleResponse]
 
 
 class JiraTeamEstimationProfileResponse(BaseModel):

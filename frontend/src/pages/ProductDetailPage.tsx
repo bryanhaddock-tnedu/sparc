@@ -516,9 +516,6 @@ function TicketCostReceiptCard({ row }: { row: TicketCostReceipt }) {
         <ReceiptMetric label="Actual Cost" value={formatCurrency(row.actual_cost)} />
         <ReceiptMetric label="Variance" value={row.variance_cost === null ? "-" : formatCurrency(row.variance_cost)} />
       </div>
-      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
-        {row.roles.map((role) => <span key={role.role}><strong className="text-foreground">{role.role}</strong>: {formatHours(role.actual_hours)} hrs · {formatCurrency(role.actual_cost)}</span>)}
-      </div>
     </article>
   );
 }

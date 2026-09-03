@@ -51,6 +51,7 @@ class MockWorklog:
     bucket_code: str | None
     worked_on: date
     hours: Decimal
+    source_issue_type: str | None = None
     work_type_value: str | None = None
     source_team: str | None = None
     story_points: Decimal | None = None
@@ -117,6 +118,7 @@ def run_mock_jira_rovo_sync(db: Session) -> dict[str, object]:
                         source_account_id=worklog.jira_account_id,
                         source_project_key=worklog.jira_project_key,
                         source_ticket_summary=worklog.ticket_summary,
+                        source_issue_type=worklog.source_issue_type,
                         source_team=worklog.source_team,
                         source_story_points=worklog.story_points,
                         source_payload_hash=payload_hash,
@@ -135,6 +137,7 @@ def run_mock_jira_rovo_sync(db: Session) -> dict[str, object]:
                 existing.source_account_id = worklog.jira_account_id
                 existing.source_project_key = worklog.jira_project_key
                 existing.source_ticket_summary = worklog.ticket_summary
+                existing.source_issue_type = worklog.source_issue_type
                 existing.source_team = worklog.source_team
                 existing.source_story_points = worklog.story_points
                 existing.source_payload_hash = payload_hash
@@ -231,6 +234,7 @@ def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = Non
                         source_account_id=worklog.jira_account_id,
                         source_project_key=worklog.jira_project_key,
                         source_ticket_summary=worklog.ticket_summary,
+                        source_issue_type=worklog.source_issue_type,
                         source_team=worklog.source_team,
                         source_story_points=worklog.story_points,
                         source_payload_hash=payload_hash,
@@ -249,6 +253,7 @@ def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = Non
                 existing.source_account_id = worklog.jira_account_id
                 existing.source_project_key = worklog.jira_project_key
                 existing.source_ticket_summary = worklog.ticket_summary
+                existing.source_issue_type = worklog.source_issue_type
                 existing.source_team = worklog.source_team
                 existing.source_story_points = worklog.story_points
                 existing.source_payload_hash = payload_hash
@@ -634,6 +639,7 @@ def _payload_hash(worklog: MockWorklog) -> str:
             worklog.jira_account_id,
             worklog.worked_on.isoformat(),
             str(worklog.hours),
+            worklog.source_issue_type or "",
         ]
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -781,6 +787,7 @@ def _normalize_jira_worklog(
     fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
     project = fields.get("project") if isinstance(fields, dict) and isinstance(fields.get("project"), dict) else {}
     status = fields.get("status") if isinstance(fields, dict) and isinstance(fields.get("status"), dict) else {}
+    issue_type = fields.get("issuetype") if isinstance(fields, dict) and isinstance(fields.get("issuetype"), dict) else {}
     author = worklog.get("author") if isinstance(worklog.get("author"), dict) else {}
     seconds = Decimal(str(worklog.get("timeSpentSeconds") or 0))
     hours = (seconds / Decimal("3600")).quantize(Decimal("0.01"))
@@ -809,6 +816,7 @@ def _normalize_jira_worklog(
         bucket_code=bucket_code,
         worked_on=worked_on,
         hours=hours,
+        source_issue_type=str(issue_type.get("name") or "") or None,
         work_type_value=work_type_value,
         source_team=_first_issue_field_text(fields, team_field_ids),
         story_points=_first_issue_decimal(fields, story_point_field_ids),

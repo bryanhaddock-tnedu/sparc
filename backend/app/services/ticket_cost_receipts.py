@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.models import ActualEntry, Bucket, FiscalMonth, JiraTeamEstimationProfile, TeamMember
 from app.services.costs import calculate_cost
 
-DEVELOPER_TITLES = {"dev", "sr. dev"}
+DEVELOPER_TITLES = {"dev", "sr dev"}
+PRODUCT_OWNER_TITLES = {"po", "product", "product owner"}
 
 
 def product_ticket_cost_receipts(db: Session, product_id: int, fiscal_year: int) -> list[dict[str, object]]:
@@ -24,7 +25,7 @@ def product_ticket_cost_receipts(db: Session, product_id: int, fiscal_year: int)
     rates = _role_rate_averages(db)
     grouped: dict[tuple[int, str], list[ActualEntry]] = defaultdict(list)
     for entry in entries:
-        if entry.source_ticket_key:
+        if entry.source_ticket_key and not _is_epic(entry.source_issue_type):
             grouped[(entry.fiscal_month_id, entry.source_ticket_key)].append(entry)
     rows: list[dict[str, object]] = []
     for _, ticket_entries in grouped.items():
@@ -37,7 +38,7 @@ def product_ticket_cost_receipts(db: Session, product_id: int, fiscal_year: int)
             by_role[role]["cost"] += Decimal(str(calculate_cost(entry.hours, entry.team_member.bill_rate)))
         actual_hours = sum((x["hours"] for x in by_role.values()), Decimal("0"))
         actual_cost = sum((x["cost"] for x in by_role.values()), Decimal("0"))
-        estimated_cost, status = _estimated_cost(first.source_story_points, profiles.get(_key(first.source_team)), rates)
+        estimated_cost, status = _estimated_cost(first.source_story_points, first.source_team, profiles.get(_key(first.source_team)), rates)
         rows.append({
             "fiscal_month_id": first.fiscal_month_id, "fiscal_month": first.fiscal_month.label, "month_sequence": first.fiscal_month.sequence,
             "ticket_key": first.source_ticket_key, "ticket_summary": first.source_ticket_summary or first.source_ticket_key,
@@ -46,7 +47,6 @@ def product_ticket_cost_receipts(db: Session, product_id: int, fiscal_year: int)
             "estimate_status": status, "estimated_cost": float(estimated_cost) if estimated_cost is not None else None,
             "actual_hours": float(actual_hours), "actual_cost": float(actual_cost),
             "variance_cost": float(actual_cost - estimated_cost) if estimated_cost is not None else None,
-            "roles": [{"role": role, "actual_hours": float(value["hours"]), "actual_cost": float(value["cost"])} for role, value in sorted(by_role.items())],
         })
     return rows
 
@@ -54,21 +54,25 @@ def product_ticket_cost_receipts(db: Session, product_id: int, fiscal_year: int)
 def _role_rate_averages(db: Session) -> dict[str, Decimal]:
     rates: dict[str, list[Decimal]] = defaultdict(list)
     for member in db.scalars(select(TeamMember).where(TeamMember.status == "active")).all():
-        title = (member.role or "").strip().casefold()
+        if member.bill_rate is None or member.bill_rate <= 0:
+            continue
+        title = _normalized_role(member.role)
         if title in DEVELOPER_TITLES:
             rates["developer"].append(member.bill_rate)
         elif title == "qa":
             rates["qa"].append(member.bill_rate)
-        elif title in {"product owner", "po"}:
+        elif title in PRODUCT_OWNER_TITLES:
             rates["product_owner"].append(member.bill_rate)
     return {role: sum(values, Decimal("0")) / len(values) for role, values in rates.items() if values}
 
 
-def _estimated_cost(story_points: Decimal | None, profile: JiraTeamEstimationProfile | None, rates: dict[str, Decimal]) -> tuple[Decimal | None, str]:
-    if profile is None:
-        return None, "No Jira Team estimation profile"
+def _estimated_cost(story_points: Decimal | None, source_team: str | None, profile: JiraTeamEstimationProfile | None, rates: dict[str, Decimal]) -> tuple[Decimal | None, str]:
     if story_points is None or story_points <= 0:
         return None, "No story points"
+    if not _key(source_team):
+        return None, "No Jira Team"
+    if profile is None:
+        return None, "No matching Jira Team profile"
     if any(role not in rates for role in ("developer", "qa", "product_owner")):
         return None, "Missing active role rate"
     developer_hours = story_points / profile.velocity_story_points * profile.developer_capacity_hours
@@ -91,3 +95,11 @@ def _work_type(entries: list[ActualEntry]) -> dict[str, str]:
 
 def _key(value: str | None) -> str:
     return (value or "").strip().casefold()
+
+
+def _is_epic(issue_type: str | None) -> bool:
+    return (issue_type or "").strip().casefold() == "epic"
+
+
+def _normalized_role(role: str | None) -> str:
+    return " ".join((role or "").replace(".", " ").strip().casefold().split())

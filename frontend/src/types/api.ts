@@ -211,12 +211,6 @@ export interface ProductRoleBreakdownRow {
   variance_cost: number;
 }
 
-export interface TicketCostReceiptRole {
-  role: string;
-  actual_hours: number;
-  actual_cost: number;
-}
-
 export interface TicketCostReceipt {
   fiscal_month_id: number;
   fiscal_month: string;
@@ -232,7 +226,6 @@ export interface TicketCostReceipt {
   actual_hours: number;
   actual_cost: number;
   variance_cost: number | null;
-  roles: TicketCostReceiptRole[];
 }
 
 export interface Product {

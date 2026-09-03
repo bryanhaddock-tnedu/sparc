@@ -12,6 +12,8 @@ For an eligible ticket, Developer estimated hours are `story points / Jira Team 
 
 Follow-up iteration on 2026-09-02 renamed the Product Detail section to `Task Level Forecast Breakdown`, removed the explanatory redaction sentence from its subheader, added each ticket's work type with bucket-aligned badge styling, and grouped tickets into collapsible fiscal-month sections so prior months do not dominate the page. A data migration seeds the Product Maintenance Jira Team estimation profile with the approved starting assumptions when no matching profile exists.
 
+Follow-up iteration on 2026-09-03 aligned the view with Florie's clarification that Epics are containers and PO hours should be logged to actual work tickets moving forward. Jira issue type is now stored on actual worklogs, Epic issue types are excluded from the normal task-level breakdown once synced, and ticket cards no longer expose role-level actual breakdown lines. Estimate status text now distinguishes no Story Points, no Jira Team, no matching Jira Team profile, and missing active role rates. The Product role label is accepted as Product Owner for estimate role-rate averages.
+
 Profiles do not map to SPARC Team rosters and do not alter individual-contributor Forecast entry. Tickets without story points or an active matching Jira Team profile remain visible with actual work and an explanatory unavailable-estimate status.
 
 ## Verification

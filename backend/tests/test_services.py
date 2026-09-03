@@ -149,23 +149,76 @@ def test_ticket_cost_receipts_uses_active_team_member_status_for_rate_averages()
         product = Product(name="InformTN", slug="informtn")
         developer = TeamMember(name="Dev One", slug="dev-one", role="Dev", team="AppDev", bill_rate=Decimal("100"), status="active")
         qa = TeamMember(name="QA One", slug="qa-one", role="QA", team="Quality", bill_rate=Decimal("80"), status="active")
-        po = TeamMember(name="PO One", slug="po-one", role="Product Owner", team="Product", bill_rate=Decimal("120"), status="active")
+        po = TeamMember(name="PO One", slug="po-one", role="Product", team="Product", bill_rate=Decimal("120"), status="active")
         db.add_all([product, developer, qa, po])
         db.flush()
         month = get_fiscal_month(db, 2027, 1)
         maintenance = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
         db.add(JiraTeamEstimationProfile(jira_team="Product Maintenance", velocity_story_points=Decimal("75.8"), developer_capacity_hours=Decimal("360"), qa_percent_of_developer_hours=Decimal("0.20"), product_owner_percent_of_developer_hours=Decimal("0.15")))
-        db.add(ActualEntry(product_id=product.id, team_member_id=developer.id, bucket_id=maintenance.id, fiscal_month_id=month.id, hours=Decimal("6"), source_ticket_key="INF-1", source_ticket_summary="Receipt test", source_team="Product Maintenance", source_story_points=Decimal("8")))
+        db.add(ActualEntry(product_id=product.id, team_member_id=developer.id, bucket_id=maintenance.id, fiscal_month_id=month.id, hours=Decimal("6"), source_ticket_key="INF-1", source_ticket_summary="Receipt test", source_issue_type="Story", source_team="Product Maintenance", source_story_points=Decimal("8")))
+        db.add(ActualEntry(product_id=product.id, team_member_id=po.id, bucket_id=maintenance.id, fiscal_month_id=month.id, hours=Decimal("5"), source_ticket_key="INF-2", source_ticket_summary="Epic receipt test", source_issue_type="Epic", source_team="Product Maintenance"))
         db.flush()
 
         receipts = product_ticket_cost_receipts(db, product.id, 2027)
 
+        assert [receipt["ticket_key"] for receipt in receipts] == ["INF-1"]
         assert receipts[0]["ticket_key"] == "INF-1"
         assert receipts[0]["work_type"] == "Maintenance"
         assert receipts[0]["work_type_code"] == "MAINTENANCE"
         assert receipts[0]["estimate_status"] == "Estimated"
         assert receipts[0]["actual_cost"] == 600
         assert receipts[0]["estimated_cost"] is not None
+        assert "roles" not in receipts[0]
+
+
+def test_ticket_cost_receipts_reports_specific_unavailable_estimate_reason():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="InformTN", slug="informtn")
+        developer = TeamMember(name="Dev One", slug="dev-one", role="Dev", team="AppDev", bill_rate=Decimal("100"), status="active")
+        qa = TeamMember(name="QA One", slug="qa-one", role="QA", team="Quality", bill_rate=Decimal("80"), status="active")
+        po = TeamMember(name="PO One", slug="po-one", role="Product", team="Product", bill_rate=Decimal("120"), status="active")
+        db.add_all([product, developer, qa, po])
+        db.flush()
+        month = get_fiscal_month(db, 2027, 1)
+        maintenance = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        db.add_all([
+            ActualEntry(product_id=product.id, team_member_id=developer.id, bucket_id=maintenance.id, fiscal_month_id=month.id, hours=Decimal("1"), source_ticket_key="INF-1", source_issue_type="Story", source_story_points=Decimal("3")),
+            ActualEntry(product_id=product.id, team_member_id=developer.id, bucket_id=maintenance.id, fiscal_month_id=month.id, hours=Decimal("1"), source_ticket_key="INF-2", source_issue_type="Story", source_team="Unknown Team", source_story_points=Decimal("3")),
+            ActualEntry(product_id=product.id, team_member_id=developer.id, bucket_id=maintenance.id, fiscal_month_id=month.id, hours=Decimal("1"), source_ticket_key="INF-3", source_issue_type="Story", source_team="Product Maintenance"),
+        ])
+        db.flush()
+
+        receipts = {receipt["ticket_key"]: receipt for receipt in product_ticket_cost_receipts(db, product.id, 2027)}
+
+        assert receipts["INF-1"]["estimate_status"] == "No Jira Team"
+        assert receipts["INF-2"]["estimate_status"] == "No matching Jira Team profile"
+        assert receipts["INF-3"]["estimate_status"] == "No story points"
+
+
+def test_ticket_cost_receipts_requires_positive_role_rates_for_estimates():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="InformTN", slug="informtn")
+        developer = TeamMember(name="Dev One", slug="dev-one", role="Dev", team="AppDev", bill_rate=Decimal("100"), status="active")
+        qa = TeamMember(name="QA One", slug="qa-one", role="QA", team="Quality", bill_rate=Decimal("0"), status="active")
+        po = TeamMember(name="PO One", slug="po-one", role="Product", team="Product", bill_rate=Decimal("120"), status="active")
+        db.add_all([product, developer, qa, po])
+        db.flush()
+        month = get_fiscal_month(db, 2027, 1)
+        maintenance = db.scalar(select(Bucket).where(Bucket.code == "MAINTENANCE"))
+        db.add(JiraTeamEstimationProfile(jira_team="Product Maintenance", velocity_story_points=Decimal("75.8"), developer_capacity_hours=Decimal("360"), qa_percent_of_developer_hours=Decimal("0.20"), product_owner_percent_of_developer_hours=Decimal("0.15")))
+        db.add(ActualEntry(product_id=product.id, team_member_id=developer.id, bucket_id=maintenance.id, fiscal_month_id=month.id, hours=Decimal("1"), source_ticket_key="INF-1", source_issue_type="Story", source_team="Product Maintenance", source_story_points=Decimal("3")))
+        db.flush()
+
+        receipts = product_ticket_cost_receipts(db, product.id, 2027)
+
+        assert receipts[0]["estimate_status"] == "Missing active role rate"
+        assert receipts[0]["estimated_cost"] is None
 
 
 def test_labor_cost_report_rolls_up_by_team_and_bucket():

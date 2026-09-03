@@ -203,6 +203,7 @@ def test_live_sync_uses_product_jira_space_mapping(monkeypatch):
                     "MAINTENANCE",
                     date(2026, 5, 6),
                     Decimal("3.50"),
+                    source_issue_type="Story",
                 )
             ],
         )
@@ -215,6 +216,7 @@ def test_live_sync_uses_product_jira_space_mapping(monkeypatch):
         assert actual is not None
         assert actual.product_id == product.id
         assert actual.team_member_id == member.id
+        assert actual.source_issue_type == "Story"
 
 
 def test_live_sync_ignores_requested_year_and_uses_current_fiscal_year(monkeypatch):
