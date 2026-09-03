@@ -9,6 +9,7 @@ from app.api.errors import not_found
 from app.db.session import get_db
 from app.models import EstimatedIssueAllocation, EstimationProfile, EstimationRun, JiraTeamEstimationProfile
 from app.schemas import (
+    ApiMessage,
     DeliveryFlowIssueResponse,
     EstimatedIssueAllocationResponse,
     EstimationProfileResponse,
@@ -53,6 +54,16 @@ def update_jira_team_profile(profile_id: int, payload: JiraTeamEstimationProfile
     db.commit()
     db.refresh(profile)
     return profile
+
+
+@router.delete("/jira-team-profiles/{profile_id}", response_model=ApiMessage)
+def delete_jira_team_profile(profile_id: int, db: Session = Depends(get_db), _admin=Depends(require_admin)) -> dict[str, str]:
+    profile = db.get(JiraTeamEstimationProfile, profile_id)
+    if profile is None:
+        raise not_found("Jira Team estimation profile")
+    db.delete(profile)
+    db.commit()
+    return {"message": "Jira Team estimation profile removed"}
 
 DELIVERY_STAGE_LABELS = {
     "in_engineering": "In Engineering",

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api import estimations as estimations_api, forecasts as forecasts_api, integrations as integrations_api, products as products_api, team_members as team_members_api, teams as teams_api
 from app.db.seed import _seed_buckets
-from app.models import Base, Bucket, Product, ProductTeamMember, TeamMember
+from app.models import Base, Bucket, JiraTeamEstimationProfile, Product, ProductTeamMember, TeamMember
 from app.services.access_control import AuthenticatedUser, UserRole
 from app.services.aggregations import dashboard_labor_mix, dashboard_products, dashboard_summary, dashboard_work_type_breakdown, product_bucket_tables, product_summary
 from app.services.auth import require_admin, require_labor_detail_access, require_role_breakdown_access, require_team_member_profile_access, require_team_page_access, require_work_type_breakdown_access
@@ -210,6 +210,47 @@ def test_jira_actual_exclusion_queue_requires_admin_access():
     )
 
     assert any(dependency.call is require_admin for dependency in route.dependant.dependencies)
+
+
+@pytest.mark.parametrize(
+    ("path", "method"),
+    [
+        ("/estimations/jira-team-profiles", "GET"),
+        ("/estimations/jira-team-profiles", "POST"),
+        ("/estimations/jira-team-profiles/{profile_id}", "PUT"),
+        ("/estimations/jira-team-profiles/{profile_id}", "DELETE"),
+    ],
+)
+def test_jira_team_estimation_profile_routes_require_admin_access(path, method):
+    route = next(
+        route
+        for route in estimations_api.router.routes
+        if isinstance(route, APIRoute) and route.path == path and method in route.methods
+    )
+
+    assert any(dependency.call is require_admin for dependency in route.dependant.dependencies)
+
+
+def test_admin_can_delete_jira_team_estimation_profile():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        profile = JiraTeamEstimationProfile(
+            jira_team="Product Maintenance",
+            velocity_story_points=Decimal("75.8"),
+            developer_capacity_hours=Decimal("360"),
+            qa_percent_of_developer_hours=Decimal("0.20"),
+            product_owner_percent_of_developer_hours=Decimal("0.15"),
+        )
+        db.add(profile)
+        db.commit()
+        profile_id = profile.id
+
+        result = estimations_api.delete_jira_team_profile(profile_id, db=db, _admin=_authenticated_user(UserRole.ADMIN))
+
+        assert result == {"message": "Jira Team estimation profile removed"}
+        assert db.get(JiraTeamEstimationProfile, profile_id) is None
 
 
 @pytest.mark.parametrize(

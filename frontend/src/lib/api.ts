@@ -420,6 +420,8 @@ export const api = {
     request<JiraTeamEstimationProfile>("/api/estimations/jira-team-profiles", { method: "POST", body: JSON.stringify(payload) }),
   updateJiraTeamEstimationProfile: (profileId: number, payload: Partial<JiraTeamEstimationProfilePayload>) =>
     request<JiraTeamEstimationProfile>(`/api/estimations/jira-team-profiles/${profileId}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteJiraTeamEstimationProfile: (profileId: number) =>
+    request<{ message: string }>(`/api/estimations/jira-team-profiles/${profileId}`, { method: "DELETE" }),
   estimationRuns: (fiscalYear = DEFAULT_FISCAL_YEAR) => request<EstimationRun[]>(`/api/estimations/runs?fiscal_year=${fiscalYear}`),
   previewEstimation: (payload: EstimationRunRequest) =>
     request<EstimationPreview>("/api/estimations/preview", {

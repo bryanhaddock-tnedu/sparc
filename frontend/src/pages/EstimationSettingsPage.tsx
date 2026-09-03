@@ -1,4 +1,4 @@
-import { AlertTriangle, Eye, History, Play, RefreshCw, Save } from "lucide-react";
+import { AlertTriangle, Eye, History, Pencil, Play, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { PageNav } from "../components/PageNav";
@@ -213,10 +213,40 @@ export function EstimationSettingsPage() {
   );
 }
 
+const defaultJiraTeamProfileForm = {
+  jira_team: "Product Maintenance",
+  velocity_story_points: "75.8",
+  developer_capacity_hours: "360",
+  qa_percent: "20",
+  po_percent: "15",
+  notes: "",
+};
+
 function JiraTeamProfilesPanel({ profiles, onChanged }: { profiles: JiraTeamEstimationProfile[]; onChanged: () => Promise<void> }) {
-  const [form, setForm] = useState({ jira_team: "Product Maintenance", velocity_story_points: "75.8", developer_capacity_hours: "360", qa_percent: "20", po_percent: "15", notes: "" });
+  const [form, setForm] = useState(defaultJiraTeamProfileForm);
+  const [editingProfileId, setEditingProfileId] = useState<number | null>(null);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function editProfile(profile: JiraTeamEstimationProfile) {
+    setEditingProfileId(profile.id);
+    setError(null);
+    setForm({
+      jira_team: profile.jira_team,
+      velocity_story_points: String(profile.velocity_story_points),
+      developer_capacity_hours: String(profile.developer_capacity_hours),
+      qa_percent: String(profile.qa_percent_of_developer_hours * 100),
+      po_percent: String(profile.product_owner_percent_of_developer_hours * 100),
+      notes: profile.notes ?? "",
+    });
+  }
+
+  function resetForm() {
+    setEditingProfileId(null);
+    setError(null);
+    setForm(defaultJiraTeamProfileForm);
+  }
+
   async function save() {
     const values = [form.velocity_story_points, form.developer_capacity_hours, form.qa_percent, form.po_percent].map(Number);
     if (!form.jira_team.trim() || values.some((value) => !Number.isFinite(value) || value < 0) || values[0] === 0 || values[1] === 0) { setError("Enter a Jira Team, velocity, capacity, and non-negative percentages."); return; }
@@ -224,15 +254,30 @@ function JiraTeamProfilesPanel({ profiles, onChanged }: { profiles: JiraTeamEsti
     const payload = { jira_team: form.jira_team.trim(), velocity_story_points: values[0], developer_capacity_hours: values[1], qa_percent_of_developer_hours: values[2] / 100, product_owner_percent_of_developer_hours: values[3] / 100, is_active: true, notes: form.notes || null };
     try {
       const existing = profiles.find((profile) => profile.jira_team.trim().toLowerCase() === payload.jira_team.toLowerCase());
-      if (existing) await api.updateJiraTeamEstimationProfile(existing.id, payload); else await api.createJiraTeamEstimationProfile(payload);
+      const targetProfileId = editingProfileId ?? existing?.id ?? null;
+      if (targetProfileId) await api.updateJiraTeamEstimationProfile(targetProfileId, payload); else await api.createJiraTeamEstimationProfile(payload);
+      resetForm();
       await onChanged();
     } catch (err) { setError(err instanceof Error ? err.message : "Unable to save Jira Team profile"); } finally { setWorking(false); }
   }
+
+  async function removeProfile(profile: JiraTeamEstimationProfile) {
+    const confirmed = window.confirm(`Remove the Jira Team estimation profile for ${profile.jira_team}? Tickets for this Jira Team will show no estimate until a profile is recreated.`);
+    if (!confirmed) return;
+    setWorking(true); setError(null);
+    try {
+      await api.deleteJiraTeamEstimationProfile(profile.id);
+      if (editingProfileId === profile.id) resetForm();
+      await onChanged();
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to remove Jira Team profile"); } finally { setWorking(false); }
+  }
+
   return <Card>
     <CardHeader><CardTitle>Jira Team Ticket Cost Profiles</CardTitle></CardHeader>
     <CardContent className="space-y-4">
       <p className="text-sm text-muted-foreground">Used only for ticket estimates. This is independent from SPARC Team rosters and does not change Forecast entry.</p>
-      {profiles.length ? <div className="overflow-x-auto rounded border"><Table><TableHeader><TableRow><TableHead>Jira Team</TableHead><TableHead>Velocity</TableHead><TableHead>Dev Capacity</TableHead><TableHead>QA</TableHead><TableHead>PO</TableHead></TableRow></TableHeader><TableBody>{profiles.map((profile) => <TableRow key={profile.id}><TableCell className="font-semibold">{profile.jira_team}</TableCell><TableCell>{profile.velocity_story_points}</TableCell><TableCell>{profile.developer_capacity_hours} hrs</TableCell><TableCell>{profile.qa_percent_of_developer_hours * 100}%</TableCell><TableCell>{profile.product_owner_percent_of_developer_hours * 100}%</TableCell></TableRow>)}</TableBody></Table></div> : null}
+      {profiles.length ? <div className="overflow-x-auto rounded border"><Table><TableHeader><TableRow><TableHead>Jira Team</TableHead><TableHead>Velocity</TableHead><TableHead>Dev Capacity</TableHead><TableHead>QA</TableHead><TableHead>PO</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{profiles.map((profile) => <TableRow key={profile.id}><TableCell className="font-semibold">{profile.jira_team}</TableCell><TableCell>{profile.velocity_story_points}</TableCell><TableCell>{profile.developer_capacity_hours} hrs</TableCell><TableCell>{profile.qa_percent_of_developer_hours * 100}%</TableCell><TableCell>{profile.product_owner_percent_of_developer_hours * 100}%</TableCell><TableCell><Badge>{profile.is_active ? "Active" : "Inactive"}</Badge></TableCell><TableCell><div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" onClick={() => editProfile(profile)} disabled={working}><Pencil className="h-4 w-4" />Edit</Button><Button type="button" variant="outline" size="sm" onClick={() => void removeProfile(profile)} disabled={working}><Trash2 className="h-4 w-4" />Remove</Button></div></TableCell></TableRow>)}</TableBody></Table></div> : null}
+      {editingProfileId ? <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm text-primary">Editing an existing Jira Team profile. Save to update it, or cancel to start a new profile.</div> : null}
       <div className="grid gap-3 md:grid-cols-3">
         <TextField label="Jira Team" value={form.jira_team} onChange={(jira_team) => setForm({ ...form, jira_team })} disabled={working} />
         <TextField label="Velocity (story points)" value={form.velocity_story_points} onChange={(velocity_story_points) => setForm({ ...form, velocity_story_points })} disabled={working} inputMode="decimal" />
@@ -242,7 +287,10 @@ function JiraTeamProfilesPanel({ profiles, onChanged }: { profiles: JiraTeamEsti
         <TextField label="Notes" value={form.notes} onChange={(notes) => setForm({ ...form, notes })} disabled={working} />
       </div>
       {error ? <div className="text-sm text-destructive">{error}</div> : null}
-      <Button onClick={() => void save()} disabled={working}>{working ? "Saving" : "Save Jira Team Profile"}</Button>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => void save()} disabled={working}>{working ? "Saving" : editingProfileId ? "Update Jira Team Profile" : "Save Jira Team Profile"}</Button>
+        {editingProfileId ? <Button type="button" variant="outline" onClick={resetForm} disabled={working}><X className="h-4 w-4" />Cancel Edit</Button> : null}
+      </div>
     </CardContent>
   </Card>;
 }
