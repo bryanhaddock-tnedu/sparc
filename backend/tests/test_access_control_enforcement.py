@@ -131,7 +131,7 @@ def test_product_people_redacts_delivery_names_for_program_area_viewers():
 
     with Session(engine) as db:
         product = Product(name="Academics Product", slug="academics-product", office="Academics")
-        po = TeamMember(name="Product Owner One", slug="product-owner-one", role="Product Owner", team="Product", bill_rate=Decimal("110"))
+        po = TeamMember(name="Product Owner One", slug="product-owner-one", role="Product", team="Product", bill_rate=Decimal("110"))
         dev = TeamMember(name="Developer One", slug="developer-one", role="Dev", team="Product Maintenance", bill_rate=Decimal("100"))
         qa = TeamMember(name="QA One", slug="qa-one", role="QA", team="Quality", bill_rate=Decimal("80"))
         inactive_dev = TeamMember(name="Inactive Dev", slug="inactive-dev", role="Dev", team="Product Maintenance", bill_rate=Decimal("90"))

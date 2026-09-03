@@ -599,7 +599,7 @@ def _serialize_product_people(assignments: list[ProductTeamMember], *, include_d
     for assignment in assignments:
         member = assignment.team_member
         role = _normalized_assignment_role(member.role)
-        if role in {"po", "product owner"}:
+        if role in {"po", "product", "product owner"}:
             people["product_owners"].append(member.name)
         elif include_delivery_names and role in {"dev", "developer", "sr dev", "senior dev", "senior developer"}:
             people["developers"].append(member.name)

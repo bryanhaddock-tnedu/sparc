@@ -424,9 +424,8 @@ export function ProductDetailPage() {
 
 function ProductPeopleSummary({ people, showDeliveryNames }: { people: ProductPeople; showDeliveryNames: boolean }) {
   return (
-    <section className="rounded-lg border bg-card p-4">
-      <h2 className="text-sm font-semibold uppercase text-muted-foreground">Product Assignments</h2>
-      <div className={`mt-3 grid gap-3 ${showDeliveryNames ? "lg:grid-cols-3" : "lg:grid-cols-1"}`}>
+    <section className="rounded-md border bg-card px-3 py-2">
+      <div className={`grid gap-x-5 gap-y-2 text-sm ${showDeliveryNames ? "lg:grid-cols-3" : "lg:grid-cols-1"}`}>
         <ProductPeopleField label="Product Owner" names={people.product_owners} />
         {showDeliveryNames ? <ProductPeopleField label="Developers" names={people.developers} /> : null}
         {showDeliveryNames ? <ProductPeopleField label="QA Engineers" names={people.qa_engineers} /> : null}
@@ -437,9 +436,9 @@ function ProductPeopleSummary({ people, showDeliveryNames }: { people: ProductPe
 
 function ProductPeopleField({ label, names }: { label: string; names: string[] }) {
   return (
-    <div>
-      <div className="text-xs font-semibold uppercase text-muted-foreground">{label}</div>
-      <div className="mt-1 text-sm font-semibold">{names.length ? names.join(", ") : "Not assigned"}</div>
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <span className="text-xs font-semibold uppercase text-muted-foreground">{label}</span>
+      <span className="font-semibold">{names.length ? names.join(", ") : "Not assigned"}</span>
     </div>
   );
 }
