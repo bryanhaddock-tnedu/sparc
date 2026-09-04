@@ -462,8 +462,8 @@ function TicketCostReceiptsPanel({ fiscalYearLabel, rows }: { fiscalYearLabel: s
   return (
     <section className="rounded-lg border bg-card p-4">
       <div className="mb-3">
-        <h2 className="text-sm font-semibold uppercase text-muted-foreground">Task Level Forecast Breakdown</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Tickets with Jira work logged in {fiscalYearLabel}, grouped by fiscal month.</p>
+        <h2 className="text-sm font-semibold uppercase text-muted-foreground">Task Level Cost Breakdown</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Tickets with Jira work logged in {fiscalYearLabel}, grouped by fiscal month with actual labor cost.</p>
       </div>
       {groupedRows.length ? <div className="space-y-3">{groupedRows.map((group) => {
         const isOpen = openMonths.has(group.sequence);
@@ -510,10 +510,8 @@ function TicketCostReceiptCard({ row }: { row: TicketCostReceipt }) {
         </div>
         <div className="text-sm text-muted-foreground">{row.story_points ?? "No"} story points{row.jira_team ? ` · ${row.jira_team}` : ""}</div>
       </div>
-      <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
-        <ReceiptMetric label="Estimated Cost" value={row.estimated_cost === null ? row.estimate_status : formatCurrency(row.estimated_cost)} />
+      <div className="mt-3 grid gap-2 text-sm sm:grid-cols-1">
         <ReceiptMetric label="Actual Cost" value={formatCurrency(row.actual_cost)} />
-        <ReceiptMetric label="Variance" value={row.variance_cost === null ? "-" : formatCurrency(row.variance_cost)} />
       </div>
     </article>
   );
