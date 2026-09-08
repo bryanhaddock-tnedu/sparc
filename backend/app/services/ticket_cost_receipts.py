@@ -26,10 +26,12 @@ def product_ticket_cost_receipts(db: Session, product_id: int, fiscal_year: int)
     grouped: dict[tuple[int, str], list[ActualEntry]] = defaultdict(list)
     for entry in entries:
         if entry.source_ticket_key and not _is_epic(entry.source_issue_type):
-            grouped[(entry.fiscal_month_id, entry.source_ticket_key)].append(entry)
+            grouped[(entry.fiscal_month_id, _receipt_ticket_key(entry))].append(entry)
     rows: list[dict[str, object]] = []
     for _, ticket_entries in grouped.items():
         first = ticket_entries[0]
+        ticket_key = _receipt_ticket_key(first)
+        ticket_summary = first.source_parent_ticket_summary if _rolls_up_to_parent(first) else first.source_ticket_summary
         by_role: dict[str, dict[str, Decimal]] = defaultdict(lambda: {"hours": Decimal("0"), "cost": Decimal("0")})
         work_type = _work_type(ticket_entries)
         for entry in ticket_entries:
@@ -41,7 +43,7 @@ def product_ticket_cost_receipts(db: Session, product_id: int, fiscal_year: int)
         estimated_cost, status = _estimated_cost(first.source_story_points, first.source_team, profiles.get(_key(first.source_team)), rates)
         rows.append({
             "fiscal_month_id": first.fiscal_month_id, "fiscal_month": first.fiscal_month.label, "month_sequence": first.fiscal_month.sequence,
-            "ticket_key": first.source_ticket_key, "ticket_summary": first.source_ticket_summary or first.source_ticket_key,
+            "ticket_key": ticket_key, "ticket_summary": ticket_summary or ticket_key,
             "work_type": work_type["label"], "work_type_code": work_type["code"],
             "jira_team": first.source_team, "story_points": float(first.source_story_points) if first.source_story_points is not None else None,
             "estimate_status": status, "estimated_cost": float(estimated_cost) if estimated_cost is not None else None,
@@ -99,6 +101,21 @@ def _key(value: str | None) -> str:
 
 def _is_epic(issue_type: str | None) -> bool:
     return (issue_type or "").strip().casefold() == "epic"
+
+
+def _is_subtask(issue_type: str | None) -> bool:
+    value = (issue_type or "").strip().casefold().replace("-", "").replace(" ", "")
+    return value in {"subtask", "subtasks"}
+
+
+def _rolls_up_to_parent(entry: ActualEntry) -> bool:
+    return bool(entry.source_parent_ticket_key) and _is_subtask(entry.source_issue_type)
+
+
+def _receipt_ticket_key(entry: ActualEntry) -> str:
+    if _rolls_up_to_parent(entry):
+        return entry.source_parent_ticket_key or entry.source_ticket_key or ""
+    return entry.source_ticket_key or ""
 
 
 def _normalized_role(role: str | None) -> str:

@@ -52,6 +52,8 @@ class MockWorklog:
     worked_on: date
     hours: Decimal
     source_issue_type: str | None = None
+    parent_ticket_key: str | None = None
+    parent_ticket_summary: str | None = None
     work_type_value: str | None = None
     source_team: str | None = None
     story_points: Decimal | None = None
@@ -119,6 +121,8 @@ def run_mock_jira_rovo_sync(db: Session) -> dict[str, object]:
                         source_project_key=worklog.jira_project_key,
                         source_ticket_summary=worklog.ticket_summary,
                         source_issue_type=worklog.source_issue_type,
+                        source_parent_ticket_key=worklog.parent_ticket_key,
+                        source_parent_ticket_summary=worklog.parent_ticket_summary,
                         source_team=worklog.source_team,
                         source_story_points=worklog.story_points,
                         source_payload_hash=payload_hash,
@@ -138,6 +142,8 @@ def run_mock_jira_rovo_sync(db: Session) -> dict[str, object]:
                 existing.source_project_key = worklog.jira_project_key
                 existing.source_ticket_summary = worklog.ticket_summary
                 existing.source_issue_type = worklog.source_issue_type
+                existing.source_parent_ticket_key = worklog.parent_ticket_key
+                existing.source_parent_ticket_summary = worklog.parent_ticket_summary
                 existing.source_team = worklog.source_team
                 existing.source_story_points = worklog.story_points
                 existing.source_payload_hash = payload_hash
@@ -235,6 +241,8 @@ def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = Non
                         source_project_key=worklog.jira_project_key,
                         source_ticket_summary=worklog.ticket_summary,
                         source_issue_type=worklog.source_issue_type,
+                        source_parent_ticket_key=worklog.parent_ticket_key,
+                        source_parent_ticket_summary=worklog.parent_ticket_summary,
                         source_team=worklog.source_team,
                         source_story_points=worklog.story_points,
                         source_payload_hash=payload_hash,
@@ -254,6 +262,8 @@ def run_live_jira_rovo_sync(db: Session, requested_fiscal_year: int | None = Non
                 existing.source_project_key = worklog.jira_project_key
                 existing.source_ticket_summary = worklog.ticket_summary
                 existing.source_issue_type = worklog.source_issue_type
+                existing.source_parent_ticket_key = worklog.parent_ticket_key
+                existing.source_parent_ticket_summary = worklog.parent_ticket_summary
                 existing.source_team = worklog.source_team
                 existing.source_story_points = worklog.story_points
                 existing.source_payload_hash = payload_hash
@@ -310,7 +320,7 @@ def fetch_live_jira_worklogs(db: Session, fiscal_year: int) -> list[MockWorklog]
         team_field_ids = _fetch_field_ids(client, settings.jira_site_url, TEAM_FIELD_NAMES)
         story_point_field_ids = _fetch_field_ids(client, settings.jira_site_url, STORY_POINT_FIELD_NAMES)
         field_ids = [*work_type_field_ids, *team_field_ids, *story_point_field_ids]
-        fields = ["project", "summary", "status", "issuetype", "worklog", *field_ids]
+        fields = ["project", "summary", "status", "issuetype", "parent", "worklog", *field_ids]
         for issue in _search_jira_issues(client, settings.jira_site_url, jql, fields):
             issue_worklogs = _issue_worklogs(client, settings.jira_site_url, issue)
             for worklog in issue_worklogs:
@@ -640,6 +650,7 @@ def _payload_hash(worklog: MockWorklog) -> str:
             worklog.worked_on.isoformat(),
             str(worklog.hours),
             worklog.source_issue_type or "",
+            worklog.parent_ticket_key or "",
         ]
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -788,6 +799,7 @@ def _normalize_jira_worklog(
     project = fields.get("project") if isinstance(fields, dict) and isinstance(fields.get("project"), dict) else {}
     status = fields.get("status") if isinstance(fields, dict) and isinstance(fields.get("status"), dict) else {}
     issue_type = fields.get("issuetype") if isinstance(fields, dict) and isinstance(fields.get("issuetype"), dict) else {}
+    parent_key, parent_summary = _parent_issue_details(fields)
     author = worklog.get("author") if isinstance(worklog.get("author"), dict) else {}
     seconds = Decimal(str(worklog.get("timeSpentSeconds") or 0))
     hours = (seconds / Decimal("3600")).quantize(Decimal("0.01"))
@@ -817,10 +829,22 @@ def _normalize_jira_worklog(
         worked_on=worked_on,
         hours=hours,
         source_issue_type=str(issue_type.get("name") or "") or None,
+        parent_ticket_key=parent_key,
+        parent_ticket_summary=parent_summary,
         work_type_value=work_type_value,
         source_team=_first_issue_field_text(fields, team_field_ids),
         story_points=_first_issue_decimal(fields, story_point_field_ids),
     )
+
+
+def _parent_issue_details(fields: dict[str, object]) -> tuple[str | None, str | None]:
+    parent = fields.get("parent") if isinstance(fields.get("parent"), dict) else {}
+    key = str(parent.get("key") or "").strip()
+    if not key:
+        return None, None
+    parent_fields = parent.get("fields") if isinstance(parent.get("fields"), dict) else {}
+    summary = str(parent_fields.get("summary") or "").strip() if isinstance(parent_fields, dict) else ""
+    return key, summary or None
 
 
 def _bucket_for_worklog(db: Session, worklog: MockWorklog) -> Bucket | None:

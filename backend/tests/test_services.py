@@ -171,6 +171,52 @@ def test_ticket_cost_receipts_uses_active_team_member_status_for_rate_averages()
         assert "roles" not in receipts[0]
 
 
+def test_ticket_cost_receipts_rolls_subtask_worklogs_into_parent_ticket():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        _seed_buckets(db)
+        product = Product(name="InformTN", slug="informtn")
+        developer = TeamMember(name="Justin Meshew", slug="justin-meshew", role="Dev", team="Product Maintenance", bill_rate=Decimal("90"), status="active")
+        db.add_all([product, developer])
+        db.flush()
+        month = get_fiscal_month(db, 2027, 1)
+        enhance = db.scalar(select(Bucket).where(Bucket.code == "ENHANCE"))
+        db.add_all([
+            ActualEntry(
+                product_id=product.id,
+                team_member_id=developer.id,
+                bucket_id=enhance.id,
+                fiscal_month_id=month.id,
+                hours=Decimal("2"),
+                source_ticket_key="INTN-76",
+                source_ticket_summary="Move Goal Strategies & Expended Funds to Create Goal page",
+                source_issue_type="Story",
+            ),
+            ActualEntry(
+                product_id=product.id,
+                team_member_id=developer.id,
+                bucket_id=enhance.id,
+                fiscal_month_id=month.id,
+                hours=Decimal("10"),
+                source_ticket_key="INTN-77",
+                source_ticket_summary="Implementation subtask",
+                source_issue_type="Sub-task",
+                source_parent_ticket_key="INTN-76",
+                source_parent_ticket_summary="Move Goal Strategies & Expended Funds to Create Goal page",
+            ),
+        ])
+        db.flush()
+
+        receipts = product_ticket_cost_receipts(db, product.id, 2027)
+
+        assert len(receipts) == 1
+        assert receipts[0]["ticket_key"] == "INTN-76"
+        assert receipts[0]["ticket_summary"] == "Move Goal Strategies & Expended Funds to Create Goal page"
+        assert receipts[0]["actual_hours"] == 12
+        assert receipts[0]["actual_cost"] == 1080
+
+
 def test_ticket_cost_receipts_reports_specific_unavailable_estimate_reason():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

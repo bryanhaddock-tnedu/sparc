@@ -386,6 +386,8 @@ class ActualEntry(TimestampMixin, Base):
     source_project_key: Mapped[str | None] = mapped_column(String(80))
     source_ticket_summary: Mapped[str | None] = mapped_column(Text)
     source_issue_type: Mapped[str | None] = mapped_column(String(120))
+    source_parent_ticket_key: Mapped[str | None] = mapped_column(String(80))
+    source_parent_ticket_summary: Mapped[str | None] = mapped_column(Text)
     source_team: Mapped[str | None] = mapped_column(String(160))
     source_story_points: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
     source_payload_hash: Mapped[str | None] = mapped_column(String(128))
