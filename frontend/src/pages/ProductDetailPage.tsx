@@ -510,7 +510,8 @@ function TicketCostReceiptCard({ row }: { row: TicketCostReceipt }) {
         </div>
         <div className="text-sm text-muted-foreground">{row.story_points ?? "No"} story points{row.jira_team ? ` · ${row.jira_team}` : ""}</div>
       </div>
-      <div className="mt-3 grid gap-2 text-sm sm:grid-cols-1">
+      <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+        <ReceiptMetric label="Actual Hours" value={formatHours(row.actual_hours)} />
         <ReceiptMetric label="Actual Cost" value={formatCurrency(row.actual_cost)} />
       </div>
     </article>

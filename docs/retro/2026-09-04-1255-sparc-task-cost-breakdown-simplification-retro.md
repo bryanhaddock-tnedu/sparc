@@ -10,8 +10,9 @@ Florie's UAT feedback showed that the estimated ticket cost and variance fields 
 - Updated the section helper text to describe tickets with actual labor cost by fiscal month.
 - Removed visible `Estimated Cost` from each ticket card.
 - Removed visible `Variance` from each ticket card.
-- Kept ticket number, work type, summary, story point/Jira Team context, and actual labor cost visible.
+- Kept ticket number, work type, summary, story point/Jira Team context, actual hours, and actual labor cost visible.
 - Updated the product brief to document that estimated cost and variance are intentionally omitted until stakeholders validate a revised estimation model.
+- Follow-up on 2026-09-08 added visible Actual Hours to each receipt card so Jira time-tracking totals can be reconciled against SPARC's accepted worklog hours before comparing dollars.
 
 ## What stayed the same
 
@@ -24,6 +25,8 @@ Florie's UAT feedback showed that the estimated ticket cost and variance fields 
 
 - Frontend/interface version: `0.1.114` to `0.1.115`
 - Root release version: `0.1.77` to `0.1.78`
+- Follow-up frontend/interface version: `0.1.115` to `0.1.116`
+- Follow-up root release version: `0.1.78` to `0.1.79`
 
 ## Verification
 
